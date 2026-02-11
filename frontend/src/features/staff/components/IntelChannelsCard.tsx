@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { pb } from "@/config/pb";
 
 export default function IntelChannelsCard() {
   const [channels, setChannels] = useState<
     { id: string; channel_name: string }[]
   >([]);
-  const [newChannel, setNewChannel] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
@@ -29,9 +30,12 @@ export default function IntelChannelsCard() {
   }, []);
 
   const addChannel = async () => {
-    if (!newChannel) return;
-    await pb.collection("intel_channels").create({ channel_name: newChannel });
-    setNewChannel("");
+    if (!newChannelName.trim()) return;
+    await pb
+      .collection("intel_channels")
+      .create({ channel_name: newChannelName.trim() });
+    setNewChannelName("");
+    setIsAdding(false);
     loadChannels();
   };
 
@@ -41,6 +45,8 @@ export default function IntelChannelsCard() {
   };
 
   const startEdit = (id: string, name: string) => {
+    setIsAdding(false);
+    setNewChannelName("");
     setEditingId(id);
     setEditingName(name);
   };
@@ -48,6 +54,16 @@ export default function IntelChannelsCard() {
   const cancelEdit = () => {
     setEditingId(null);
     setEditingName("");
+  };
+
+  const startAdd = () => {
+    cancelEdit();
+    setIsAdding(true);
+  };
+
+  const cancelAdd = () => {
+    setIsAdding(false);
+    setNewChannelName("");
   };
 
   const saveEdit = async () => {
@@ -68,20 +84,6 @@ export default function IntelChannelsCard() {
           <p className="text-sm text-slate-400">
             Manage the channels used by the uploader.
           </p>
-        </div>
-        <div className="flex gap-2">
-          <input
-            className="input input-sm input-bordered bg-base-300"
-            value={newChannel}
-            onChange={(e) => setNewChannel(e.target.value)}
-            placeholder="Channel name"
-          />
-          <button
-            className="btn btn-sm btn-info btn-outline"
-            onClick={addChannel}
-          >
-            Add
-          </button>
         </div>
         <ul className="space-y-2 text-sm">
           {channels.length === 0 && (
@@ -148,6 +150,50 @@ export default function IntelChannelsCard() {
               </li>
             );
           })}
+          <li className="rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 px-3 py-2">
+            {isAdding ? (
+              <div className="flex items-center justify-between gap-2">
+                <input
+                  className="input input-xs input-bordered bg-base-300 flex-1"
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void addChannel();
+                    }
+                  }}
+                  placeholder="Channel name"
+                  autoFocus
+                />
+                <div className="flex items-center gap-1">
+                  <button
+                    className="btn btn-xs btn-outline btn-square"
+                    onClick={addChannel}
+                    aria-label="Save new channel"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="btn btn-xs btn-outline btn-square"
+                    onClick={cancelAdd}
+                    aria-label="Cancel add"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-slate-300 hover:bg-base-300/40 hover:text-slate-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-500/70"
+                onClick={startAdd}
+                aria-label="Add channel"
+              >
+                <Plus className="h-4 w-4" />
+                Add channel
+              </button>
+            )}
+          </li>
         </ul>
       </div>
     </section>
