@@ -80,6 +80,13 @@ tasks:
 
   build:uploader:
     cmds:
+      - |
+        set -euo pipefail
+        if ! command -v zip >/dev/null 2>&1; then
+          echo "'zip' command is required to build uploader archives." >&2
+          echo "Linux: install package 'zip' (for example: sudo apt-get install zip)." >&2
+          exit 1
+        fi
       - mkdir -p frontend/public/downloads uploader/dist
       - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
       - rm -rf uploader/dist/*
@@ -111,10 +118,43 @@ tasks:
 
   prepare:embed:
     cmds:
-      - test -d frontend/dist
-      - rm -rf backend/internal/web/dist
-      - mkdir -p backend/internal/web/dist
-      - cp -R frontend/dist/* backend/internal/web/dist/
+      - |
+        set -euo pipefail
+        if [ ! -d frontend/dist ]; then
+          echo "frontend/dist is missing. Run 'task build:frontend' first." >&2
+          exit 1
+        fi
+        MISSING=""
+        for FILE in \
+          sentinel2-uploader-linux.zip \
+          sentinel2-uploader-windows.zip \
+          sentinel2-uploader-macos.zip
+        do
+          if [ ! -f "frontend/dist/downloads/$FILE" ]; then
+            MISSING="$MISSING $FILE"
+          fi
+        done
+        if [ -n "$MISSING" ]; then
+          echo "Warning: expected uploader download archives are missing in frontend/dist/downloads:$MISSING" >&2
+          echo "Embedded frontend download links may return non-zip responses." >&2
+          if [ "${CI:-}" = "true" ] || [ "${CONTINUE_ON_WARN:-0}" = "1" ]; then
+            echo "Continuing because CI/CONTINUE_ON_WARN is set."
+          elif [ -t 0 ]; then
+            printf "Continue anyway? [y/N]: "
+            read -r ANSWER
+            case "$ANSWER" in
+              y|Y|yes|YES) ;;
+              *) echo "Aborted."; exit 1 ;;
+            esac
+          else
+            echo "Non-interactive shell detected. Re-run with CONTINUE_ON_WARN=1 to override." >&2
+            exit 1
+          fi
+        fi
+        rm -rf backend/internal/web/dist
+        mkdir -p backend/internal/web/dist
+        # Use dot copy to include hidden files such as .well-known if present.
+        cp -R frontend/dist/. backend/internal/web/dist/
     desc: Copy frontend dist to embed location.
 
   build:backend:
@@ -504,7 +544,15 @@ tasks:
     cmds:
       - |
         set -euo pipefail
-        SHELL_NAME="${SHELL##*/}"
+        SHELL_NAME="${SHELL:-}"
+        SHELL_NAME="${SHELL_NAME##*/}"
+        if [ -z "$SHELL_NAME" ] && command -v ps >/dev/null 2>&1; then
+          SHELL_NAME="$(ps -p $$ -o comm= 2>/dev/null | awk -F/ '{print $NF}')"
+        fi
+        if [ -z "$SHELL_NAME" ]; then
+          echo "Could not detect current shell. Run one of: task --completion bash|zsh|fish|powershell" >&2
+          exit 1
+        fi
         case "$SHELL_NAME" in
           bash)
             TARGET="$HOME/.local/share/bash-completion/completions/task"

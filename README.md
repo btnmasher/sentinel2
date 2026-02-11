@@ -33,6 +33,7 @@ These docs capture the structure, conventions, and development practices for eac
 - Go **1.25+**
 - Bun **1.3+**
 - Task **3.x**
+- `zip` CLI (Info-ZIP) for uploader archive tasks
 
 ## Dependencies
 Install these once on a new machine:
@@ -57,6 +58,11 @@ Windows (PowerShell):
 ```
 powershell -c "irm bun.sh/install.ps1|iex"
 ```
+4. `zip` CLI (required for `task build:uploader` and `task release:assets`).
+- Debian/Ubuntu: `sudo apt-get install zip`
+- Fedora/RHEL: `sudo dnf install zip`
+- macOS: preinstalled on most systems (or `brew install zip`)
+- Windows: use WSL/Git Bash/MSYS2 with Info-ZIP `zip` (or run release builds in CI)
 
 ## Environment (Backend)
 Minimum set (extend as needed):
