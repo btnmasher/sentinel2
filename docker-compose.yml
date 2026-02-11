@@ -1,0 +1,12 @@
+services:
+  sentinel2:
+    build: .
+    ports:
+      - "8090:8090"
+    env_file:
+      - .env
+    volumes:
+      - pb_data:/app/pb_data
+
+volumes:
+  pb_data:

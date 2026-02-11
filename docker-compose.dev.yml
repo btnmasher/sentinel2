@@ -1,0 +1,22 @@
+services:
+  sentinel2-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8090:8090"
+      - "5173:5173"
+    env_file:
+      - .env
+    environment:
+      DEV_PROXY: "127.0.0.1:5173"
+      RUN_MIGRATIONS: "0"
+      VITE_HOST: "0.0.0.0"
+      VITE_PORT: "5173"
+    command: ["task", "dev:container"]
+    volumes:
+      - ./:/app
+      - pb_data_dev:/app/pb_data
+
+volumes:
+  pb_data_dev:
