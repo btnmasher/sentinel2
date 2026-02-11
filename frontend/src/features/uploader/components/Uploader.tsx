@@ -212,7 +212,7 @@ sentinel2-uploader`}
                   onClick={() =>
                     copyText(
                       "Flags example",
-                      `sentinel2-uploader --base-url ${exampleBase} --token ${exampleToken}`,
+                      `--base-url ${exampleBase} --token ${exampleToken}`,
                     )
                   }
                 >

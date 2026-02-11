@@ -60,9 +60,13 @@ tasks:
 
   clean:
     cmds:
-      - rm -rf bin dist frontend/dist backend/internal/web/dist uploader/dist .tmp/go-build-cache .tmp/golangci-lint-cache .tmp/bun .tmp/bun-install
+      - rm -rf dist frontend/dist backend/internal/web/dist uploader/dist .tmp/go-build-cache .tmp/golangci-lint-cache .tmp/bun .tmp/bun-install
+      - |
+        if [ -d bin ]; then
+          find bin -mindepth 1 -maxdepth 1 ! -name 'pb_data' ! -name '.env' -exec rm -rf {} +
+        fi
       - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
-    desc: Remove local build artifacts and tool caches.
+    desc: Remove local build artifacts and tool caches (preserves bin/.env and bin/pb_data).
 
   build:frontend:
     deps: [bun:ensure]
@@ -90,30 +94,30 @@ tasks:
       - mkdir -p frontend/public/downloads uploader/dist
       - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
       - rm -rf uploader/dist/*
-      - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64 .
-      - zip -j frontend/public/downloads/sentinel2-uploader-linux.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64
-      - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.exe .
-      - zip -j frontend/public/downloads/sentinel2-uploader-windows.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.exe
-      - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64 .
-      - zip -j frontend/public/downloads/sentinel2-uploader-macos.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64
+      - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-linux .
+      - zip -j frontend/public/downloads/sentinel2-uploader-linux.zip uploader/dist/sentinel2-uploader-linux
+      - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-windows.exe .
+      - zip -j frontend/public/downloads/sentinel2-uploader-windows.zip uploader/dist/sentinel2-uploader-windows.exe
+      - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-macos .
+      - zip -j frontend/public/downloads/sentinel2-uploader-macos.zip uploader/dist/sentinel2-uploader-macos
     desc: Build uploader bundles.
 
   build:uploader:linux:
     cmds:
       - mkdir -p uploader/dist
-      - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64 .
+      - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-linux .
     desc: Build uploader for Linux (amd64).
 
   build:uploader:darwin:
     cmds:
       - mkdir -p uploader/dist
-      - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64 .
+      - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-macos .
     desc: Build uploader for macOS (amd64).
 
   build:uploader:windows:
     cmds:
       - mkdir -p uploader/dist
-      - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.exe .
+      - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-windows.exe .
     desc: Build uploader for Windows (amd64).
 
   prepare:embed:
@@ -194,25 +198,25 @@ tasks:
   build:run:
     deps: [build]
     cmds:
-      - ./bin/sentinel2-server serve
+      - cd bin && ./sentinel2-server serve
     desc: Build everything and start the server.
 
   run:
     cmds:
-      - ./bin/sentinel2-server serve
+      - cd bin && ./sentinel2-server serve
     desc: Run the backend server (expects bin/sentinel2-server).
 
   build:migrate:
     deps: [build]
     cmds:
-      - ./bin/sentinel2-server migrate
+      - cd bin && ./sentinel2-server migrate
     desc: Build everything and run migrations.
 
   build:migrate-run:
     deps: [build]
     cmds:
-      - ./bin/sentinel2-server migrate
-      - ./bin/sentinel2-server serve
+      - cd bin && ./sentinel2-server migrate
+      - cd bin && ./sentinel2-server serve
     desc: Build, run migrations, and start the server.
 
   lint:

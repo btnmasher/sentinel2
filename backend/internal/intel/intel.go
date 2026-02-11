@@ -17,13 +17,15 @@ import (
 )
 
 const (
-	ReportTimeoutSeconds = 60 * 30
-	ReportHashExpiry     = 300
-	UploaderExpiry       = 120
+	ReportTimeoutSeconds   = 60 * 30
+	ReportHashExpiry       = 300
+	DefaultReportHashSlots = 20
+	UploaderExpiry         = 120
 )
 
 type IntelService struct {
-	App *pocketbase.PocketBase
+	App             *pocketbase.PocketBase
+	ReportHashSlots int
 }
 
 type IntelSystem struct {
@@ -34,30 +36,62 @@ type IntelSystem struct {
 }
 
 type IntelReport struct {
-	ID       int64         `json:"id"`
-	RecordID string        `json:"record_id"`
-	Time     int64         `json:"time"`
-	Author   string        `json:"author"`
-	Text     string        `json:"text"`
-	Systems  []IntelSystem `json:"systems"`
-	Regions  []int         `json:"regions"`
-	Uploader string        `json:"uploader"`
+	ID        int64         `json:"id"`
+	RecordID  string        `json:"record_id"`
+	Time      int64         `json:"time"`
+	Author    string        `json:"author"`
+	Text      string        `json:"text"`
+	Systems   []IntelSystem `json:"systems"`
+	Regions   []int         `json:"regions"`
+	Uploader  string        `json:"uploader"`
+	ChannelID string        `json:"channel_id"`
 }
 
 func NewIntelService(app *pocketbase.PocketBase) *IntelService {
-	return &IntelService{App: app}
+	return &IntelService{
+		App:             app,
+		ReportHashSlots: DefaultReportHashSlots,
+	}
+}
+
+func (s *IntelService) SetReportHashSlots(slots int) {
+	if slots < 1 {
+		s.ReportHashSlots = DefaultReportHashSlots
+		return
+	}
+	s.ReportHashSlots = slots
+}
+
+func (s *IntelService) reportHashSlots() int {
+	if s.ReportHashSlots < 1 {
+		return DefaultReportHashSlots
+	}
+	return s.ReportHashSlots
 }
 
 func (s *IntelService) GetOrCreateUploaderToken(userID string) (*core.Record, error) {
-	record, err := s.GetValidUploaderToken(userID)
-	if err == nil {
-		return record, nil
+	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionUploaderTokens)
+	if collErr != nil {
+		return nil, collErr
 	}
-	if err != ErrExpiredOrRevoked {
-		return nil, err
+	records, recordsErr := s.App.FindRecordsByFilter(
+		coll.Name,
+		"user = {:user}",
+		"-created_date",
+		1,
+		0,
+		map[string]any{"user": userID},
+	)
+	if recordsErr != nil {
+		return nil, recordsErr
 	}
-
-	return nil, ErrExpiredOrRevoked
+	if len(records) == 0 {
+		return s.regenerateUploaderToken(userID)
+	}
+	if records[0].GetBool("revoked") {
+		return nil, ErrExpiredOrRevoked
+	}
+	return records[0], nil
 }
 
 func (s *IntelService) GetValidUploaderToken(userID string) (*core.Record, error) {
@@ -213,40 +247,10 @@ func (s *IntelService) RevokeUploaderTokensForUser(userID string) error {
 	return nil
 }
 
-func (s *IntelService) UpdateUploader(userID string, status string) error {
+func (s *IntelService) UpdateUploader(userID string) error {
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionIntelUploaders)
 	if collErr != nil {
 		return collErr
-	}
-
-	if status == "stop" {
-		records, recordsErr := s.App.FindRecordsByFilter(coll.Name, "user = {:user}", "", 0, 0, map[string]any{"user": userID})
-		if recordsErr != nil {
-			return recordsErr
-		}
-		failed := 0
-		for _, rec := range records {
-			if deleteErr := s.App.Delete(rec); deleteErr != nil {
-				failed++
-				logging.New(s.App).
-					WithFields(logging.Fields{
-						"user_id":    userID,
-						"record_id":  rec.Id,
-						"collection": store.CollectionIntelUploaders,
-					}).
-					WithErr(deleteErr).
-					Debug("uploader delete failed")
-			}
-		}
-		if failed > 0 {
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"user_id": userID,
-					"failed":  failed,
-				}).
-				Warn("uploader delete failures")
-		}
-		return nil
 	}
 
 	records, recordsErr := s.App.FindRecordsByFilter(coll.Name, "user = {:user}", "", 1, 0, map[string]any{"user": userID})
@@ -299,6 +303,9 @@ func (s *IntelService) CreateReport(report IntelReport) error {
 	if report.Uploader != "" {
 		record.Set("uploader_user", report.Uploader)
 	}
+	if report.ChannelID != "" {
+		record.Set("channel", report.ChannelID)
+	}
 	return s.App.Save(record)
 }
 
@@ -322,14 +329,15 @@ func (s *IntelService) ListReports(limit int) ([]IntelReport, error) {
 	reports := make([]IntelReport, 0, len(records))
 	for _, rec := range records {
 		reports = append(reports, IntelReport{
-			ID:       int64(rec.GetInt("report_id")),
-			RecordID: rec.Id,
-			Time:     int64(rec.GetInt("report_time")),
-			Author:   rec.GetString("author"),
-			Text:     rec.GetString("text"),
-			Systems:  decodeSystems(rec.Get("systems")),
-			Regions:  toIntSlice(rec.Get("regions")),
-			Uploader: rec.GetString("uploader_user"),
+			ID:        int64(rec.GetInt("report_id")),
+			RecordID:  rec.Id,
+			Time:      int64(rec.GetInt("report_time")),
+			Author:    rec.GetString("author"),
+			Text:      rec.GetString("text"),
+			Systems:   decodeSystems(rec.Get("systems")),
+			Regions:   toIntSlice(rec.Get("regions")),
+			Uploader:  rec.GetString("uploader_user"),
+			ChannelID: rec.GetString("channel"),
 		})
 	}
 
@@ -349,7 +357,7 @@ func (s *IntelService) ShouldCreateReport(author string, text string, reportTime
 		return false, collErr
 	}
 
-	for i := 0; i < 20; i++ {
+	for i := 1; i <= s.reportHashSlots(); i++ {
 		records, recordsErr := s.App.FindRecordsByFilter(
 			coll.Name,
 			"hash = {:hash} && hash_index = {:idx}",

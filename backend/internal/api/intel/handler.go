@@ -22,10 +22,13 @@ type IntelHandler struct {
 }
 
 func NewIntelHandler(app *pocketbase.PocketBase, cfg config.Config) *IntelHandler {
+	service := intel.NewIntelService(app)
+	service.SetReportHashSlots(cfg.IntelReportHashSlots)
+
 	return &IntelHandler{
 		App:     app,
 		Config:  cfg,
-		Service: intel.NewIntelService(app),
+		Service: service,
 	}
 }
 
@@ -50,8 +53,8 @@ type intelBroadcast struct {
 	Version   string            `json:"version"`
 }
 type submitPayload struct {
-	Text   string `json:"text"`
-	Status string `json:"status"`
+	Text      string `json:"text"`
+	ChannelID string `json:"channel_id"`
 }
 
 func (h *IntelHandler) Submit(c *core.RequestEvent) error {
@@ -71,9 +74,13 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 		submitLog.Warn("intel submit missing uploader context")
 		return router.NewUnauthorizedError("Invalid uploader token.", nil)
 	}
-	_ = h.Service.UpdateUploader(userID, payload.Status)
+	_ = h.Service.UpdateUploader(userID)
 
 	if payload.Text != "" {
+		if payload.ChannelID == "" {
+			submitLog.Warn("intel submit missing channel")
+			return router.NewBadRequestError("Missing channel id.", nil)
+		}
 		parsed, parseErr := intel.ParseReportText(payload.Text)
 		if parseErr != nil {
 			submitLog.
@@ -116,25 +123,28 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 		if shouldCreate {
 			reportID := time.Now().UnixMilli()
 			report := intel.IntelReport{
-				ID:       reportID,
-				Time:     reportTime,
-				Author:   parsed.Author,
-				Text:     parsed.Text,
-				Systems:  systems,
-				Regions:  regions,
-				Uploader: userID,
+				ID:        reportID,
+				Time:      reportTime,
+				Author:    parsed.Author,
+				Text:      parsed.Text,
+				Systems:   systems,
+				Regions:   regions,
+				Uploader:  userID,
+				ChannelID: payload.ChannelID,
 			}
 			if createErr := h.Service.CreateReport(report); createErr != nil {
 				submitLog.
 					WithErr(createErr).
 					Error("intel submit create failed")
 				return router.NewInternalServerError("Failed to save report.", logging.Fields{
-					"author": parsed.Author,
+					"author":     parsed.Author,
+					"channel_id": payload.ChannelID,
 				})
 			}
 			submitLog.WithFields(logging.Fields{
 				"report_id":        reportID,
 				"uploader_user_id": userID,
+				"channel_id":       payload.ChannelID,
 				"systems":          len(systems),
 				"regions":          len(regions),
 			}).Info("intel report created")
@@ -228,13 +238,24 @@ func (h *IntelHandler) UploaderConfig(c *core.RequestEvent) error {
 		return router.NewInternalServerError("Failed to load channels.", nil)
 	}
 
-	channels := []string{}
+	channels := []uploaderChannel{}
 	for _, rec := range records {
-		channels = append(channels, rec.GetString("channel_name"))
+		name := rec.GetString("channel_name")
+		channels = append(channels, uploaderChannel{
+			ID:   rec.Id,
+			Name: name,
+		})
 	}
-	return c.JSON(http.StatusOK, uploaderConfigResponse{Channels: channels})
+	return c.JSON(http.StatusOK, uploaderConfigResponse{
+		Channels: channels,
+	})
 }
 
 type uploaderConfigResponse struct {
-	Channels []string `json:"channels"`
+	Channels []uploaderChannel `json:"channels"`
+}
+
+type uploaderChannel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }

@@ -49,7 +49,8 @@ type Config struct {
 	ESIProxyBaseURL  string `long:"esi-proxy-base-url" env:"ESI_PROXY_BASE_URL" default:"https://auth.pleaseignore.com/esi/"`
 	ESIUserAgent     string
 
-	DefaultMapRegions string `long:"default-map-regions" env:"DEFAULT_MAP_REGIONS" default:"10000029"`
+	DefaultMapRegions    string `long:"default-map-regions" env:"DEFAULT_MAP_REGIONS" default:"10000029"`
+	IntelReportHashSlots int    `long:"intel-report-hash-slots" env:"INTEL_REPORT_HASH_SLOTS" default:"20"`
 
 	FrontendDevProxy string `long:"dev-proxy" env:"DEV_PROXY"`
 	DebugEnabled     bool   `long:"dev" env:"DEBUG_ENABLED"`

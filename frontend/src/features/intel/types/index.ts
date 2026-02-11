@@ -4,6 +4,7 @@ export type IntelReport = {
   time: number;
   author: string;
   text: string;
+  channel_id?: string;
   systems: Array<{
     system: number;
     name: string;

@@ -4,6 +4,7 @@ import { pb } from "@/config/pb";
 import CharacterList from "@/components/CharacterList";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useUIStore } from "@/app/store/uiStore";
+import { useShallow } from "zustand/shallow";
 
 type Character = {
   record_id: string;
@@ -20,10 +21,11 @@ type Character = {
 };
 
 export default function Profile() {
-  const { standaloneAuth, authBackend } = useAppConfigStore((s) => ({
-    standaloneAuth: s.standaloneAuth,
-    authBackend: s.authBackend,
-  }));
+  const { standaloneAuth } = useAppConfigStore(
+    useShallow((s) => ({
+      standaloneAuth: s.standaloneAuth,
+    })),
+  );
   const setToast = useUIStore((s) => s.setToast);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);

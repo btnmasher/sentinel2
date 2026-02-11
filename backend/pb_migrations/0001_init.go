@@ -171,6 +171,11 @@ func init() {
 				CollectionId: users.Id,
 				MaxSelect:    1,
 			},
+			&core.RelationField{
+				Name:         "channel",
+				CollectionId: intelChannels.Id,
+				MaxSelect:    1,
+			},
 		)
 		if err := app.Save(intelReports); err != nil {
 			return err

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ESI_BASE } from "@/config/esi";
+import { pb } from "@/config/pb";
 import { useIntelStore } from "../store/intelStore";
 import { useMapStore } from "@/features/map";
 import PanelContainer from "@/components/PanelContainer";
@@ -17,6 +18,7 @@ export default function IntelPanel() {
   const systems = useMapStore((s) => s.systems);
   const regions = useMapStore((s) => s.regions);
   const [systemNames, setSystemNames] = useState<Record<number, string>>({});
+  const [channelNames, setChannelNames] = useState<Record<string, string>>({});
   const systemNamesRef = useRef(systemNames);
   const { panelOpen, filtersOpen, charactersOpen, feedOpen } = useSettingsStore(
     (s) => s.settings.intel,
@@ -74,6 +76,32 @@ export default function IntelPanel() {
     }
   }, [logFilters.system, systems]);
 
+  useEffect(() => {
+    let active = true;
+    pb.collection("intel_channels")
+      .getFullList({ sort: "channel_name" })
+      .then((records) => {
+        if (!active) return;
+        const next: Record<string, string> = {};
+        records.forEach((record) => {
+          if (!record.id) return;
+          const name = String(record.channel_name || "").trim();
+          if (name) {
+            next[record.id] = name;
+          }
+        });
+        setChannelNames(next);
+      })
+      .catch(() => {
+        if (active) {
+          setChannelNames({});
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const filteredLogs = useMemo(() => {
     const regionIds = new Set(
       Object.keys(regions).map((id) => parseInt(id, 10)),
@@ -130,6 +158,7 @@ export default function IntelPanel() {
         />
         <IntelFeedCard
           logs={filteredLogs}
+          channelNames={channelNames}
           open={feedOpen}
           onToggle={() => applySetting("intel", "feedOpen", !feedOpen)}
         />

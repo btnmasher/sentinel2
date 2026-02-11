@@ -13,6 +13,10 @@ export type Settings = {
     filtersOpen: boolean;
     charactersOpen: boolean;
     feedOpen: boolean;
+    flashEnabled: boolean;
+    flashSeconds: number;
+    fadeEnabled: boolean;
+    fadeSeconds: number;
   };
   map: {
     invertZoom: boolean;
@@ -45,6 +49,10 @@ const defaultSettings: Settings = {
     filtersOpen: true,
     charactersOpen: true,
     feedOpen: true,
+    flashEnabled: true,
+    flashSeconds: 15,
+    fadeEnabled: true,
+    fadeSeconds: 300,
   },
   map: {
     invertZoom: false,

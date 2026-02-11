@@ -1,5 +1,3 @@
-import { LOG_COLORS } from "@/utils/logColors";
-
 const COLOR_MAP: Record<string, string> = {
   "grey lighten-2": "#eeeeee",
   "yellow accent-1": "#fff9c4",
@@ -13,12 +11,32 @@ export function colorToHex(name: string) {
   return COLOR_MAP[name] || "#ffffff";
 }
 
-export function colorForAge(ageMinutes: number | undefined) {
-  if (ageMinutes === undefined) {
+export function colorForAge(
+  elapsedSeconds: number | undefined,
+  flashSeconds: number,
+  fadeSeconds: number,
+) {
+  if (elapsedSeconds === undefined) {
     return "#0274b8";
   }
-  const color = LOG_COLORS.find((c) => ageMinutes >= c.minutes);
-  return color ? color.color : "#0274b8";
+  const flash = Math.max(0, Math.floor(flashSeconds));
+  const fade = Math.max(0, Math.floor(fadeSeconds));
+  if (elapsedSeconds < flash) {
+    return "#d32f2f";
+  }
+  if (fade <= 0) {
+    return "#0274b8";
+  }
+  const phaseSeconds = elapsedSeconds - flash;
+  if (phaseSeconds >= fade) {
+    return "#0274b8";
+  }
+  const bucket = Math.max(1, fade / 4);
+
+  if (phaseSeconds < bucket) return "#d32f2f"; // red
+  if (phaseSeconds < bucket * 2) return "#f57c00"; // orange
+  if (phaseSeconds < bucket * 3) return "#ffeb3b"; // yellow
+  return "#66bb6a"; // green
 }
 
 export function hashString(str: string) {

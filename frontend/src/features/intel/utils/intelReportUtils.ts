@@ -30,6 +30,9 @@ export const normalizeIntelReport = (input: any): IntelReport | null => {
     time: reportTime,
     author: input?.author ?? "",
     text: input?.text ?? "",
+    channel_id:
+      input?.channel_id ??
+      (typeof input?.channel === "string" ? input.channel : undefined),
     systems: decodeArray(input?.systems),
     regions: decodeArray(input?.regions),
   };

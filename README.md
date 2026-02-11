@@ -187,6 +187,7 @@ Optional log settings:
 - `LOG_JSON=true` (write JSONL logs for app output)
 - `LOG_JSON_PATH=/path/to/backend.jsonl`
 - `LOG_JSON_PB=true` (experimental: also write PocketBase dev console logs to JSONL)
+- `INTEL_REPORT_HASH_SLOTS=20` (dedupe slots per report fingerprint)
 
 ## Docker
 The Docker build cross‑compiles uploader binaries and embeds them into the frontend build.

@@ -12,6 +12,8 @@ type IntelRecord = {
   text?: string;
   systems?: unknown;
   regions?: unknown;
+  channel?: string;
+  channel_id?: string;
   uploader_user?: string;
   id?: string;
 };
@@ -40,6 +42,10 @@ export default function useIntelRealtime() {
           api
             .get("/intel/reports", { headers: { "X-Auth-Check": "1" } })
             .then((res) => {
+              // Ignore stale initial fetch if reports were populated meanwhile (e.g. local debug seed).
+              if (useIntelStore.getState().reportsFetchedAt) {
+                return;
+              }
               const reports = Array.isArray(res.data.intel)
                 ? res.data.intel
                     .map((report: unknown) => normalizeIntelReport(report))

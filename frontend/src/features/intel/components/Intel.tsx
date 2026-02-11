@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useIntelStore } from "@/features/intel";
 import { IntelPanel } from "@/features/intel";
 import {
@@ -8,6 +9,7 @@ import {
   MapZoomControls,
   MapCanvas,
   RegionSelect,
+  useMapStore,
 } from "@/features/map";
 import NavbarSearch from "@/components/NavbarSearch";
 import { useUIStore } from "@/app/store/uiStore";
@@ -29,6 +31,185 @@ export default function Intel() {
   const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
   const intelPanelOpen = useSettingsStore((s) => s.settings.intel.panelOpen);
   const applySetting = useSettingsStore((s) => s.apply);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    type FakeIntelOptions = {
+      count?: number;
+      maxAgeMinutes?: number;
+      includeAdjacent?: boolean;
+      clearExisting?: boolean;
+      resetFilters?: boolean;
+    };
+
+    type DebugAPI = {
+      generateFakeIntelReports?: (options?: FakeIntelOptions) => {
+        created: number;
+        regions: number[];
+        adjacentRegion?: number;
+      };
+    };
+
+    const win = window as Window & { sentinelDebug?: DebugAPI };
+    const api = win.sentinelDebug ?? {};
+
+    const pickRandom = <T,>(items: T[]): T =>
+      items[Math.floor(Math.random() * items.length)];
+
+    const generateFakeIntelReports = (options?: FakeIntelOptions) => {
+      const count = Math.max(1, Math.min(500, options?.count ?? 40));
+      const maxAgeMinutes = Math.max(
+        0,
+        Math.min(120, options?.maxAgeMinutes ?? 14),
+      );
+      const includeAdjacent = options?.includeAdjacent ?? false;
+      const resetFilters = options?.resetFilters ?? true;
+
+      const mapState = useMapStore.getState();
+      const intelState = useIntelStore.getState();
+
+      const loadedRegions = new Set(
+        mapState.mapRegions
+          .map((value) => Number.parseInt(value, 10))
+          .filter((value) => Number.isFinite(value)),
+      );
+      if (loadedRegions.size === 0) {
+        const result = { created: 0, regions: [] };
+        console.warn(
+          "[sentinelDebug] no loaded regions; load at least one region first",
+          result,
+        );
+        return result;
+      }
+
+      const adjacent = new Set<number>();
+      for (const gate of mapState.gates) {
+        const fromLoaded = loadedRegions.has(gate.from_region);
+        const toLoaded = loadedRegions.has(gate.to_region);
+        if (fromLoaded && !toLoaded) {
+          adjacent.add(gate.to_region);
+        }
+        if (toLoaded && !fromLoaded) {
+          adjacent.add(gate.from_region);
+        }
+      }
+
+      let chosenAdjacent: number | undefined;
+      if (includeAdjacent && adjacent.size > 0) {
+        chosenAdjacent = pickRandom(Array.from(adjacent));
+      }
+
+      const regionScope = new Set(loadedRegions);
+      if (chosenAdjacent) {
+        regionScope.add(chosenAdjacent);
+      }
+
+      const scopedSystems = Object.values(mapState.systems).filter((system) =>
+        regionScope.has(system.region),
+      );
+      if (scopedSystems.length === 0) {
+        const result = {
+          created: 0,
+          regions: Array.from(regionScope),
+          adjacentRegion: chosenAdjacent,
+        };
+        console.warn(
+          "[sentinelDebug] no loaded systems for selected region scope",
+          result,
+        );
+        return result;
+      }
+
+      const authors = [
+        "Debug Scout",
+        "Fake FC",
+        "Synthetic Pilot",
+        "Layout Tester",
+        "QA Alt",
+      ];
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const batchID = Date.now();
+      const fakeReports: Array<{
+        id: number;
+        recordId: string;
+        time: number;
+        author: string;
+        text: string;
+        systems: Array<{
+          system: number;
+          name: string;
+          constellation: number;
+          region: number;
+        }>;
+        regions: number[];
+        channel_id: string;
+      }> = [];
+
+      for (let i = 0; i < count; i++) {
+        const picks = new Map<number, (typeof scopedSystems)[number]>();
+        while (picks.size < 1 && picks.size < scopedSystems.length) {
+          const candidate = pickRandom(scopedSystems);
+          picks.set(candidate.system, candidate);
+        }
+        const pickedSystems = Array.from(picks.values());
+        const pickedRegions = Array.from(
+          new Set(pickedSystems.map((s) => s.region)),
+        );
+        const ageSeconds = Math.floor(Math.random() * (maxAgeMinutes * 60 + 1));
+        const reportTime = nowSeconds - ageSeconds;
+        const lead = pickedSystems[0];
+        const suffix =
+          pickedSystems.length > 1 ? ` +${pickedSystems.length - 1}` : "";
+
+        fakeReports.push({
+          id: batchID + i,
+          recordId: `debug-${batchID}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+          time: reportTime,
+          author: pickRandom(authors),
+          text: `${lead.name} TEST contact${suffix}`,
+          systems: pickedSystems.map((system) => ({
+            system: system.system,
+            name: system.name,
+            constellation: system.constellation,
+            region: system.region,
+          })),
+          regions: pickedRegions,
+          channel_id: "debug",
+        });
+      }
+
+      const existingReports = options?.clearExisting ? [] : intelState.reports;
+      intelState.setReports([...fakeReports, ...existingReports]);
+      if (resetFilters) {
+        intelState.setLogFilters({
+          includeUnknownLogs: true,
+          includeUnloadedRegionsLogs: true,
+          system: [],
+        });
+      }
+
+      const result = {
+        created: fakeReports.length,
+        regions: Array.from(regionScope),
+        adjacentRegion: chosenAdjacent,
+      };
+      console.info("[sentinelDebug] generated fake intel reports", result);
+      return result;
+    };
+
+    api.generateFakeIntelReports = generateFakeIntelReports;
+    win.sentinelDebug = api;
+
+    return () => {
+      const current = win.sentinelDebug;
+      if (current?.generateFakeIntelReports === generateFakeIntelReports) {
+        delete current.generateFakeIntelReports;
+      }
+    };
+  }, []);
 
   const leftControls = (
     <>

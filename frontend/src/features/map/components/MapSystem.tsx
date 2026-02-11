@@ -17,6 +17,7 @@ export default function MapSystem({
   const jumpranges = useMapStore((s) => s.jumpranges);
   const setJumpranges = useMapStore((s) => s.setJumpranges);
   const mapSettings = useSettingsStore((s) => s.settings.map);
+  const intelSettings = useSettingsStore((s) => s.settings.intel);
   const characterLocations = useMapStore((s) => s.characterLocations);
   const characterInSpace = useMapStore((s) => s.characterInSpace);
   const visibleCharacterIds = useMapStore((s) => s.visibleCharacterIds);
@@ -30,7 +31,9 @@ export default function MapSystem({
   const lastIntelSystems = useIntelStore((s) => s.lastIntelSystems);
   const setContextMenu = useUIStore((s) => s.setContextMenu);
 
-  const [intelAge, setIntelAge] = useState<number | undefined>(undefined);
+  const [intelAgeSeconds, setIntelAgeSeconds] = useState<number | undefined>(
+    undefined,
+  );
   const timeoutRef = useRef<number | undefined>(undefined);
 
   const system = systems[systemId];
@@ -40,45 +43,77 @@ export default function MapSystem({
       window.clearTimeout(timeoutRef.current);
       timeoutRef.current = undefined;
     }
-    const age = lastIntelSystems[systemId];
-    if (age === undefined) {
-      setIntelAge(undefined);
+    const reportTime = lastIntelSystems[systemId];
+    if (reportTime === undefined) {
+      setIntelAgeSeconds(undefined);
       return;
     }
 
-    setIntelAge(age);
-    if (age >= 15) {
+    const flashSeconds = intelSettings.flashEnabled
+      ? Math.max(0, Math.floor(intelSettings.flashSeconds))
+      : 0;
+    const fadeSeconds = intelSettings.fadeEnabled
+      ? Math.max(0, Math.floor(intelSettings.fadeSeconds))
+      : 0;
+    const activeSeconds = flashSeconds + fadeSeconds;
+    const computeElapsed = () =>
+      Math.max(0, Math.floor(Date.now() / 1000) - reportTime);
+
+    const elapsed = computeElapsed();
+    setIntelAgeSeconds(elapsed);
+    if (activeSeconds <= 0 || elapsed >= activeSeconds) {
+      setIntelAgeSeconds(undefined);
       return;
     }
 
     const tick = () => {
-      setIntelAge((prev) => {
-        if (prev === undefined) return prev;
-        if (prev >= 15) return prev;
-        timeoutRef.current = window.setTimeout(tick, 60000);
-        return prev + 1;
-      });
+      const nextElapsed = computeElapsed();
+      if (nextElapsed >= activeSeconds) {
+        setIntelAgeSeconds(undefined);
+        timeoutRef.current = undefined;
+        return;
+      }
+      setIntelAgeSeconds(nextElapsed);
+      const delay = nextElapsed < flashSeconds ? 1000 : 15000;
+      timeoutRef.current = window.setTimeout(tick, delay);
     };
 
-    timeoutRef.current = window.setTimeout(tick, 60000);
+    timeoutRef.current = window.setTimeout(
+      tick,
+      elapsed < flashSeconds ? 1000 : 15000,
+    );
     return () => {
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = undefined;
       }
     };
-  }, [lastIntelSystems, systemId]);
+  }, [
+    intelSettings.fadeEnabled,
+    intelSettings.fadeSeconds,
+    intelSettings.flashEnabled,
+    intelSettings.flashSeconds,
+    lastIntelSystems,
+    systemId,
+  ]);
 
   if (!system) return null;
 
   const showSystem = mapSettings.alwaysShowSystems || mapScale > 0.4;
   const showSystemText = mapSettings.alwaysShowSystems || mapScale > 0.85;
   const opacity = jumpranges.enabled ? 1 : 0.65;
-  const systemFill = colorForAge(intelAge);
+  const systemFill = colorForAge(
+    intelAgeSeconds,
+    intelSettings.flashEnabled ? intelSettings.flashSeconds : 0,
+    intelSettings.fadeEnabled ? intelSettings.fadeSeconds : 0,
+  );
   const textColor = logFilters.system.includes(systemId)
     ? colorToHex("green lighten-1")
     : "rgba(255, 255, 255, 0.8)";
-  const alerting = intelAge !== undefined && intelAge < 5;
+  const alerting =
+    intelAgeSeconds !== undefined &&
+    intelSettings.flashEnabled &&
+    intelAgeSeconds < Math.max(0, Math.floor(intelSettings.flashSeconds));
   const locatedCharacters = characters
     .filter((char) => visibleCharacterIds.includes(char.id))
     .filter((char) => characterLocations[char.id] === systemId)

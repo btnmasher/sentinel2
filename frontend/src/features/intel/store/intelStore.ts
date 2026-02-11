@@ -21,6 +21,7 @@ type IntelState = {
   version: string;
   intelStatus: "connecting" | "connected" | "disconnected";
   logFilters: IntelFilters;
+  // Maps system_id -> latest report unix timestamp (seconds)
   lastIntelSystems: Record<number, number>;
   setReports: (reports: IntelReport[]) => void;
   pushReport: (report: IntelReport) => void;
@@ -33,17 +34,16 @@ type IntelState = {
 };
 
 const computeLastIntelSystems = (reports: IntelReport[]) => {
-  const now = Date.now();
-  const recent = reports
-    .map((log) => ({
-      ...log,
-      age: Math.floor((now - log.time * 1000) / 60000),
-    }))
-    .filter((log) => log.age < 15)
-    .sort((a, b) => b.age - a.age)
-    .flatMap((log) => log.systems.map((s) => [s.system, log.age] as const));
-
-  return Object.fromEntries(recent);
+  const latestBySystem: Record<number, number> = {};
+  for (const log of reports) {
+    for (const system of log.systems) {
+      const current = latestBySystem[system.system];
+      if (!current || log.time > current) {
+        latestBySystem[system.system] = log.time;
+      }
+    }
+  }
+  return latestBySystem;
 };
 
 const normalizeReports = (reports: IntelReport[], max = 100) => {
@@ -58,7 +58,10 @@ const normalizeReports = (reports: IntelReport[], max = 100) => {
     }
   }
   return Array.from(byId.values())
-    .sort((a, b) => b.time - a.time)
+    .sort((a, b) => {
+      if (b.time !== a.time) return b.time - a.time;
+      return b.id - a.id;
+    })
     .slice(0, max);
 };
 
@@ -103,7 +106,7 @@ export const useIntelStore = create<IntelState>()(
         set({
           reports: nextReports,
           lastReports: [report],
-          lastIntelSystems: computeLastIntelSystems([report]),
+          lastIntelSystems: computeLastIntelSystems(nextReports),
         });
       },
       setUploaders: (count) => set({ uploaders: count }),

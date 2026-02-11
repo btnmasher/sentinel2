@@ -17,6 +17,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"sentinel2/internal/esi"
+	"sentinel2/internal/intel"
 	"sentinel2/internal/oidc"
 	"sentinel2/internal/store"
 )
@@ -667,6 +668,9 @@ func (p *EVEProvider) findOrCreateUser(characterID int) (*core.Record, error) {
 	record.Set("access_level", "user")
 	if saveErr := p.App.Save(record); saveErr != nil {
 		return nil, saveErr
+	}
+	if _, tokenErr := intel.NewIntelService(p.App).GetOrCreateUploaderToken(record.Id); tokenErr != nil {
+		return nil, tokenErr
 	}
 	return record, nil
 }

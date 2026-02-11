@@ -13,6 +13,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
 
+	"sentinel2/internal/intel"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/oidc"
 	"sentinel2/internal/store"
@@ -327,6 +328,13 @@ func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 			WithErr(saveErr).
 			Warn("oidc user create failed")
 		return nil, saveErr
+	}
+	if _, tokenErr := intel.NewIntelService(p.App).GetOrCreateUploaderToken(record.Id); tokenErr != nil {
+		logging.New(p.App).
+			WithFields(logging.Fields{"user_id": record.Id}).
+			WithErr(tokenErr).
+			Warn("oidc uploader token seed failed")
+		return nil, tokenErr
 	}
 	return record, nil
 }

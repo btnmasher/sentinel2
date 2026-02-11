@@ -5,12 +5,18 @@ import { useUIStore } from "@/features/ui";
 import { LOG_COLORS } from "@/utils/logColors";
 
 function timeSuffix(minutes: number) {
-  if (minutes === 0) return "new";
+  if (minutes <= 0) return "now";
   if (minutes > 60) return `${Math.floor(minutes / 60)}h`;
   return `${minutes}m`;
 }
 
-export default function IntelPanelLog({ log }: { log: IntelReport }) {
+export default function IntelPanelLog({
+  log,
+  channelNames,
+}: {
+  log: IntelReport;
+  channelNames: Record<string, string>;
+}) {
   const systems = useMapStore((s) => s.systems);
   const mapRegions = useMapStore((s) => s.mapRegions);
   const updateMapConfig = useMapStore((s) => s.updateMapConfig);
@@ -20,7 +26,10 @@ export default function IntelPanelLog({ log }: { log: IntelReport }) {
   const [timePassed, setTimePassed] = useState(0);
 
   useEffect(() => {
-    const intelAge = Math.floor((Date.now() - log.time * 1000) / 60000);
+    const intelAge = Math.max(
+      0,
+      Math.floor((Date.now() - log.time * 1000) / 60000),
+    );
     setTimePassed(intelAge);
     const timer = setInterval(() => {
       setTimePassed((prev) => prev + 1);
@@ -62,6 +71,13 @@ export default function IntelPanelLog({ log }: { log: IntelReport }) {
     return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
   }, [log.time]);
 
+  const channelTooltip = useMemo(() => {
+    if (!log.channel_id) return "";
+    const channelName = channelNames[log.channel_id];
+    if (channelName) return `Channel: ${channelName}`;
+    return `Channel ID: ${log.channel_id}`;
+  }, [channelNames, log.channel_id]);
+
   const showMenu = (event: React.MouseEvent) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -99,6 +115,7 @@ export default function IntelPanelLog({ log }: { log: IntelReport }) {
     <article
       className="border border-slate-800 rounded-lg p-3 bg-base-300/40"
       onContextMenu={showMenu}
+      title={channelTooltip}
     >
       <div className="flex items-center justify-between text-xs text-slate-400">
         <span style={{ color: timeColor.color }}>{timeSuffix(timePassed)}</span>
@@ -111,11 +128,7 @@ export default function IntelPanelLog({ log }: { log: IntelReport }) {
           }
           if ("tooltip" in chunk) {
             return (
-              <span
-                key={idx}
-                className="tooltip tooltip-bottom text-amber-300"
-                data-tip={chunk.tooltip}
-              >
+              <span key={idx} className="text-amber-300" title={chunk.tooltip}>
                 {chunk.text}
               </span>
             );
@@ -131,8 +144,8 @@ export default function IntelPanelLog({ log }: { log: IntelReport }) {
             return (
               <button
                 key={idx}
-                className="tooltip tooltip-bottom text-fuchsia-300"
-                data-tip={`Click to load ${regionName}`}
+                className="text-fuchsia-300"
+                title={`Click to load ${regionName}`}
                 onClick={() =>
                   updateMapConfig({ mapRegions: [...mapRegions, regionId] })
                 }
