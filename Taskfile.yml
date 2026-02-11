@@ -58,6 +58,12 @@ tasks:
       - task: build:backend
     desc: Build uploader, frontend, and backend.
 
+  clean:
+    cmds:
+      - rm -rf bin dist frontend/dist backend/internal/web/dist uploader/dist .tmp/go-build-cache .tmp/golangci-lint-cache .tmp/bun .tmp/bun-install
+      - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
+    desc: Remove local build artifacts and tool caches.
+
   build:frontend:
     deps: [bun:ensure]
     cmds:
@@ -78,11 +84,11 @@ tasks:
       - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
       - rm -rf uploader/dist/*
       - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64 .
-      - zip -j frontend/public/downloads/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64
+      - zip -j frontend/public/downloads/sentinel2-uploader-linux.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64
       - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.exe .
-      - zip -j frontend/public/downloads/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.exe
+      - zip -j frontend/public/downloads/sentinel2-uploader-windows.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.exe
       - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64 .
-      - zip -j frontend/public/downloads/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64
+      - zip -j frontend/public/downloads/sentinel2-uploader-macos.zip uploader/dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64
     desc: Build uploader bundles.
 
   build:uploader:linux:
@@ -494,6 +500,36 @@ tasks:
       - cd backend && go mod download
     desc: Verify Go and Bun are installed.
 
+  completion:install:
+    cmds:
+      - |
+        set -euo pipefail
+        SHELL_NAME="${SHELL##*/}"
+        case "$SHELL_NAME" in
+          bash)
+            TARGET="$HOME/.local/share/bash-completion/completions/task"
+            mkdir -p "$(dirname "$TARGET")"
+            task --completion bash > "$TARGET"
+            ;;
+          zsh)
+            TARGET="$HOME/.local/share/zsh/site-functions/_task"
+            mkdir -p "$(dirname "$TARGET")"
+            task --completion zsh > "$TARGET"
+            ;;
+          fish)
+            TARGET="$HOME/.config/fish/completions/task.fish"
+            mkdir -p "$(dirname "$TARGET")"
+            task --completion fish > "$TARGET"
+            ;;
+          *)
+            echo "Unsupported shell '$SHELL_NAME'. Run one of: task --completion bash|zsh|fish|powershell" >&2
+            exit 1
+            ;;
+        esac
+        echo "Installed task completion for $SHELL_NAME at $TARGET"
+        echo "Restart your shell to load it."
+    desc: Install task shell completion for the current shell.
+
   bun:ensure:
     cmds:
       - mkdir -p "{{.BUN_TMPDIR_DEFAULT}}" "{{.BUN_INSTALL_DEFAULT}}"
@@ -531,5 +567,7 @@ tasks:
       - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-darwin-amd64" GOOS=darwin GOARCH=amd64 task build:backend
       - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" GOOS=windows GOARCH=amd64 task build:backend
       - cp bin/sentinel2-server* dist/
-      - cp frontend/public/downloads/*.zip dist/
+      - cp frontend/public/downloads/sentinel2-uploader-linux.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64.zip
+      - cp frontend/public/downloads/sentinel2-uploader-windows.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.zip
+      - cp frontend/public/downloads/sentinel2-uploader-macos.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64.zip
     desc: Build release assets (backend binaries + uploader zips).

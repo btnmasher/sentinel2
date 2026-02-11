@@ -134,6 +134,26 @@ Typical workflow:
 5. Use `task build` when you need embedded frontend + uploader bundles.
 6. Run `task lint` before opening a PR.
 7. Use `task migrate:create NAME=your_migration` when adding new migrations. The name is used in the migration filename; use `snake_case` (e.g., `add_intel_index`).
+8. Run `task completion:install` to install Task autocompletion for your current shell.
+
+Task autocompletion:
+```bash
+task completion:install
+```
+
+Manual fallback:
+```bash
+task --completion bash
+task --completion zsh
+task --completion fish
+task --completion powershell
+```
+
+Bash install example:
+```bash
+task --completion bash > ~/.local/share/bash-completion/completions/task
+```
+
 Optional dev tools:
 - `lnav` (optional) for `task dev:logs:view` and `task dev:logs:view:json`.
 - `golangci-lint` (required for `task lint:backend`).
@@ -253,6 +273,7 @@ Detached HEAD:
 | Command | What it does |
 | --- | --- |
 | `task build` | Build uploader + frontend + backend. |
+| `task clean` | Remove local build artifacts and tool caches. |
 | `task build:frontend` | Build frontend bundle. |
 | `task build:frontend:dev` | Build frontend without minification. |
 | `task build:backend` | Build backend with embedded frontend. |
@@ -281,6 +302,7 @@ Detached HEAD:
 | `task dev:logs:view:json` | Open JSON log file in lnav. |
 | `task dev:logs:clean` | Delete dev log folders older than KEEP_DAYS. |
 | `task setup` | Verify Go and Bun are installed. |
+| `task completion:install` | Install task shell completion for the current shell. |
 | `task migrate:create NAME=...` | Create a new PocketBase migration (use `snake_case`; name becomes part of the filename). |
 | `task go:toolchain:update` | Update module toolchain to latest Go (Go 1.21+). |
 | `task lint` | Run backend + frontend lint. |

@@ -12,7 +12,9 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-//go:embed dist/* dist/assets/*
+// Embed the full built frontend tree, including nested directories
+// like dist/downloads that contain uploader ZIP artifacts.
+//go:embed dist
 var frontendFS embed.FS
 
 func MountFrontend(r *router.Router[*core.RequestEvent]) {
