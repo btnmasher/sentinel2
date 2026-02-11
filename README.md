@@ -17,6 +17,7 @@ These docs capture the structure, conventions, and development practices for eac
 
 - [FRONTEND.md](FRONTEND.md)
 - [BACKEND.md](BACKEND.md)
+- [WINDOWS_DEVELOPMENT.md](WINDOWS_DEVELOPMENT.md)
 
 ## Key Capabilities
 - Realtime intel feed with filters and alarms.
@@ -37,7 +38,8 @@ These docs capture the structure, conventions, and development practices for eac
 
 ## Dependencies
 Install these once on a new machine:
-1. Go (required for backend builds and Taskfile install). Preferred: use the official installers from [go.dev/dl](https://go.dev/dl/) for macOS (`.pkg`) and Windows (`.msi`).
+1. Go (required for backend/uploader builds and Taskfile install).
+   Download: [go.dev/dl](https://go.dev/dl/)
 Linux (tarball install example):
 ```
 sudo rm -rf /usr/local/go
@@ -54,15 +56,11 @@ macOS/Linux:
 ```
 curl -fsSL https://bun.com/install | bash
 ```
-Windows (PowerShell):
-```
-powershell -c "irm bun.sh/install.ps1|iex"
-```
 4. `zip` CLI (required for `task build:uploader` and `task release:assets`).
 - Debian/Ubuntu: `sudo apt-get install zip`
 - Fedora/RHEL: `sudo dnf install zip`
 - macOS: preinstalled on most systems (or `brew install zip`)
-- Windows: use WSL/Git Bash/MSYS2 with Info-ZIP `zip` (or run release builds in CI)
+- Windows users: see [WINDOWS_DEVELOPMENT.md](WINDOWS_DEVELOPMENT.md).
 
 ## Environment (Backend)
 Minimum set (extend as needed):
@@ -168,12 +166,12 @@ Install lnav:
 - macOS: `brew install lnav`
 - Fedora/RHEL: `sudo dnf install lnav`
 - Debian/Ubuntu: `sudo apt-get install lnav`
-- Windows: use WSL to install `lnav` (recommended), or rely on the PocketBase Logs UI.
+- Windows: see [WINDOWS_DEVELOPMENT.md](WINDOWS_DEVELOPMENT.md).
 
 Install golangci-lint:
 - Recommended (binary install): `curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.9.0`
 - macOS (brew): `brew install golangci-lint`
-- Windows: `choco install golangci-lint` or `scoop install main/golangci-lint`
+- Windows: see [WINDOWS_DEVELOPMENT.md](WINDOWS_DEVELOPMENT.md).
 - Go install (not recommended by upstream): `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`
 Note: upstream recommends binary installs and discourages `go install` for golangci-lint.
 

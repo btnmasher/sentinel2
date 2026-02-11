@@ -550,7 +550,7 @@ tasks:
           SHELL_NAME="$(ps -p $$ -o comm= 2>/dev/null | awk -F/ '{print $NF}')"
         fi
         if [ -z "$SHELL_NAME" ]; then
-          echo "Could not detect current shell. Run one of: task --completion bash|zsh|fish|powershell" >&2
+          echo "Could not detect current shell. Run one of: task --completion bash|zsh|fish" >&2
           exit 1
         fi
         case "$SHELL_NAME" in
@@ -570,7 +570,7 @@ tasks:
             task --completion fish > "$TARGET"
             ;;
           *)
-            echo "Unsupported shell '$SHELL_NAME'. Run one of: task --completion bash|zsh|fish|powershell" >&2
+            echo "Unsupported shell '$SHELL_NAME'. Run one of: task --completion bash|zsh|fish" >&2
             exit 1
             ;;
         esac
