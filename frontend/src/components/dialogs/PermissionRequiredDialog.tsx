@@ -1,28 +1,18 @@
-import Modal from "./Modal";
-import { useUIStore } from "@/app/store/uiStore";
+import useModal from "@/app/hooks/useModal";
+import { useModalBody } from "@/components/dialogs/ModalBodyContext";
+import {
+  defineUIDialogModal,
+  UI_DIALOG,
+  useUIStore,
+} from "@/app/store/uiStore";
 
-export default function PermissionRequiredDialog() {
-  const dialogs = useUIStore((s) => s.dialogs);
-  const setDialog = useUIStore((s) => s.setDialog);
-
+function PermissionRequiredBody() {
+  const { close } = useModalBody();
   return (
-    <Modal
-      open={dialogs.permissionRequired}
-      title="New ESI Permissions Required"
-      onClose={() => setDialog("permissionRequired", false)}
-      actions={
-        <button
-          className="btn btn-sm btn-outline"
-          onClick={() => setDialog("permissionRequired", false)}
-        >
-          Close
-        </button>
-      }
-    >
+    <>
       <p>
-        Set route allows you to set the route destination in game. However,
-        this feature requires new ESI permissions for the character you
-        selected.
+        Set route allows you to set the route destination in game. However, this
+        feature requires new ESI permissions for the character you selected.
       </p>
       <p>
         If you have already set this, you may be seeing this message by mistake.
@@ -34,6 +24,26 @@ export default function PermissionRequiredDialog() {
       <p className="text-sky-300">
         https://forum.pleaseignore.com/topic/107471-esi-scopes-and-you-for-the-privacy-and-security-oriented/
       </p>
-    </Modal>
+      <div className="modal-action">
+        <button className="btn btn-sm btn-outline" onClick={() => close()}>
+          Close
+        </button>
+      </div>
+    </>
   );
+}
+
+export const AppModalPermissionRequired = defineUIDialogModal({
+  key: UI_DIALOG.PermissionRequired,
+  useOpen: () => useUIStore((s) => s.dialogs[UI_DIALOG.PermissionRequired]),
+  build: () => ({
+    title: "New ESI Permissions Required",
+    body: <PermissionRequiredBody />,
+  }),
+});
+
+export default function PermissionRequiredDialog() {
+  useModal(AppModalPermissionRequired);
+
+  return null;
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useUIStore } from "@/app/store/uiStore";
+import useConfirm from "@/app/hooks/useConfirm";
 import { useAdminMapDataStore } from "../store/adminMapDataStore";
 
 type ActionGroup = "map_data" | "characters" | "maintenance";
@@ -11,7 +11,7 @@ const GROUP_LABELS: Record<ActionGroup, string> = {
 };
 
 export default function JobActionsSection() {
-  const requestConfirm = useUIStore((s) => s.requestConfirm);
+  const requestConfirm = useConfirm();
   const loadingLabel = useAdminMapDataStore((s) => s.loadingLabel);
   const runAction = useAdminMapDataStore((s) => s.runAction);
   const [group, setGroup] = useState<ActionGroup>("map_data");
@@ -72,9 +72,7 @@ export default function JobActionsSection() {
           <select
             className="select select-xs bg-base-300/70"
             value={group}
-            onChange={(event) =>
-              setGroup(event.target.value as ActionGroup)
-            }
+            onChange={(event) => setGroup(event.target.value as ActionGroup)}
           >
             {Object.entries(GROUP_LABELS).map(([key, label]) => (
               <option key={key} value={key}>
@@ -91,9 +89,14 @@ export default function JobActionsSection() {
               className="btn btn-xs btn-info btn-outline"
               onClick={() => {
                 if (action.confirm) {
-                  requestConfirm(action.label, action.confirm, () =>
-                    runAction(action.label, action.path),
-                  );
+                  requestConfirm({
+                    title: action.label,
+                    body: action.confirm,
+                    onConfirm: () => runAction(action.label, action.path),
+                    confirmLabel: "Run",
+                    cancelLabel: "Cancel",
+                    tone: "default",
+                  });
                   return;
                 }
                 void runAction(action.label, action.path);

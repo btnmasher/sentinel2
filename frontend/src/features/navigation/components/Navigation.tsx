@@ -10,7 +10,8 @@ import {
 } from "@/features/map";
 import NavigationPanel from "./NavigationPanel";
 import { useNavigationStore } from "../store/navigationStore";
-import { useUIStore } from "@/app/store/uiStore";
+import { UI_DIALOG } from "@/app/store/uiStore";
+import { useAppModal } from "@/components/dialogs/AppModals";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import { ChevronDown, ChevronUp, Route } from "lucide-react";
 
@@ -19,7 +20,7 @@ export default function Navigation() {
 
   const route = useNavigationStore((s) => s.route);
 
-  const setDialog = useUIStore((s) => s.setDialog);
+  const { open: openHelpModal } = useAppModal(UI_DIALOG.Help);
   const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
 
   const leftControls = (
@@ -30,7 +31,7 @@ export default function Navigation() {
       <MapZoomControls />
       <button
         className="btn btn-xs btn-info btn-outline"
-        onClick={() => setDialog("help", true)}
+        onClick={openHelpModal}
       >
         Help
       </button>

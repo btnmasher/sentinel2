@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
+import useConfirm from "@/app/hooks/useConfirm";
 import PaginationControls from "@/components/PaginationControls";
-import { useUIStore } from "@/app/store/uiStore";
 import { useAdminJobRunsStore } from "../store/adminJobRunsStore";
 import type { DateRange } from "react-day-picker";
 import DateRangePicker from "@/components/DateRangePicker";
@@ -18,7 +18,7 @@ const formatDate = (value?: Date) => {
 };
 
 export default function JobRunsSection() {
-  const requestConfirm = useUIStore((s) => s.requestConfirm);
+  const requestConfirm = useConfirm();
   const {
     jobRuns,
     jobLoading,
@@ -170,11 +170,14 @@ export default function JobRunsSection() {
               jobRuns={jobRuns}
               now={now}
               onCancel={(jobId) =>
-                requestConfirm(
-                  "Cancel Job",
-                  `Cancel job ${jobId}?`,
-                  () => void cancelJob(jobId),
-                )
+                requestConfirm({
+                  title: "Cancel Job",
+                  body: `Cancel job ${jobId}?`,
+                  onConfirm: () => void cancelJob(jobId),
+                  confirmLabel: "Cancel job",
+                  cancelLabel: "Keep running",
+                  tone: "danger",
+                })
               }
             />
           )

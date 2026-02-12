@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
-import Modal from "./Modal";
-import { useUIStore } from "@/app/store/uiStore";
+import useModal from "@/app/hooks/useModal";
+import { useModalBody } from "@/components/dialogs/ModalBodyContext";
+import {
+  defineUIDialogModal,
+  UI_DIALOG,
+  useUIStore,
+} from "@/app/store/uiStore";
 import { useMapStore } from "@/features/map";
 import { useIntelStore } from "@/features/intel";
 
-export default function ShareLinkDialog() {
-  const dialogs = useUIStore((s) => s.dialogs);
-  const setDialog = useUIStore((s) => s.setDialog);
+function ShareLinkDialogBody() {
+  const { close } = useModalBody();
   const setToast = useUIStore((s) => s.setToast);
   const mapLayout = useMapStore((s) => s.mapLayout);
   const mapRegions = useMapStore((s) => s.mapRegions);
@@ -35,30 +39,13 @@ export default function ShareLinkDialog() {
     try {
       await navigator.clipboard.writeText(shareUrl);
       setToast({ text: "Link copied to clipboard" });
-    } catch (err) {
+    } catch {
       setToast({ text: "Unable to copy link", color: "error" });
     }
   };
 
   return (
-    <Modal
-      open={dialogs.shareLink}
-      title="Share map"
-      onClose={() => setDialog("shareLink", false)}
-      actions={
-        <>
-          <button className="btn btn-sm btn-outline" onClick={copyShareUrl}>
-            Copy
-          </button>
-          <button
-            className="btn btn-sm btn-outline"
-            onClick={() => setDialog("shareLink", false)}
-          >
-            Close
-          </button>
-        </>
-      }
-    >
+    <>
       <div>
         <label className="label text-xs">Sharable link</label>
         <input
@@ -112,6 +99,29 @@ export default function ShareLinkDialog() {
           Log filters
         </label>
       </div>
-    </Modal>
+      <div className="modal-action">
+        <button className="btn btn-sm btn-outline" onClick={copyShareUrl}>
+          Copy
+        </button>
+        <button className="btn btn-sm btn-outline" onClick={() => close()}>
+          Close
+        </button>
+      </div>
+    </>
   );
+}
+
+export const AppModalShareLink = defineUIDialogModal({
+  key: UI_DIALOG.ShareLink,
+  useOpen: () => useUIStore((s) => s.dialogs[UI_DIALOG.ShareLink]),
+  build: () => ({
+    title: "Share map",
+    body: <ShareLinkDialogBody />,
+  }),
+});
+
+export default function ShareLinkDialog() {
+  useModal(AppModalShareLink);
+
+  return null;
 }

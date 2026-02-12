@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+import useModal from "@/app/hooks/useModal";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import SelectionDropdown from "@/components/SelectionDropdown";
 
 const ALARM_SOUNDS = ["woop", "school", "grocery", "blip", "progod"];
 const DEFAULT_FLASH_SECONDS = 15;
 const DEFAULT_FADE_SECONDS = 300;
+const SETTINGS_MODAL = {
+  Reset: "reset",
+  ClearData: "clearData",
+} as const;
+type SettingsModalKey = (typeof SETTINGS_MODAL)[keyof typeof SETTINGS_MODAL];
 
 export default function Settings() {
   const { settings, toggle, apply, setTheme, reset } = useSettingsStore(
@@ -17,11 +23,20 @@ export default function Settings() {
       reset: s.reset,
     })),
   );
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmClearData, setConfirmClearData] = useState(false);
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const prevSoundRef = useRef(settings.alarm.sound);
   const prevVolumeRef = useRef(settings.alarm.volume);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
+  const setSettingsModal = (modal: SettingsModalKey, open: boolean) => {
+    if (modal === SETTINGS_MODAL.Reset) {
+      setShowResetConfirm(open);
+      if (open) setShowClearDataConfirm(false);
+      return;
+    }
+    setShowClearDataConfirm(open);
+    if (open) setShowResetConfirm(false);
+  };
 
   const themeOptions = useMemo(
     () => [
@@ -45,6 +60,55 @@ export default function Settings() {
     localStorage.clear();
     window.location.reload();
   };
+
+  useModal({
+    open: showResetConfirm,
+    modalKey: SETTINGS_MODAL.Reset,
+    setOpenByKey: setSettingsModal,
+    build: (close) => ({
+      title: "Are you sure?",
+      body: (
+        <div className="modal-action">
+          <button
+            className="btn btn-error btn-outline btn-sm"
+            onClick={resetSettings}
+          >
+            Yes
+          </button>
+          <button className="btn btn-sm btn-outline" onClick={() => close()}>
+            No
+          </button>
+        </div>
+      ),
+    }),
+  });
+
+  useModal({
+    open: showClearDataConfirm,
+    modalKey: SETTINGS_MODAL.ClearData,
+    setOpenByKey: setSettingsModal,
+    build: (close) => ({
+      title: "Clear saved data?",
+      body: (
+        <>
+          <p className="text-sm text-slate-400">
+            This clears all stored data in your browser for Sentinel.
+          </p>
+          <div className="modal-action">
+            <button
+              className="btn btn-error btn-outline btn-sm"
+              onClick={clearSavedData}
+            >
+              Yes
+            </button>
+            <button className="btn btn-sm btn-outline" onClick={() => close()}>
+              No
+            </button>
+          </div>
+        </>
+      ),
+    }),
+  });
 
   useEffect(() => {
     if (!settings.alarm.enabled) {
@@ -223,13 +287,13 @@ export default function Settings() {
             <div className="flex flex-wrap gap-2">
               <button
                 className="btn btn-error btn-outline btn-sm"
-                onClick={() => setConfirmReset(true)}
+                onClick={() => setSettingsModal(SETTINGS_MODAL.Reset, true)}
               >
                 Reset all saved settings
               </button>
               <button
                 className="btn btn-outline btn-sm"
-                onClick={() => setConfirmClearData(true)}
+                onClick={() => setSettingsModal(SETTINGS_MODAL.ClearData, true)}
               >
                 Clear browser saved data
               </button>
@@ -237,53 +301,6 @@ export default function Settings() {
           </div>
         </div>
       </div>
-
-      {confirmReset && (
-        <div className="modal modal-open">
-          <div className="modal-box bg-base-200 border border-slate-700">
-            <h3 className="font-display text-lg">Are you sure?</h3>
-            <div className="modal-action">
-              <button
-                className="btn btn-error btn-outline btn-sm"
-                onClick={resetSettings}
-              >
-                Yes
-              </button>
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => setConfirmReset(false)}
-              >
-                No
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmClearData && (
-        <div className="modal modal-open">
-          <div className="modal-box bg-base-200 border border-slate-700">
-            <h3 className="font-display text-lg">Clear saved data?</h3>
-            <p className="text-sm text-slate-400">
-              This clears all stored data in your browser for Sentinel.
-            </p>
-            <div className="modal-action">
-              <button
-                className="btn btn-error btn-outline btn-sm"
-                onClick={clearSavedData}
-              >
-                Yes
-              </button>
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => setConfirmClearData(false)}
-              >
-                No
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <audio ref={previewRef} src={`/audio/${settings.alarm.sound}.mp3`} />
     </div>

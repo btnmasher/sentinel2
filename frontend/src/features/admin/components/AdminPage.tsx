@@ -1,7 +1,3 @@
-import AccessLevelModal from "./AccessLevelModal";
-import MoveCharacterModal from "./MoveCharacterModal";
-import MergeAccountModal from "./MergeAccountModal";
-import AuditLogModal from "./AuditLogModal";
 import JobActionsSection from "./JobActionsSection";
 import JobRunsSection from "./JobRunsSection";
 import AdminLayout from "./AdminLayout";
@@ -47,18 +43,7 @@ export default function AdminPage() {
           </SectionErrorBoundary>
         </div>
       }
-      modals={
-        <>
-          {standaloneAuth ? (
-            <>
-              <AccessLevelModal />
-              <MoveCharacterModal />
-              <MergeAccountModal />
-            </>
-          ) : null}
-          <AuditLogModal />
-        </>
-      }
+      modals={null}
     />
   );
 }

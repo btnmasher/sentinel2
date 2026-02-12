@@ -12,7 +12,8 @@ import {
   useMapStore,
 } from "@/features/map";
 import NavbarSearch from "@/components/NavbarSearch";
-import { useUIStore } from "@/app/store/uiStore";
+import { UI_DIALOG } from "@/app/store/uiStore";
+import { useAppModal } from "@/components/dialogs/AppModals";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import IntelServerStatus from "./IntelServerStatus";
 import {
@@ -27,7 +28,8 @@ export default function Intel() {
   const reports = useIntelStore((state) => state.reports);
   const uploaders = useIntelStore((state) => state.uploaders);
   const version = useIntelStore((state) => state.version);
-  const setDialog = useUIStore((s) => s.setDialog);
+  const { open: openHelpModal } = useAppModal(UI_DIALOG.Help);
+  const { open: openShareLinkModal } = useAppModal(UI_DIALOG.ShareLink);
   const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
   const intelPanelOpen = useSettingsStore((s) => s.settings.intel.panelOpen);
   const applySetting = useSettingsStore((s) => s.apply);
@@ -220,13 +222,13 @@ export default function Intel() {
       <MapZoomControls />
       <button
         className="btn btn-xs btn-info btn-outline"
-        onClick={() => setDialog("shareLink", true)}
+        onClick={openShareLinkModal}
       >
         Share
       </button>
       <button
         className="btn btn-xs btn-info btn-outline"
-        onClick={() => setDialog("help", true)}
+        onClick={openHelpModal}
       >
         Help
       </button>

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/config/api";
 import { useUIStore } from "@/app/store/uiStore";
-import { useAdminStore } from "./adminStore";
+import { ADMIN_MODAL, useAdminStore } from "./adminStore";
 import type { Character, SearchResult } from "../types";
 import { hasSearchMain } from "../utils/formatters";
 
@@ -49,10 +49,10 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
     const { requestConfirm, setToast } = useUIStore.getState();
     const { selectedUser, loadUser } = useAdminStore.getState();
     if (!selectedUser) return;
-    requestConfirm(
-      "Revoke Sessions",
-      "Revoke all active sessions for this user?",
-      async () => {
+    requestConfirm({
+      title: "Revoke Sessions",
+      body: "Revoke all active sessions for this user?",
+      onConfirm: async () => {
         try {
           await api.post(
             `/admin/users/${selectedUser.user_id}/revoke-sessions`,
@@ -66,16 +66,19 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           });
         }
       },
-    );
+      confirmLabel: "Revoke",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
   },
   revokeUploadTokens: () => {
     const { requestConfirm, setToast } = useUIStore.getState();
     const { selectedUser, loadUser } = useAdminStore.getState();
     if (!selectedUser) return;
-    requestConfirm(
-      "Revoke Uploader Tokens",
-      "Revoke all uploader tokens for this user?",
-      async () => {
+    requestConfirm({
+      title: "Revoke Uploader Tokens",
+      body: "Revoke all uploader tokens for this user?",
+      onConfirm: async () => {
         try {
           await api.post(
             `/admin/users/${selectedUser.user_id}/revoke-upload-tokens`,
@@ -89,16 +92,19 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           });
         }
       },
-    );
+      confirmLabel: "Revoke",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
   },
   regenerateUploadToken: () => {
     const { requestConfirm, setToast } = useUIStore.getState();
     const { selectedUser, loadUser } = useAdminStore.getState();
     if (!selectedUser) return;
-    requestConfirm(
-      "Regenerate Uploader Token",
-      "Generate a new uploader token for this user?",
-      async () => {
+    requestConfirm({
+      title: "Regenerate Uploader Token",
+      body: "Generate a new uploader token for this user?",
+      onConfirm: async () => {
         try {
           await api.post(
             `/admin/users/${selectedUser.user_id}/regenerate-upload-token`,
@@ -113,7 +119,10 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           });
         }
       },
-    );
+      confirmLabel: "Regenerate",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
   },
   updateAccessLevel: async (level) => {
     const { setToast } = useUIStore.getState();
@@ -125,7 +134,7 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
       });
       await loadUser(selectedUser.user_id);
       setToast({ text: "Access level updated", color: "info" });
-      setModal("access", false);
+      setModal(ADMIN_MODAL.Access, false);
     } catch (error: any) {
       setToast({
         text: error?.response?.data || "Failed to update access level",
@@ -137,10 +146,10 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
     const { requestConfirm, setToast } = useUIStore.getState();
     const { selectedUser, loadUser } = useAdminStore.getState();
     if (!selectedUser) return;
-    requestConfirm(
-      "Set Main Character",
-      `Set ${character.name} as main?`,
-      async () => {
+    requestConfirm({
+      title: "Set Main Character",
+      body: `Set ${character.name} as main?`,
+      onConfirm: async () => {
         try {
           await api.post(`/admin/users/${selectedUser.user_id}/main`, {
             character_record_id: character.id,
@@ -154,7 +163,10 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           });
         }
       },
-    );
+      confirmLabel: "Set main",
+      cancelLabel: "Cancel",
+      tone: "default",
+    });
   },
   refreshCharacter: async (character) => {
     const { setToast } = useUIStore.getState();
@@ -178,10 +190,10 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
   revokeCharacter: (character) => {
     const { requestConfirm, setToast } = useUIStore.getState();
     const { selectedUser, loadUser } = useAdminStore.getState();
-    requestConfirm(
-      "Revoke Character Keys",
-      `Revoke ESI keys for ${character.name}?`,
-      async () => {
+    requestConfirm({
+      title: "Revoke Character Keys",
+      body: `Revoke ESI keys for ${character.name}?`,
+      onConfirm: async () => {
         try {
           await api.post(`/admin/characters/${character.id}/revoke`);
           if (selectedUser) {
@@ -195,7 +207,10 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           });
         }
       },
-    );
+      confirmLabel: "Revoke",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
   },
   removeCharacter: (character) => {
     const { requestConfirm, setToast } = useUIStore.getState();
@@ -211,19 +226,26 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
     const summary = `Remove ${character.name}? ${
       character.is_main ? "This will delete the account." : ""
     }`;
-    requestConfirm("Remove Character", summary, async () => {
-      try {
-        await api.delete(`/admin/characters/${character.id}`);
-        if (selectedUser) {
-          await loadUser(selectedUser.user_id);
+    requestConfirm({
+      title: "Remove Character",
+      body: summary,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/admin/characters/${character.id}`);
+          if (selectedUser) {
+            await loadUser(selectedUser.user_id);
+          }
+          setToast({ text: "Character removed", color: "info" });
+        } catch (error: any) {
+          setToast({
+            text: error?.response?.data || "Failed to remove character",
+            color: "error",
+          });
         }
-        setToast({ text: "Character removed", color: "info" });
-      } catch (error: any) {
-        setToast({
-          text: error?.response?.data || "Failed to remove character",
-          color: "error",
-        });
-      }
+      },
+      confirmLabel: "Remove",
+      cancelLabel: "Cancel",
+      tone: "danger",
     });
   },
   mergeUser: async (target) => {
@@ -265,20 +287,27 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
       sourceMain?.name || "source account"
     } into ${targetMain}? Characters: ${preview}. Source account will be deleted if empty.`;
 
-    requestConfirm("Merge Accounts", summary, async () => {
-      try {
-        await api.post(`/admin/users/${selectedUser.user_id}/merge`, {
-          target_user_id: target.user_id,
-        });
-        clearUser();
-        setModal("merge", false);
-        setToast({ text: "Accounts merged", color: "info" });
-      } catch (error: any) {
-        setToast({
-          text: error?.response?.data || "Failed to merge account",
-          color: "error",
-        });
-      }
+    requestConfirm({
+      title: "Merge Accounts",
+      body: summary,
+      onConfirm: async () => {
+        try {
+          await api.post(`/admin/users/${selectedUser.user_id}/merge`, {
+            target_user_id: target.user_id,
+          });
+          clearUser();
+          setModal(ADMIN_MODAL.Merge, false);
+          setToast({ text: "Accounts merged", color: "info" });
+        } catch (error: any) {
+          setToast({
+            text: error?.response?.data || "Failed to merge account",
+            color: "error",
+          });
+        }
+      },
+      confirmLabel: "Merge",
+      cancelLabel: "Cancel",
+      tone: "danger",
     });
   },
   moveCharacter: async (characterId, target) => {
@@ -314,20 +343,27 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
     }
 
     const summary = `Move ${character.name} to ${targetMain}? It will be demoted to non-main.`;
-    requestConfirm("Move Character", summary, async () => {
-      try {
-        await api.post(`/admin/characters/${character.id}/move`, {
-          target_user_id: target.user_id,
-        });
-        await loadUser(selectedUser.user_id);
-        setToast({ text: "Character moved", color: "info" });
-        setModal("move", false);
-      } catch (error: any) {
-        setToast({
-          text: error?.response?.data || "Failed to move character",
-          color: "error",
-        });
-      }
+    requestConfirm({
+      title: "Move Character",
+      body: summary,
+      onConfirm: async () => {
+        try {
+          await api.post(`/admin/characters/${character.id}/move`, {
+            target_user_id: target.user_id,
+          });
+          await loadUser(selectedUser.user_id);
+          setToast({ text: "Character moved", color: "info" });
+          setModal(ADMIN_MODAL.Move, false);
+        } catch (error: any) {
+          setToast({
+            text: error?.response?.data || "Failed to move character",
+            color: "error",
+          });
+        }
+      },
+      confirmLabel: "Move",
+      cancelLabel: "Cancel",
+      tone: "default",
     });
   },
 }));

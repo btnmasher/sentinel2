@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import { useIntelStore } from "@/features/intel";
 import { useMapStore } from "@/features/map";
 import { useSettingsStore } from "@/app/store/settingsStore";
-import { useUIStore } from "@/app/store/uiStore";
+import { UI_DIALOG } from "@/app/store/uiStore";
+import { useAppModal } from "@/components/dialogs/AppModals";
 
 export default function IntelAlarm() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -12,7 +13,7 @@ export default function IntelAlarm() {
   const intelStatus = useIntelStore((s) => s.intelStatus);
   const regions = useMapStore((s) => s.regions);
   const settings = useSettingsStore((s) => s.settings);
-  const setDialog = useUIStore((s) => s.setDialog);
+  const { open: openAlarmStartModal } = useAppModal(UI_DIALOG.AlarmStart);
 
   const play = (overrideVolume?: number) => {
     if (!settings.alarm.enabled) return;
@@ -27,7 +28,7 @@ export default function IntelAlarm() {
     if (result && result.catch) {
       result.catch(() => {
         if (!settings.introduction) {
-          setDialog("alarmStart", true);
+          openAlarmStartModal();
         }
       });
     }

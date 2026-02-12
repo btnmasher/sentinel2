@@ -65,13 +65,142 @@ export default function IntelPage() {
 - **Map rendering:** `features/map/components` owns map rendering, context menus, and overlays.
 - **Dialogs:** All app dialogs live in `src/components/dialogs` and are mounted in `MainLayout`.
 
-## 6. Style Guide (Frontend)
+## 6. Modal Framework
+Sentinel uses one global modal host with domain-owned modal definitions.
+
+### Core pieces
+- `src/components/dialogs/Modal.tsx`: presentational modal shell.
+- `src/components/GlobalModalHost.tsx`: single renderer mounted in `MainLayout`.
+- `src/app/hooks/useModal.ts`: modal lifecycle hook.
+- `src/components/dialogs/ModalBodyContext.tsx`: `useModalBody()` helper for modal body close behavior.
+- `src/app/store/modalRegistry.ts`: registry helper for keyed modal state/actions/definitions.
+
+### Standard pattern
+1. Define centralized modal keys per domain (`DOMAIN_MODAL` constant object).
+2. Create a domain modal registry with `createModalRegistry(...)`.
+3. Expose `defineDomainModal = registry.defineForStore(store)`.
+4. Define each modal once (`key`, `useOpen`, `build`).
+5. Export a key-based opener helper (`useDomainModal(key)`).
+6. Open with key constants only:
+`const { open } = useDomainModal(DOMAIN_MODAL.Merge)`.
+
+### Store + definition example
+```tsx
+const FEATURE_MODAL = {
+  Merge: "merge",
+  Move: "move",
+} as const;
+
+const registry = createModalRegistry([FEATURE_MODAL.Merge, FEATURE_MODAL.Move] as const);
+
+export const useFeatureStore = create<FeatureState>((set) => ({
+  modals: registry.initial(),
+  ...registry.actions<FeatureState>(set),
+}));
+
+export const defineFeatureModal = registry.defineForStore(useFeatureStore);
+
+export const FeatureModalMerge = defineFeatureModal({
+  key: FEATURE_MODAL.Merge,
+  useOpen: () => useFeatureStore((s) => s.modals[FEATURE_MODAL.Merge]),
+  build: () => ({
+    title: "Merge",
+    body: <MergeBody />,
+  }),
+});
+```
+
+### Local state-owned modal example
+For modals owned by component-local state (not a domain store), still use a local key constant and `modalKey`/`setOpenByKey`:
+```tsx
+const SETTINGS_MODAL = { Reset: "reset" } as const;
+type SettingsModalKey = (typeof SETTINGS_MODAL)[keyof typeof SETTINGS_MODAL];
+
+const [showReset, setShowReset] = useState(false);
+const setSettingsModal = (_key: SettingsModalKey, open: boolean) => {
+  setShowReset(open);
+};
+
+useModal({
+  open: showReset,
+  modalKey: SETTINGS_MODAL.Reset,
+  setOpenByKey: setSettingsModal,
+  build: (close) => ({ title: "Reset", body: <button onClick={close}>Close</button> }),
+});
+```
+
+### Confirm utility example (`requestConfirm`)
+For simple “Are you sure?” flows, use the UI store helper instead of creating a one-off modal:
+```tsx
+import useConfirm from "@/app/hooks/useConfirm";
+
+function ClearButton() {
+  const requestConfirm = useConfirm();
+
+  const onClear = () => {
+    requestConfirm({
+      title: "Clear jumpbridges?",
+      body: "This will remove all jumpbridge pairings.",
+      onConfirm: async () => {
+        await api.post("/staff/jumpbridges/clear");
+      },
+      confirmLabel: "Clear",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
+  };
+
+  return <button onClick={onClear}>Clear</button>;
+}
+```
+
+Behavior:
+- `requestConfirm({...})` stores the config and opens the confirm modal.
+- `Cancel` closes the modal and clears confirm state.
+- `Confirm` clears confirm state, closes the modal, then runs the stored action.
+
+### Body close behavior
+Use `useModalBody()` inside modal body components:
+```tsx
+function MergeBody() {
+  const { close } = useModalBody();
+  return <button onClick={() => close("button")}>Close</button>;
+}
+```
+
+### Dismiss lifecycle
+`useModal(...)` supports:
+- `beforeDismiss(reason)`: can block close by returning `false`.
+- `afterDismiss(reason)`: post-dismiss side effects.
+
+Dismiss reasons:
+- `"button"`
+- `"escape"`
+- `"overlay"`
+- `"programmatic"`
+
+### Options (`ModalConfig`)
+- `title?: string`
+- `body: ReactNode` (required)
+- `sizeClass?: string`
+- `dismissible?: boolean` (default `true`)
+- `closeOnOverlay?: boolean` (default `false`)
+- `closeDisabled?: boolean` (default `false`)
+- `onClose?: (reason) => boolean | void | Promise<boolean | void>` (optional addendum callback)
+
+### Rules
+- Prefer `useModal(ModalDefinition)` for domain modals.
+- Avoid string literal keys in callers; use domain key constants (`DOMAIN_MODAL.*`, `UI_DIALOG.*`, etc.).
+- For local-state modals, still define a local key constant and use `modalKey` + `setOpenByKey`.
+- Do not render `<Modal>` directly in feature components.
+
+## 7. Style Guide (Frontend)
 - **Tailwind + daisyUI:** Use utility-first classes; prefer daisyUI tokens for consistent theming.
 - **Custom styles:** Use `src/styles.css` for app-wide classes and overrides (map styles, context menu styles).
 - **Typography:** Headings use `font-display` (Space Grotesk). Body text uses `font-body` (Inter).
 - **UI feedback:** Use `Toast` for user-visible errors; include `meta` for request context when possible.
 
-## 7. PocketBase Frontend Primer
+## 8. PocketBase Frontend Primer
 PocketBase is the frontend’s realtime datastore and auth session source. We use the JS SDK for collection reads/writes and subscriptions, while custom API endpoints go through `src/config/api.ts`.
 
 ### When to use PocketBase vs REST
@@ -172,7 +301,7 @@ If an operation fails with `403`, confirm collection rules in `pb_migrations` or
 - [PocketBase Realtime](https://pocketbase.io/docs/js-realtime)
 - [PocketBase Auth Store](https://pocketbase.io/docs/js-authentication)
 
-## 8. TypeScript Config (tsconfig.json)
+## 9. TypeScript Config (tsconfig.json)
 Highlights:
 - Builds for modern evergreen browsers with DOM typings.
 - Bundler‑style module resolution aligned with Vite.
@@ -182,7 +311,7 @@ Highlights:
 - Strict type checking enabled.
 - Skips third‑party type checks for faster builds.
 
-## 9. Linting (Frontend)
+## 10. Linting (Frontend)
 Run via lint script:
 ```bash
 task lint:frontend

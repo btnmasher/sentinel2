@@ -1,8 +1,8 @@
-import { useUIStore } from "@/app/store/uiStore";
+import useConfirm from "@/app/hooks/useConfirm";
 import { useAdminMapDataStore } from "../store/adminMapDataStore";
 
 export default function MapDataSection() {
-  const requestConfirm = useUIStore((s) => s.requestConfirm);
+  const requestConfirm = useConfirm();
   const loadingLabel = useAdminMapDataStore((s) => s.loadingLabel);
   const runAction = useAdminMapDataStore((s) => s.runAction);
 
@@ -18,11 +18,15 @@ export default function MapDataSection() {
           <button
             className="btn btn-xs btn-success btn-outline"
             onClick={() =>
-              requestConfirm(
-                "Run Map Data Update",
-                "Start the full map data update?",
-                () => runAction("Full update", "/admin/map-data/run"),
-              )
+              requestConfirm({
+                title: "Run Map Data Update",
+                body: "Start the full map data update?",
+                onConfirm: () =>
+                  runAction("Full update", "/admin/map-data/run"),
+                confirmLabel: "Run update",
+                cancelLabel: "Cancel",
+                tone: "default",
+              })
             }
             disabled={loadingLabel !== null}
           >

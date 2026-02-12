@@ -5,7 +5,7 @@ import { pb } from "@/config/pb";
 import { ESI_BASE, ESI_PERMISSION_REQUIRED } from "@/config/esi";
 import { useAuthStore } from "@/app/store/authStore";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
-import { useUIStore } from "@/app/store/uiStore";
+import { UI_DIALOG, useUIStore } from "@/app/store/uiStore";
 import { ensurePersistReset } from "@/app/store/persistReset";
 import type {
   Character,
@@ -106,7 +106,7 @@ const handleRouteError = (error: any) => {
     useUIStore
       .getState()
       .setToast({ text: "Error setting route", color: "error" });
-    useUIStore.getState().setDialog("permissionRequired", true);
+    useUIStore.getState().setModal(UI_DIALOG.PermissionRequired, true);
     return;
   }
   showRouteError(response?.data || "Error finding route, try again");

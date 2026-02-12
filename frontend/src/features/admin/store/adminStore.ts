@@ -1,8 +1,24 @@
 import { create } from "zustand";
 import { api } from "@/config/api";
 import type { UserDetails } from "../types";
+import { createModalRegistry } from "@/app/store/modalRegistry";
 
-type AdminModalKey = "merge" | "move" | "audit" | "access";
+export const ADMIN_MODAL = {
+  Merge: "merge",
+  Move: "move",
+  Audit: "audit",
+  Access: "access",
+} as const;
+
+export const ADMIN_MODAL_KEYS = [
+  ADMIN_MODAL.Merge,
+  ADMIN_MODAL.Move,
+  ADMIN_MODAL.Audit,
+  ADMIN_MODAL.Access,
+] as const;
+export type AdminModalKey = (typeof ADMIN_MODAL_KEYS)[number];
+export const adminModalRegistry =
+  createModalRegistry<AdminModalKey>(ADMIN_MODAL_KEYS);
 
 type AdminState = {
   selectedUser: UserDetails | null;
@@ -11,26 +27,19 @@ type AdminState = {
   clearUser: () => void;
   loadUser: (userId: string) => Promise<UserDetails>;
   setModal: (modal: AdminModalKey, open: boolean) => void;
+  openModalKey: (modal: AdminModalKey) => void;
+  closeModalKey: (modal: AdminModalKey) => void;
+  resetModals: () => void;
 };
 
 export const useAdminStore = create<AdminState>((set) => ({
   selectedUser: null,
-  modals: {
-    merge: false,
-    move: false,
-    audit: false,
-    access: false,
-  },
+  modals: adminModalRegistry.initial(),
   setSelectedUser: (user) => set({ selectedUser: user }),
   clearUser: () =>
     set({
       selectedUser: null,
-      modals: {
-        merge: false,
-        move: false,
-        audit: false,
-        access: false,
-      },
+      modals: adminModalRegistry.initial(),
     }),
   loadUser: async (userId) => {
     const res = await api.get(`/admin/users/${userId}`);
@@ -38,11 +47,8 @@ export const useAdminStore = create<AdminState>((set) => ({
     set({ selectedUser: user });
     return user;
   },
-  setModal: (modal, open) =>
-    set((state) => ({
-      modals: {
-        ...state.modals,
-        [modal]: open,
-      },
-    })),
+  ...adminModalRegistry.actions<AdminState>(set),
 }));
+
+export const defineAdminModal =
+  adminModalRegistry.defineForStore(useAdminStore);

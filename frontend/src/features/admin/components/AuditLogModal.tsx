@@ -1,16 +1,20 @@
 import { useEffect } from "react";
 import { useShallow } from "zustand/shallow";
+import useModal from "@/app/hooks/useModal";
+import { useModalBody } from "@/components/dialogs/ModalBodyContext";
 import PaginationControls from "@/components/PaginationControls";
 import SelectionDropdown from "@/components/SelectionDropdown";
 import { useAdminAuditStore } from "../store/adminAuditStore";
-import { useAdminStore } from "../store/adminStore";
+import {
+  ADMIN_MODAL,
+  defineAdminModal,
+  useAdminStore,
+} from "../store/adminStore";
 import { formatDateTime } from "../utils/formatters";
 
-export default function AuditLogModal() {
-  const open = useAdminStore((s) => s.modals.audit);
+function AuditLogModalBody() {
+  const { close } = useModalBody();
   const userId = useAdminStore((s) => s.selectedUser?.user_id ?? null);
-  const setModal = useAdminStore((s) => s.setModal);
-
   const {
     entries,
     loading,
@@ -23,7 +27,6 @@ export default function AuditLogModal() {
     setActor,
     setSummary,
     setPage,
-    clear,
     fetchAudit,
   } = useAdminAuditStore(
     useShallow((s) => ({
@@ -38,7 +41,6 @@ export default function AuditLogModal() {
       setActor: s.setActor,
       setSummary: s.setSummary,
       setPage: s.setPage,
-      clear: s.clear,
       fetchAudit: s.fetchAudit,
     })),
   );
@@ -58,119 +60,134 @@ export default function AuditLogModal() {
   ];
 
   useEffect(() => {
-    if (!open || !userId) {
+    if (!userId) {
       clear();
       return;
     }
     setPage(1);
     void fetchAudit(userId, 1);
-  }, [clear, fetchAudit, open, setPage, userId]);
+    return () => clear();
+  }, [clear, fetchAudit, setPage, userId]);
 
-  if (!open || !userId) return null;
+  if (!userId) return null;
 
   return (
-    <div className="modal modal-open">
-      <div className="modal-box bg-base-200 border border-slate-700 max-w-2xl">
-        <h3 className="font-display text-lg mb-3">Activity Log</h3>
-        <div className="text-sm text-slate-300 space-y-3">
-          <div className="grid gap-2 text-xs">
-            <SelectionDropdown
-              items={actionOptions}
-              selected={[action]}
-              onChange={(next) => setAction(next[0] ?? "all")}
-              label="Action filter"
-              buttonClassName="w-full"
-            />
-            <input
-              className="input input-xs input-bordered bg-base-300"
-              placeholder="Filter actor"
-              value={actor}
-              onChange={(e) => setActor(e.target.value)}
-            />
-            <input
-              className="input input-xs input-bordered bg-base-300"
-              placeholder="Filter summary"
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <button
-                className="btn btn-xs btn-outline"
-                onClick={() => {
-                  setPage(1);
-                  void fetchAudit(userId, 1, { action, actor, summary });
-                }}
-              >
-                Apply
-              </button>
-              <button
-                className="btn btn-xs btn-outline"
-                onClick={() => {
-                  setAction("all");
-                  setActor("");
-                  setSummary("");
-                  setPage(1);
-                  void fetchAudit(userId, 1, {
-                    action: "all",
-                    actor: "",
-                    summary: "",
-                  });
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-          {loading ? (
-            <p className="text-xs text-slate-400">Loading activity…</p>
-          ) : entries.length === 0 ? (
-            <p className="text-xs text-slate-400">No activity recorded.</p>
-          ) : (
-            <ul className="space-y-2 text-xs">
-              {entries.map((entry) => (
-                <li
-                  key={entry.id}
-                  className="border border-slate-800/70 rounded-lg px-3 py-2"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-semibold">{entry.action}</span>
-                    <span className="text-slate-400">
-                      {formatDateTime(entry.created)}
-                    </span>
-                  </div>
-                  <p className="text-slate-300">{entry.summary}</p>
-                  <div className="text-slate-500 mt-1">
-                    {entry.actor_display_name || entry.actor_id}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {(page > 1 || hasMore) && (
-            <PaginationControls
-              page={page}
-              hasMore={hasMore}
-              loading={loading}
-              onPrev={() => {
-                const nextPage = Math.max(1, page - 1);
-                setPage(nextPage);
-                void fetchAudit(userId, nextPage);
-              }}
-              onNext={() => {
-                const nextPage = page + 1;
-                setPage(nextPage);
-                void fetchAudit(userId, nextPage);
-              }}
-            />
-          )}
+    <div className="text-sm text-slate-300 space-y-3">
+      <div className="grid gap-2 text-xs">
+        <SelectionDropdown
+          items={actionOptions}
+          selected={[action]}
+          onChange={(next) => setAction(next[0] ?? "all")}
+          label="Action filter"
+          buttonClassName="w-full"
+        />
+        <input
+          className="input input-xs input-bordered bg-base-300"
+          placeholder="Filter actor"
+          value={actor}
+          onChange={(e) => setActor(e.target.value)}
+        />
+        <input
+          className="input input-xs input-bordered bg-base-300"
+          placeholder="Filter summary"
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+        />
+        <div className="flex gap-2">
+          <button
+            className="btn btn-xs btn-outline"
+            onClick={() => {
+              setPage(1);
+              void fetchAudit(userId, 1, { action, actor, summary });
+            }}
+          >
+            Apply
+          </button>
+          <button
+            className="btn btn-xs btn-outline"
+            onClick={() => {
+              setAction("all");
+              setActor("");
+              setSummary("");
+              setPage(1);
+              void fetchAudit(userId, 1, {
+                action: "all",
+                actor: "",
+                summary: "",
+              });
+            }}
+          >
+            Clear
+          </button>
         </div>
-        <button
-          className="btn btn-outline btn-sm btn-square absolute right-3 top-3"
-          onClick={() => setModal("audit", false)}
-        >
-          ✕
+      </div>
+      {loading ? (
+        <p className="text-xs text-slate-400">Loading activity…</p>
+      ) : entries.length === 0 ? (
+        <p className="text-xs text-slate-400">No activity recorded.</p>
+      ) : (
+        <ul className="space-y-2 text-xs">
+          {entries.map((entry) => (
+            <li
+              key={entry.id}
+              className="border border-slate-800/70 rounded-lg px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">{entry.action}</span>
+                <span className="text-slate-400">
+                  {formatDateTime(entry.created)}
+                </span>
+              </div>
+              <p className="text-slate-300">{entry.summary}</p>
+              <div className="text-slate-500 mt-1">
+                {entry.actor_display_name || entry.actor_id}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(page > 1 || hasMore) && (
+        <PaginationControls
+          page={page}
+          hasMore={hasMore}
+          loading={loading}
+          onPrev={() => {
+            const nextPage = Math.max(1, page - 1);
+            setPage(nextPage);
+            void fetchAudit(userId, nextPage);
+          }}
+          onNext={() => {
+            const nextPage = page + 1;
+            setPage(nextPage);
+            void fetchAudit(userId, nextPage);
+          }}
+        />
+      )}
+      <div className="modal-action">
+        <button className="btn btn-xs btn-outline" onClick={() => close()}>
+          Close
         </button>
       </div>
     </div>
   );
+}
+
+export const AdminModalAudit = defineAdminModal({
+  key: ADMIN_MODAL.Audit,
+  useOpen: () => {
+    const open = useAdminStore((s) => s.modals[ADMIN_MODAL.Audit]);
+    const userId = useAdminStore((s) => s.selectedUser?.user_id ?? null);
+    return open && Boolean(userId);
+  },
+  build: () => ({
+    title: "Activity Log",
+    sizeClass: "max-w-2xl",
+    body: <AuditLogModalBody />,
+  }),
+});
+
+export default function AuditLogModal() {
+  useModal(AdminModalAudit);
+
+  return null;
 }

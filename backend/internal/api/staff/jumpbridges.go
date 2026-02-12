@@ -18,6 +18,11 @@ type jumpbridgeImportResponse struct {
 	Count int `json:"count"`
 }
 
+type jumpbridgeMutationResponse struct {
+	Changed bool `json:"changed"`
+	Count   int  `json:"count"`
+}
+
 type JumpbridgeHandler struct {
 	App *pocketbase.PocketBase
 }
@@ -107,4 +112,119 @@ func (h *JumpbridgeHandler) Clear(c *core.RequestEvent) error {
 	})
 
 	return c.JSON(http.StatusOK, jumpbridgeImportResponse{Count: 0})
+}
+
+func (h *JumpbridgeHandler) Add(c *core.RequestEvent) error {
+	payload := struct {
+		FromID int `json:"from_id"`
+		ToID   int `json:"to_id"`
+	}{}
+	if bindErr := c.BindBody(&payload); bindErr != nil {
+		return router.NewBadRequestError("Invalid payload.", nil)
+	}
+	if payload.FromID <= 0 || payload.ToID <= 0 {
+		return router.NewBadRequestError("Both from_id and to_id are required.", nil)
+	}
+
+	service := jumpbridges.NewJumpbridgeService(h.App)
+	changed, addErr := service.AddPair(payload.FromID, payload.ToID)
+	if addErr != nil {
+		return router.NewBadRequestError(addErr.Error(), nil)
+	}
+
+	if changed {
+		actorID := ""
+		if c.Auth != nil {
+			actorID = c.Auth.Id
+		}
+		_ = mapdata.TriggerMapDataStep(h.App, mapdata.StepTriggerOptions{
+			Step:    mapdata.StepBuildGraph,
+			Trigger: jobs.TriggerStaffJumpbridgeImport,
+			ActorID: actorID,
+			JobName: mapdata.JobMapDataStep,
+			Logger:  logging.WithRequest(h.App, c),
+		})
+	}
+
+	count := 0
+	if changed {
+		count = 1
+	}
+	return c.JSON(http.StatusOK, jumpbridgeMutationResponse{Changed: changed, Count: count})
+}
+
+func (h *JumpbridgeHandler) Remove(c *core.RequestEvent) error {
+	payload := struct {
+		FromID int `json:"from_id"`
+		ToID   int `json:"to_id"`
+	}{}
+	if bindErr := c.BindBody(&payload); bindErr != nil {
+		return router.NewBadRequestError("Invalid payload.", nil)
+	}
+	if payload.FromID <= 0 || payload.ToID <= 0 {
+		return router.NewBadRequestError("Both from_id and to_id are required.", nil)
+	}
+
+	service := jumpbridges.NewJumpbridgeService(h.App)
+	deleted, removeErr := service.RemovePair(payload.FromID, payload.ToID)
+	if removeErr != nil {
+		return router.NewInternalServerError("Failed to remove jumpbridge.", nil)
+	}
+
+	if deleted > 0 {
+		actorID := ""
+		if c.Auth != nil {
+			actorID = c.Auth.Id
+		}
+		_ = mapdata.TriggerMapDataStep(h.App, mapdata.StepTriggerOptions{
+			Step:    mapdata.StepBuildGraph,
+			Trigger: jobs.TriggerStaffJumpbridgeImport,
+			ActorID: actorID,
+			JobName: mapdata.JobMapDataStep,
+			Logger:  logging.WithRequest(h.App, c),
+		})
+	}
+
+	return c.JSON(http.StatusOK, jumpbridgeMutationResponse{Changed: deleted > 0, Count: deleted / 2})
+}
+
+func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
+	payload := struct {
+		OldFromID int `json:"old_from_id"`
+		OldToID   int `json:"old_to_id"`
+		FromID    int `json:"from_id"`
+		ToID      int `json:"to_id"`
+	}{}
+	if bindErr := c.BindBody(&payload); bindErr != nil {
+		return router.NewBadRequestError("Invalid payload.", nil)
+	}
+	if payload.OldFromID <= 0 || payload.OldToID <= 0 || payload.FromID <= 0 || payload.ToID <= 0 {
+		return router.NewBadRequestError("old_from_id, old_to_id, from_id, and to_id are required.", nil)
+	}
+
+	service := jumpbridges.NewJumpbridgeService(h.App)
+	changed, updateErr := service.UpdatePair(payload.OldFromID, payload.OldToID, payload.FromID, payload.ToID)
+	if updateErr != nil {
+		return router.NewBadRequestError(updateErr.Error(), nil)
+	}
+
+	if changed {
+		actorID := ""
+		if c.Auth != nil {
+			actorID = c.Auth.Id
+		}
+		_ = mapdata.TriggerMapDataStep(h.App, mapdata.StepTriggerOptions{
+			Step:    mapdata.StepBuildGraph,
+			Trigger: jobs.TriggerStaffJumpbridgeImport,
+			ActorID: actorID,
+			JobName: mapdata.JobMapDataStep,
+			Logger:  logging.WithRequest(h.App, c),
+		})
+	}
+
+	count := 0
+	if changed {
+		count = 1
+	}
+	return c.JSON(http.StatusOK, jumpbridgeMutationResponse{Changed: changed, Count: count})
 }

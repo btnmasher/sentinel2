@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/config/api";
 import { ESI_PERMISSION_REQUIRED } from "@/config/esi";
-import { useUIStore } from "@/app/store/uiStore";
+import { UI_DIALOG, useUIStore } from "@/app/store/uiStore";
 import type { SystemSearch } from "../types";
 
 type NavigationState = {
@@ -155,7 +155,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         useUIStore
           .getState()
           .setToast({ text: "Error setting route", color: "error" });
-        useUIStore.getState().setDialog("permissionRequired", true);
+        useUIStore.getState().setModal(UI_DIALOG.PermissionRequired, true);
         return;
       }
       useUIStore.getState().setToast({

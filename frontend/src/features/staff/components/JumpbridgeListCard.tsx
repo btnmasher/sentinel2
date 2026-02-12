@@ -1,32 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
+import useConfirm from "@/app/hooks/useConfirm";
+import useModal from "@/app/hooks/useModal";
 import { useUIStore } from "@/app/store/uiStore";
+import JumpbridgeImportModal from "./JumpbridgeImportModal";
+import JumpbridgePairModal, {
+  type JumpbridgePair,
+} from "./JumpbridgePairModal";
 
-type JumpbridgePair = {
-  fromId: number;
-  toId: number;
-  fromName: string;
-  toName: string;
-};
-
-const parseJumpbridgeInput = (text: string) =>
-  text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(
-        /^(.+?)\s*(?:»|->|-->|—>|=>|→)\s*(.+?)(?:\s+-\s+.*)?$/,
-      );
-      if (!match) return null;
-      const from = match[1].trim();
-      const to = match[2].trim();
-      if (!from || !to) return null;
-      return `${from} --> ${to}`;
-    })
-    .filter((line): line is string => Boolean(line));
+const JUMPBRIDGE_MODAL = {
+  Import: "import",
+  Pair: "pair",
+} as const;
+type JumpbridgeModalKey =
+  (typeof JUMPBRIDGE_MODAL)[keyof typeof JUMPBRIDGE_MODAL];
 
 const chunkIds = (ids: number[], size = 40) => {
   const chunks: number[][] = [];
@@ -36,14 +25,52 @@ const chunkIds = (ids: number[], size = 40) => {
   return chunks;
 };
 
+const getErrorDetail = (error: unknown): string => {
+  if (!error || typeof error !== "object") return "Unknown error";
+  const maybeResponse = (error as { response?: unknown }).response;
+  if (maybeResponse && typeof maybeResponse === "object") {
+    const response = maybeResponse as { data?: unknown };
+    if (response.data && typeof response.data === "object") {
+      const message = (response.data as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim() !== "") {
+        return message;
+      }
+    }
+    if (typeof response.data === "string" && response.data.trim() !== "") {
+      return response.data;
+    }
+  }
+  const message = (error as { message?: unknown }).message;
+  if (typeof message === "string" && message.trim() !== "") {
+    return message;
+  }
+  return "Unknown error";
+};
+
 export default function JumpbridgeListCard() {
+  const requestConfirm = useConfirm();
   const setToast = useUIStore((s) => s.setToast);
-  const requestConfirm = useUIStore((s) => s.requestConfirm);
   const [pairs, setPairs] = useState<JumpbridgePair[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [jumpbridgeText, setJumpbridgeText] = useState("");
-  const [importing, setImporting] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showPairModal, setShowPairModal] = useState(false);
+  const [editingPair, setEditingPair] = useState<JumpbridgePair | null>(null);
+  const setJumpbridgeModal = (modal: JumpbridgeModalKey, open: boolean) => {
+    if (modal === JUMPBRIDGE_MODAL.Import) {
+      setShowImportModal(open);
+      if (open) {
+        setShowPairModal(false);
+        setEditingPair(null);
+      }
+      return;
+    }
+    setShowPairModal(open);
+    if (!open) {
+      setEditingPair(null);
+      return;
+    }
+    setShowImportModal(false);
+  };
 
   const loadPairs = useCallback(async () => {
     setLoading(true);
@@ -101,46 +128,50 @@ export default function JumpbridgeListCard() {
     loadPairs();
   }, [loadPairs]);
 
-  const importJumpbridges = async () => {
-    const parsed = parseJumpbridgeInput(jumpbridgeText);
-    if (parsed.length === 0) {
-      setToast({
-        text: "Jumpbridge import failed: empty input.",
-        color: "error",
-      });
-      return;
-    }
-    setImporting(true);
-    try {
-      const res = await api.post("/staff/jumpbridges/import", {
-        jumpbridges: parsed.join("\n"),
-      });
-      setToast({
-        text: "Jumpbridge import succeeded.",
-        color: "success",
-      });
-      setJumpbridgeText("");
-      setModalOpen(false);
-      await loadPairs();
-    } catch (error: any) {
-      const detail =
-        error?.response?.data?.message ||
-        error?.response?.data ||
-        error?.message;
-      setToast({
-        text: `Jumpbridge import failed: ${detail || "Unknown error"}`,
-        color: "error",
-      });
-    } finally {
-      setImporting(false);
-    }
+  useModal({
+    open: showImportModal,
+    modalKey: JUMPBRIDGE_MODAL.Import,
+    setOpenByKey: setJumpbridgeModal,
+    build: () => ({
+      title: "Import Jumpbridges",
+      sizeClass: "max-w-lg h-[70vh] flex flex-col gap-3",
+      body: <JumpbridgeImportModal onImported={loadPairs} />,
+    }),
+  });
+
+  useModal({
+    open: showPairModal,
+    modalKey: JUMPBRIDGE_MODAL.Pair,
+    setOpenByKey: setJumpbridgeModal,
+    build: () => ({
+      title: editingPair
+        ? "Edit Jumpbridge Connection"
+        : "Add Jumpbridge Connection",
+      sizeClass: "max-w-lg",
+      body: (
+        <JumpbridgePairModal
+          editingPair={editingPair}
+          pairs={pairs}
+          onSaved={loadPairs}
+        />
+      ),
+    }),
+  });
+
+  const openImportModal = () => {
+    setJumpbridgeModal(JUMPBRIDGE_MODAL.Import, true);
+  };
+
+  const openPairModal = (pair?: JumpbridgePair) => {
+    setEditingPair(pair ?? null);
+    setJumpbridgeModal(JUMPBRIDGE_MODAL.Pair, true);
   };
 
   const clearJumpbridges = async () => {
-    requestConfirm(
-      "Clear jumpbridges?",
-      "This will remove all jumpbridge pairings and rebuild system graphs.",
-      async () => {
+    requestConfirm({
+      title: "Clear jumpbridges?",
+      body: "This will remove all jumpbridge pairings and rebuild system graphs.",
+      onConfirm: async () => {
         try {
           await api.post("/staff/jumpbridges/clear");
           setToast({
@@ -148,18 +179,47 @@ export default function JumpbridgeListCard() {
             color: "success",
           });
           await loadPairs();
-        } catch (error: any) {
-          const detail =
-            error?.response?.data?.message ||
-            error?.response?.data ||
-            error?.message;
+        } catch (error: unknown) {
+          const detail = getErrorDetail(error);
           setToast({
             text: `Jumpbridge clear failed: ${detail || "Unknown error"}`,
             color: "error",
           });
         }
       },
-    );
+      confirmLabel: "Clear",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
+  };
+
+  const removePair = async (pair: JumpbridgePair) => {
+    requestConfirm({
+      title: "Remove jumpbridge pair?",
+      body: `${pair.fromName} <-> ${pair.toName}`,
+      onConfirm: async () => {
+        try {
+          await api.post("/staff/jumpbridges/remove", {
+            from_id: pair.fromId,
+            to_id: pair.toId,
+          });
+          setToast({
+            text: "Jumpbridge pair removed.",
+            color: "success",
+          });
+          await loadPairs();
+        } catch (error: unknown) {
+          const detail = getErrorDetail(error);
+          setToast({
+            text: `Remove jumpbridge failed: ${detail || "Unknown error"}`,
+            color: "error",
+          });
+        }
+      },
+      confirmLabel: "Remove",
+      cancelLabel: "Cancel",
+      tone: "danger",
+    });
   };
 
   const emptyState = useMemo(
@@ -189,7 +249,7 @@ export default function JumpbridgeListCard() {
             )}
             <button
               className="btn btn-sm btn-info btn-outline"
-              onClick={() => setModalOpen(true)}
+              onClick={openImportModal}
             >
               <Plus className="h-4 w-4" />
               Import
@@ -207,7 +267,7 @@ export default function JumpbridgeListCard() {
           {pairs.map((pair) => (
             <div
               key={`${pair.fromId}-${pair.toId}`}
-              className="grid grid-cols-[1fr_2fr_1fr] items-center rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2"
+              className="grid grid-cols-[1fr_2fr_1fr_auto] items-center rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2"
             >
               <span className="justify-self-end pr-4 font-semibold text-slate-100">
                 {pair.fromName}
@@ -254,45 +314,36 @@ export default function JumpbridgeListCard() {
               <span className="justify-self-start pl-4 font-semibold text-slate-100">
                 {pair.toName}
               </span>
+              <div className="ml-3 flex items-center gap-1">
+                <button
+                  className="btn btn-xs btn-outline btn-square"
+                  onClick={() => openPairModal(pair)}
+                  aria-label={`Edit jumpbridge ${pair.fromName} to ${pair.toName}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+                <button
+                  className="btn btn-xs btn-outline btn-square btn-error"
+                  onClick={() => removePair(pair)}
+                  aria-label={`Remove jumpbridge ${pair.fromName} to ${pair.toName}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           ))}
+          <button
+            className="w-full rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 px-3 py-2 text-slate-300 transition hover:bg-base-300/40 hover:text-slate-100"
+            onClick={() => openPairModal()}
+            aria-label="Add jumpbridge connection"
+          >
+            <span className="flex items-center justify-center gap-2 text-sm">
+              <Plus className="h-4 w-4" />
+              Add jumpbridge connection
+            </span>
+          </button>
         </div>
       </div>
-
-      {modalOpen && (
-        <div className="modal modal-open">
-          <div className="modal-box bg-base-200 border border-slate-700 max-w-lg flex flex-col gap-3 h-[70vh]">
-            <div>
-              <h3 className="font-display text-lg">Import Jumpbridges</h3>
-              <p className="text-sm text-slate-400">
-                Paste the jumpbridge list (structure_id FROM --&gt; TO). This
-                will replace existing jumpbridges.
-              </p>
-            </div>
-            <textarea
-              className="textarea textarea-bordered bg-base-300 flex-1 w-full"
-              value={jumpbridgeText}
-              onChange={(e) => setJumpbridgeText(e.target.value)}
-            />
-            <div className="modal-action">
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => setModalOpen(false)}
-                disabled={importing}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-sm btn-primary btn-outline"
-                onClick={importJumpbridges}
-                disabled={importing}
-              >
-                {importing ? "Importing..." : "Import"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

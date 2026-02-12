@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
-import Modal from "./Modal";
+import useModal from "@/app/hooks/useModal";
+import { useModalBody } from "@/components/dialogs/ModalBodyContext";
 import { useSettingsStore } from "@/app/store/settingsStore";
 
-export default function IntroductionDialog() {
-  const introduction = useSettingsStore((s) => s.settings.introduction);
+const INTRO_MODAL = {
+  Welcome: "welcome",
+} as const;
+type IntroModalKey = (typeof INTRO_MODAL)[keyof typeof INTRO_MODAL];
+
+function IntroductionDialogBody() {
+  const { close } = useModalBody();
   const setIntroduction = useSettingsStore((s) => s.setIntroduction);
   const [introCountdown, setIntroCountdown] = useState(15);
 
   useEffect(() => {
-    if (!introduction) return;
     setIntroCountdown(15);
     const timer = setInterval(() => {
       setIntroCountdown((value) => {
@@ -20,27 +25,22 @@ export default function IntroductionDialog() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [introduction]);
+  }, []);
+
+  const handleClose = () => {
+    setIntroduction(false);
+    close();
+  };
 
   return (
-    <Modal
-      open={introduction}
-      title="Welcome to Sentinel"
-      actions={
-        <button
-          className="btn btn-sm btn-error btn-outline"
-          disabled={introCountdown > 0}
-          onClick={() => setIntroduction(false)}
-        >
-          {introCountdown > 0 ? introCountdown : "close"}
-        </button>
-      }
-    >
+    <>
       <div>
         <h4 className="font-semibold">Basic controls</h4>
         <ul className="list-disc ml-4">
           <li>click and drag - move around the map</li>
-          <li>mouse scroll wheel - zoom in/out (do not hold control/command)</li>
+          <li>
+            mouse scroll wheel - zoom in/out (do not hold control/command)
+          </li>
         </ul>
       </div>
       <div>
@@ -74,6 +74,35 @@ export default function IntroductionDialog() {
         This map can get laggy at times, so it is not guaranteed to run on old
         computers. If you have issues, ask in it-office on TEST discord.
       </p>
-    </Modal>
+      <div className="modal-action">
+        <button
+          className="btn btn-sm btn-error btn-outline"
+          disabled={introCountdown > 0}
+          onClick={() => handleClose()}
+        >
+          {introCountdown > 0 ? introCountdown : "close"}
+        </button>
+      </div>
+    </>
   );
+}
+
+export default function IntroductionDialog() {
+  const introduction = useSettingsStore((s) => s.settings.introduction);
+  const setIntroductionModal = (_modal: IntroModalKey, open: boolean) => {
+    useSettingsStore.getState().setIntroduction(open);
+  };
+
+  useModal({
+    open: introduction,
+    modalKey: INTRO_MODAL.Welcome,
+    setOpenByKey: setIntroductionModal,
+    build: () => ({
+      title: "Welcome to Sentinel",
+      dismissible: false,
+      body: <IntroductionDialogBody />,
+    }),
+  });
+
+  return null;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
+import useConfirm from "@/app/hooks/useConfirm";
 import { useUIStore } from "@/app/store/uiStore";
 import { useShallow } from "zustand/shallow";
 
@@ -29,10 +30,10 @@ export default function Uploader() {
   const [token, setToken] = useState("");
   const [channels, setChannels] = useState<string[]>([]);
   const [regenerating, setRegenerating] = useState(false);
-  const { setToast, requestConfirm } = useUIStore(
+  const requestConfirm = useConfirm();
+  const { setToast } = useUIStore(
     useShallow((s) => ({
       setToast: s.setToast,
-      requestConfirm: s.requestConfirm,
     })),
   );
   const baseUrl = useMemo(() => window.location.origin, []);
@@ -92,13 +93,16 @@ export default function Uploader() {
   };
 
   const confirmRegenerate = () =>
-    requestConfirm(
-      "Regenerate token",
-      "This will invalidate the previous token.",
-      () => {
+    requestConfirm({
+      title: "Regenerate token",
+      body: "This will invalidate the previous token.",
+      onConfirm: () => {
         void regenerate();
       },
-    );
+      confirmLabel: "Regenerate",
+      cancelLabel: "Keep current",
+      tone: "danger",
+    });
 
   const copyText = async (label: string, value: string) => {
     if (!value) {

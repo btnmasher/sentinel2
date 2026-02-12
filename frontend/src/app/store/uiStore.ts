@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import type { ReactNode } from "react";
+import { createModalRegistry } from "@/app/store/modalRegistry";
 
 const safeStringify = (value: unknown) => {
   const seen = new WeakSet<object>();
@@ -55,12 +57,45 @@ export type ToastState = {
   meta?: Record<string, unknown>;
 } | null;
 
-type DialogState = {
-  help: boolean;
-  shareLink: boolean;
-  permissionRequired: boolean;
-  alarmStart: boolean;
-  confirm: boolean;
+export const UI_DIALOG = {
+  Help: "help",
+  ShareLink: "shareLink",
+  PermissionRequired: "permissionRequired",
+  AlarmStart: "alarmStart",
+  Confirm: "confirm",
+} as const;
+export const UI_DIALOG_KEYS = [
+  UI_DIALOG.Help,
+  UI_DIALOG.ShareLink,
+  UI_DIALOG.PermissionRequired,
+  UI_DIALOG.AlarmStart,
+  UI_DIALOG.Confirm,
+] as const;
+export type DialogStateKey = (typeof UI_DIALOG_KEYS)[number];
+const uiDialogRegistry = createModalRegistry<DialogStateKey>(UI_DIALOG_KEYS);
+type DialogState = Record<DialogStateKey, boolean>;
+
+export type ModalConfig = {
+  title?: string;
+  body: ReactNode;
+  sizeClass?: string;
+  dismissible?: boolean;
+  closeOnOverlay?: boolean;
+  closeDisabled?: boolean;
+  onClose?:
+    | ((reason?: ModalCloseReason) => boolean | void | Promise<boolean | void>)
+    | null;
+};
+
+export type ModalCloseReason = "button" | "escape" | "overlay" | "programmatic";
+export type ConfirmTone = "default" | "danger";
+export type ConfirmRequest = {
+  title: string;
+  body: string;
+  onConfirm: () => void | Promise<void>;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: ConfirmTone;
 };
 
 type UIState = {
@@ -69,28 +104,54 @@ type UIState = {
   dialogs: DialogState;
   confirmTitle?: string;
   confirmBody?: string;
-  confirmAction?: (() => void) | null;
+  confirmAction?: (() => void | Promise<void>) | null;
+  confirmConfirmLabel?: string;
+  confirmCancelLabel?: string;
+  confirmTone?: ConfirmTone;
+  modal: {
+    open: boolean;
+    title?: string;
+    body?: ReactNode;
+    sizeClass?: string;
+    dismissible?: boolean;
+    closeOnOverlay?: boolean;
+    closeDisabled?: boolean;
+    onClose?:
+      | ((
+          reason?: ModalCloseReason,
+        ) => boolean | void | Promise<boolean | void>)
+      | null;
+  };
   setContextMenu: (menu: ContextMenuState | null) => void;
   setToast: (toast: ToastState) => void;
   clearToast: () => void;
-  setDialog: (dialog: keyof DialogState, show: boolean) => void;
-  requestConfirm: (title: string, body: string, action: () => void) => void;
+  setModal: (modal: DialogStateKey, open: boolean) => void;
+  requestConfirm: (request: ConfirmRequest) => void;
   clearConfirm: () => void;
+  openModal: (config: ModalConfig) => void;
+  closeModal: () => void;
 };
 
 export const useUIStore = create<UIState>((set) => ({
   contextMenu: null,
   toast: null,
-  dialogs: {
-    help: false,
-    shareLink: false,
-    permissionRequired: false,
-    alarmStart: false,
-    confirm: false,
-  },
+  dialogs: uiDialogRegistry.initial(),
   confirmTitle: undefined,
   confirmBody: undefined,
   confirmAction: null,
+  confirmConfirmLabel: undefined,
+  confirmCancelLabel: undefined,
+  confirmTone: undefined,
+  modal: {
+    open: false,
+    title: undefined,
+    body: undefined,
+    sizeClass: undefined,
+    dismissible: true,
+    closeOnOverlay: false,
+    closeDisabled: false,
+    onClose: null,
+  },
   setContextMenu: (menu) => set({ contextMenu: menu }),
   setToast: (toast) =>
     set(() => {
@@ -109,24 +170,24 @@ export const useUIStore = create<UIState>((set) => ({
       return { toast: null };
     }),
   clearToast: () => set({ toast: null }),
-  setDialog: (dialog, show) =>
+  setModal: (modal, open) =>
     set((state) => ({
       dialogs: {
         ...state.dialogs,
-        [dialog]: show,
+        [modal]: open,
       },
     })),
-  requestConfirm: (title, body, action) =>
+  requestConfirm: (request) =>
     set({
-      confirmTitle: title,
-      confirmBody: body,
-      confirmAction: action,
+      confirmTitle: request.title,
+      confirmBody: request.body,
+      confirmAction: request.onConfirm,
+      confirmConfirmLabel: request.confirmLabel,
+      confirmCancelLabel: request.cancelLabel,
+      confirmTone: request.tone ?? "danger",
       dialogs: {
-        help: false,
-        shareLink: false,
-        permissionRequired: false,
-        alarmStart: false,
-        confirm: true,
+        ...uiDialogRegistry.initial(),
+        [UI_DIALOG.Confirm]: true,
       },
     }),
   clearConfirm: () =>
@@ -134,6 +195,37 @@ export const useUIStore = create<UIState>((set) => ({
       confirmTitle: undefined,
       confirmBody: undefined,
       confirmAction: null,
-      dialogs: { ...state.dialogs, confirm: false },
+      confirmConfirmLabel: undefined,
+      confirmCancelLabel: undefined,
+      confirmTone: undefined,
+      dialogs: { ...state.dialogs, [UI_DIALOG.Confirm]: false },
     })),
+  openModal: (config) =>
+    set({
+      modal: {
+        open: true,
+        title: config.title,
+        body: config.body,
+        sizeClass: config.sizeClass,
+        dismissible: config.dismissible ?? true,
+        closeOnOverlay: config.closeOnOverlay ?? false,
+        closeDisabled: config.closeDisabled ?? false,
+        onClose: config.onClose ?? null,
+      },
+    }),
+  closeModal: () =>
+    set({
+      modal: {
+        open: false,
+        title: undefined,
+        body: undefined,
+        sizeClass: undefined,
+        dismissible: true,
+        closeOnOverlay: false,
+        closeDisabled: false,
+        onClose: null,
+      },
+    }),
 }));
+
+export const defineUIDialogModal = uiDialogRegistry.defineForStore(useUIStore);

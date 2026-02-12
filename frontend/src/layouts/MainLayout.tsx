@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { NavLink } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import Dialogs from "@/components/Dialogs";
+import GlobalModalHost from "@/components/GlobalModalHost";
 import Toast from "@/components/Toast";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
@@ -139,6 +140,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
       >
         {children}
       </main>
+      <GlobalModalHost />
       <Dialogs />
       <Toast />
     </div>

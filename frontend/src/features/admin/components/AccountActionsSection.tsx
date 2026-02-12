@@ -1,9 +1,11 @@
 import CharacterCard from "@/components/CharacterCard";
 import { ArrowLeft } from "lucide-react";
+import { ADMIN_MODAL } from "../store/adminStore";
 import { useAdminStore } from "../store/adminStore";
 import { useAdminActionsStore } from "../store/adminActionsStore";
 import { formatSessionStatus } from "../utils/formatters";
 import type { Character } from "../types";
+import { useAdminModal } from "./AdminModals";
 
 type AccessLevel = "user" | "staff" | "admin";
 
@@ -29,7 +31,10 @@ export default function AccountActionsSection({
   onBack?: () => void;
 }) {
   const user = useAdminStore((s) => s.selectedUser);
-  const setModal = useAdminStore((s) => s.setModal);
+  const { open: openAccessModal } = useAdminModal(ADMIN_MODAL.Access);
+  const { open: openMoveModal } = useAdminModal(ADMIN_MODAL.Move);
+  const { open: openMergeModal } = useAdminModal(ADMIN_MODAL.Merge);
+  const { open: openAuditModal } = useAdminModal(ADMIN_MODAL.Audit);
   const refreshAll = useAdminActionsStore((s) => s.refreshAll);
   const revokeSessions = useAdminActionsStore((s) => s.revokeSessions);
   const revokeUploadTokens = useAdminActionsStore((s) => s.revokeUploadTokens);
@@ -141,7 +146,7 @@ export default function AccountActionsSection({
                 >
                   <button
                     className="btn btn-xs btn-outline"
-                    onClick={() => setModal("access", true)}
+                    onClick={openAccessModal}
                     disabled={changeAccessDisabled}
                   >
                     Change access
@@ -149,19 +154,19 @@ export default function AccountActionsSection({
                 </span>
                 <button
                   className="btn btn-xs btn-warning btn-outline"
-                  onClick={() => setModal("move", true)}
+                  onClick={openMoveModal}
                 >
                   Move character
                 </button>
                 <button
                   className="btn btn-xs btn-warning btn-outline"
-                  onClick={() => setModal("merge", true)}
+                  onClick={openMergeModal}
                 >
                   Merge account
                 </button>
                 <button
                   className="btn btn-xs btn-outline"
-                  onClick={() => setModal("audit", true)}
+                  onClick={openAuditModal}
                 >
                   Activity log
                 </button>

@@ -1,51 +1,58 @@
 import { useUIStore } from "@/app/store/uiStore";
-import { useShallow } from "zustand/shallow";
+import useModal from "@/app/hooks/useModal";
+import { defineUIDialogModal, UI_DIALOG } from "@/app/store/uiStore";
+import { useModalBody } from "@/components/dialogs/ModalBodyContext";
 
-export default function ConfirmDialog() {
-  const { dialogs, confirmTitle, confirmBody, confirmAction, clearConfirm } =
-    useUIStore(
-      useShallow((s) => ({
-        dialogs: s.dialogs,
-        confirmTitle: s.confirmTitle,
-        confirmBody: s.confirmBody,
-        confirmAction: s.confirmAction,
-        clearConfirm: s.clearConfirm,
-      })),
-    );
-
-  if (!dialogs.confirm) return null;
+function ConfirmDialogBody() {
+  const { close } = useModalBody();
+  const confirmBody = useUIStore((s) => s.confirmBody);
+  const confirmAction = useUIStore((s) => s.confirmAction);
+  const confirmLabel = useUIStore((s) => s.confirmConfirmLabel) || "Confirm";
+  const cancelLabel = useUIStore((s) => s.confirmCancelLabel) || "Cancel";
+  const tone = useUIStore((s) => s.confirmTone) || "danger";
+  const clearConfirm = useUIStore((s) => s.clearConfirm);
+  const confirmButtonClass =
+    tone === "danger"
+      ? "btn btn-sm btn-error btn-outline"
+      : "btn btn-sm btn-info btn-outline";
 
   return (
-    <div className="modal modal-open">
-      <div className="modal-box bg-base-200 border border-slate-700 max-w-lg">
-        <h3 className="font-display text-lg mb-3">
-          {confirmTitle || "Confirm"}
-        </h3>
-        <div className="text-sm text-slate-300 space-y-3">
-          <p>{confirmBody}</p>
-        </div>
-        <div className="modal-action">
-          <button className="btn btn-sm btn-outline" onClick={clearConfirm}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-sm btn-error btn-outline"
-            onClick={() => {
-              const action = confirmAction;
-              clearConfirm();
-              if (action) action();
-            }}
-          >
-            Confirm
-          </button>
-        </div>
+    <>
+      <p>{confirmBody}</p>
+      <div className="modal-action">
+        <button className="btn btn-sm btn-outline" onClick={() => close()}>
+          {cancelLabel}
+        </button>
         <button
-          className="btn btn-outline btn-sm btn-square absolute right-3 top-3"
-          onClick={clearConfirm}
+          className={confirmButtonClass}
+          onClick={() => {
+            const action = confirmAction;
+            clearConfirm();
+            close();
+            if (action) action();
+          }}
         >
-          ✕
+          {confirmLabel}
         </button>
       </div>
-    </div>
+    </>
   );
+}
+
+export const AppModalConfirm = defineUIDialogModal({
+  key: UI_DIALOG.Confirm,
+  useOpen: () => useUIStore((s) => s.dialogs[UI_DIALOG.Confirm]),
+  build: () => ({
+    title: useUIStore.getState().confirmTitle || "Confirm",
+    body: <ConfirmDialogBody />,
+  }),
+});
+
+export default function ConfirmDialog() {
+  const clearConfirm = useUIStore((s) => s.clearConfirm);
+  useModal(AppModalConfirm, {
+    onDismiss: clearConfirm,
+  });
+
+  return null;
 }

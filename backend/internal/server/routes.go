@@ -88,6 +88,9 @@ func registerRoutes(app *pocketbase.PocketBase, cfg config.Config, deps dependen
 		staffGroup.DELETE("/channels/{id}", deps.staffChannels.Delete)
 		staffGroup.POST("/jumpbridges/import", deps.staffJumpbridges.Import)
 		staffGroup.POST("/jumpbridges/clear", deps.staffJumpbridges.Clear)
+		staffGroup.POST("/jumpbridges/add", deps.staffJumpbridges.Add)
+		staffGroup.POST("/jumpbridges/remove", deps.staffJumpbridges.Remove)
+		staffGroup.POST("/jumpbridges/update", deps.staffJumpbridges.Update)
 
 		if cfg.AuthBackend == "eve" {
 			adminGroup := apiGroup.Group("/admin")

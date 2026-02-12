@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,6 +19,11 @@ import (
 )
 
 var jumpbridgePattern = regexp.MustCompile(`^(?:(?P<structure_id>\d+)\s+)?(?P<from>\S+)\s*(?:»|->|-->|—>|=>|→)\s*(?P<to>\S+)(?:\s+-\s+.*)?$`)
+
+const (
+	maxJumpbridgeDistanceLY = 5.0
+	metersPerLightYear      = 9.4607304725808e15
+)
 
 type JumpbridgeService struct {
 	App *pocketbase.PocketBase
@@ -40,6 +46,10 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 	pairs, validationErr := buildJumpbridgePairs(parsed)
 	if validationErr != nil {
 		return 0, validationErr
+	}
+	resolvedPairs, resolveErr := s.resolvePairs(pairs)
+	if resolveErr != nil {
+		return 0, resolveErr
 	}
 
 	existing, _ := s.App.FindRecordsByFilter(coll.Name, "", "", 0, 0, nil)
@@ -66,52 +76,13 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 
 	count := 0
 	saveFailed := 0
-	for _, pair := range pairs {
-		fromSystem, fromErr := s.findSystemByName(pair.from)
-		if fromErr != nil {
-			return 0, fmt.Errorf("unknown from system: %s", pair.from)
+	for _, pair := range resolvedPairs {
+		saved, savedErr := s.savePair(coll, pair.structureID, pair.fromSystem, pair.toSystem)
+		if savedErr != nil {
+			saveFailed += 2 - saved
+			continue
 		}
-		toSystem, toErr := s.findSystemByName(pair.to)
-		if toErr != nil {
-			return 0, fmt.Errorf("unknown to system: %s", pair.to)
-		}
-
-		directions := []struct {
-			fromName   string
-			toName     string
-			fromRecord *core.Record
-			toRecord   *core.Record
-		}{
-			{fromName: pair.from, toName: pair.to, fromRecord: fromSystem, toRecord: toSystem},
-			{fromName: pair.to, toName: pair.from, fromRecord: toSystem, toRecord: fromSystem},
-		}
-
-		for _, direction := range directions {
-			record := core.NewRecord(coll)
-			structureID := parseStructureID(pair.structureID, direction.fromName, direction.toName)
-			if structureID == 0 {
-				continue
-			}
-			record.Set("structure_id", structureID)
-			record.Set("from_solarsystem", direction.fromRecord.GetInt("eve_id"))
-			record.Set("to_solarsystem", direction.toRecord.GetInt("eve_id"))
-			record.Set("from_region", direction.fromRecord.GetInt("region_id"))
-			record.Set("to_region", direction.toRecord.GetInt("region_id"))
-			record.Set("is_friendly", true)
-			createdAt, _ := types.ParseDateTime(time.Now())
-			record.Set("created_date", createdAt)
-			if saveErr := s.App.Save(record); saveErr != nil {
-				saveFailed++
-				logging.New(s.App).
-					WithFields(logging.Fields{
-						"structure_id": structureID,
-					}).
-					WithErr(saveErr).
-					Debug("jumpbridge save failed")
-				continue
-			}
-			count += 1
-		}
+		count += saved
 	}
 	if saveFailed > 0 {
 		logging.New(s.App).
@@ -124,10 +95,164 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 	return count / 2, nil
 }
 
+func (s *JumpbridgeService) AddPair(fromSystemID int, toSystemID int) (bool, error) {
+	if fromSystemID <= 0 || toSystemID <= 0 {
+		return false, fmt.Errorf("invalid system id")
+	}
+	if fromSystemID == toSystemID {
+		return false, fmt.Errorf("jumpbridge endpoints must be different systems")
+	}
+
+	fromSystem, fromErr := s.findSystemByEveID(fromSystemID)
+	if fromErr != nil {
+		return false, fmt.Errorf("unknown from system: %d", fromSystemID)
+	}
+	toSystem, toErr := s.findSystemByEveID(toSystemID)
+	if toErr != nil {
+		return false, fmt.Errorf("unknown to system: %d", toSystemID)
+	}
+
+	existingBySystem, existingPairs, existingErr := s.loadExistingPairState()
+	if existingErr != nil {
+		return false, existingErr
+	}
+
+	a := int(fromSystem.GetInt("eve_id"))
+	b := int(toSystem.GetInt("eve_id"))
+	key := pairKey(strconv.Itoa(a), strconv.Itoa(b))
+	if _, exists := existingPairs[key]; exists {
+		return false, nil
+	}
+
+	if partner, ok := existingBySystem[a]; ok && partner != b {
+		return false, fmt.Errorf("system already linked: %s", fromSystem.GetString("name"))
+	}
+	if partner, ok := existingBySystem[b]; ok && partner != a {
+		return false, fmt.Errorf("system already linked: %s", toSystem.GetString("name"))
+	}
+	if !withinMaxDistance(fromSystem, toSystem) {
+		return false, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears", maxJumpbridgeDistanceLY)
+	}
+
+	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionJumpbridges)
+	if collErr != nil {
+		return false, collErr
+	}
+	_, saveErr := s.savePair(coll, "", fromSystem, toSystem)
+	if saveErr != nil {
+		return false, saveErr
+	}
+	return true, nil
+}
+
+func (s *JumpbridgeService) RemovePair(fromSystemID int, toSystemID int) (int, error) {
+	if fromSystemID <= 0 || toSystemID <= 0 {
+		return 0, fmt.Errorf("invalid system id")
+	}
+	filter := "(from_solarsystem = {:a} && to_solarsystem = {:b}) || (from_solarsystem = {:b} && to_solarsystem = {:a})"
+	records, recordsErr := s.App.FindRecordsByFilter(
+		store.CollectionJumpbridges,
+		filter,
+		"",
+		0,
+		0,
+		map[string]any{"a": fromSystemID, "b": toSystemID},
+	)
+	if recordsErr != nil {
+		return 0, recordsErr
+	}
+
+	deleted := 0
+	for _, rec := range records {
+		if deleteErr := s.App.Delete(rec); deleteErr != nil {
+			return deleted, deleteErr
+		}
+		deleted += 1
+	}
+	return deleted, nil
+}
+
+func (s *JumpbridgeService) UpdatePair(oldFromSystemID int, oldToSystemID int, newFromSystemID int, newToSystemID int) (bool, error) {
+	if oldFromSystemID <= 0 || oldToSystemID <= 0 || newFromSystemID <= 0 || newToSystemID <= 0 {
+		return false, fmt.Errorf("invalid system id")
+	}
+	if newFromSystemID == newToSystemID {
+		return false, fmt.Errorf("jumpbridge endpoints must be different systems")
+	}
+
+	oldKey := pairKey(strconv.Itoa(oldFromSystemID), strconv.Itoa(oldToSystemID))
+	newKey := pairKey(strconv.Itoa(newFromSystemID), strconv.Itoa(newToSystemID))
+	if oldKey == newKey {
+		return false, nil
+	}
+
+	existingBySystem, existingPairs, existingErr := s.loadExistingPairState()
+	if existingErr != nil {
+		return false, existingErr
+	}
+	if _, exists := existingPairs[oldKey]; !exists {
+		return false, fmt.Errorf("original jumpbridge pair was not found")
+	}
+
+	// Exclude the old pair from uniqueness checks so one endpoint can be reassigned.
+	delete(existingPairs, oldKey)
+	if partner, ok := existingBySystem[oldFromSystemID]; ok && partner == oldToSystemID {
+		delete(existingBySystem, oldFromSystemID)
+	}
+	if partner, ok := existingBySystem[oldToSystemID]; ok && partner == oldFromSystemID {
+		delete(existingBySystem, oldToSystemID)
+	}
+
+	if _, exists := existingPairs[newKey]; exists {
+		return false, nil
+	}
+
+	fromSystem, fromErr := s.findSystemByEveID(newFromSystemID)
+	if fromErr != nil {
+		return false, fmt.Errorf("unknown from system: %d", newFromSystemID)
+	}
+	toSystem, toErr := s.findSystemByEveID(newToSystemID)
+	if toErr != nil {
+		return false, fmt.Errorf("unknown to system: %d", newToSystemID)
+	}
+
+	a := int(fromSystem.GetInt("eve_id"))
+	b := int(toSystem.GetInt("eve_id"))
+	if partner, ok := existingBySystem[a]; ok && partner != b {
+		return false, fmt.Errorf("system already linked: %s", fromSystem.GetString("name"))
+	}
+	if partner, ok := existingBySystem[b]; ok && partner != a {
+		return false, fmt.Errorf("system already linked: %s", toSystem.GetString("name"))
+	}
+	if !withinMaxDistance(fromSystem, toSystem) {
+		return false, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears", maxJumpbridgeDistanceLY)
+	}
+
+	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionJumpbridges)
+	if collErr != nil {
+		return false, collErr
+	}
+
+	if _, saveErr := s.savePair(coll, "", fromSystem, toSystem); saveErr != nil {
+		return false, saveErr
+	}
+
+	if _, removeErr := s.RemovePair(oldFromSystemID, oldToSystemID); removeErr != nil {
+		return false, removeErr
+	}
+	return true, nil
+}
+
 type jumpbridgeEntry struct {
 	structureID string
 	from        string
 	to          string
+}
+
+type resolvedJumpbridgeEntry struct {
+	structureID string
+	fromSystem  *core.Record
+	toSystem    *core.Record
 }
 
 func parseJumpbridgeLines(lines []string) ([]jumpbridgeEntry, error) {
@@ -166,6 +291,9 @@ func buildJumpbridgePairs(entries []jumpbridgeEntry) ([]jumpbridgeEntry, error) 
 		}
 		keyFrom := strings.ToLower(entry.from)
 		keyTo := strings.ToLower(entry.to)
+		if keyFrom == keyTo {
+			return nil, fmt.Errorf("jumpbridge endpoints must be different systems: %s", entry.from)
+		}
 		pairKey := pairKey(keyFrom, keyTo)
 
 		if partner, ok := pairedWith[keyFrom]; ok && partner != keyTo {
@@ -186,6 +314,32 @@ func buildJumpbridgePairs(entries []jumpbridgeEntry) ([]jumpbridgeEntry, error) 
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+func (s *JumpbridgeService) resolvePairs(entries []jumpbridgeEntry) ([]resolvedJumpbridgeEntry, error) {
+	resolved := make([]resolvedJumpbridgeEntry, 0, len(entries))
+	for _, entry := range entries {
+		fromSystem, fromErr := s.findSystemByName(entry.from)
+		if fromErr != nil {
+			return nil, fmt.Errorf("unknown from system: %s", entry.from)
+		}
+		toSystem, toErr := s.findSystemByName(entry.to)
+		if toErr != nil {
+			return nil, fmt.Errorf("unknown to system: %s", entry.to)
+		}
+		if int(fromSystem.GetInt("eve_id")) == int(toSystem.GetInt("eve_id")) {
+			return nil, fmt.Errorf("jumpbridge endpoints must be different systems: %s", entry.from)
+		}
+		if !withinMaxDistance(fromSystem, toSystem) {
+			return nil, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears: %s <-> %s", maxJumpbridgeDistanceLY, entry.from, entry.to)
+		}
+		resolved = append(resolved, resolvedJumpbridgeEntry{
+			structureID: entry.structureID,
+			fromSystem:  fromSystem,
+			toSystem:    toSystem,
+		})
+	}
+	return resolved, nil
 }
 
 func pairKey(a string, b string) string {
@@ -209,6 +363,77 @@ func parseStructureID(raw string, from string, to string) int64 {
 	_, _ = hasher.Write([]byte("->"))
 	_, _ = hasher.Write([]byte(strings.ToLower(to)))
 	return -int64(hasher.Sum64())
+}
+
+func withinMaxDistance(from *core.Record, to *core.Record) bool {
+	dx := from.GetFloat("raw_x") - to.GetFloat("raw_x")
+	dy := from.GetFloat("raw_y") - to.GetFloat("raw_y")
+	dz := from.GetFloat("raw_z") - to.GetFloat("raw_z")
+	meters := math.Sqrt(dx*dx + dy*dy + dz*dz)
+	lightyears := meters / metersPerLightYear
+	return lightyears <= maxJumpbridgeDistanceLY
+}
+
+func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, fromSystem *core.Record, toSystem *core.Record) (int, error) {
+	saved := 0
+	directions := []struct {
+		fromName   string
+		toName     string
+		fromRecord *core.Record
+		toRecord   *core.Record
+	}{
+		{fromName: fromSystem.GetString("name"), toName: toSystem.GetString("name"), fromRecord: fromSystem, toRecord: toSystem},
+		{fromName: toSystem.GetString("name"), toName: fromSystem.GetString("name"), fromRecord: toSystem, toRecord: fromSystem},
+	}
+
+	for _, direction := range directions {
+		record := core.NewRecord(coll)
+		recordStructureID := parseStructureID(structureID, direction.fromName, direction.toName)
+		if recordStructureID == 0 {
+			continue
+		}
+		record.Set("structure_id", recordStructureID)
+		record.Set("from_solarsystem", direction.fromRecord.GetInt("eve_id"))
+		record.Set("to_solarsystem", direction.toRecord.GetInt("eve_id"))
+		record.Set("from_region", direction.fromRecord.GetInt("region_id"))
+		record.Set("to_region", direction.toRecord.GetInt("region_id"))
+		record.Set("is_friendly", true)
+		createdAt, _ := types.ParseDateTime(time.Now())
+		record.Set("created_date", createdAt)
+		if saveErr := s.App.Save(record); saveErr != nil {
+			logging.New(s.App).
+				WithFields(logging.Fields{
+					"structure_id": recordStructureID,
+				}).
+				WithErr(saveErr).
+				Debug("jumpbridge save failed")
+			return saved, saveErr
+		}
+		saved += 1
+	}
+	return saved, nil
+}
+
+func (s *JumpbridgeService) loadExistingPairState() (map[int]int, map[string]struct{}, error) {
+	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionJumpbridges, "", "", 0, 0, nil)
+	if recordsErr != nil {
+		return nil, nil, recordsErr
+	}
+
+	bySystem := make(map[int]int)
+	pairs := make(map[string]struct{})
+	for _, rec := range records {
+		from := int(rec.GetInt("from_solarsystem"))
+		to := int(rec.GetInt("to_solarsystem"))
+		if from <= 0 || to <= 0 || from == to {
+			continue
+		}
+		pairs[pairKey(strconv.Itoa(from), strconv.Itoa(to))] = struct{}{}
+		if _, exists := bySystem[from]; !exists {
+			bySystem[from] = to
+		}
+	}
+	return bySystem, pairs, nil
 }
 
 func (s *JumpbridgeService) removeSingles() int {
@@ -279,6 +504,24 @@ func (s *JumpbridgeService) findSystemByName(name string) (*core.Record, error) 
 		if len(records) == 0 {
 			return nil, sql.ErrNoRows
 		}
+	}
+	return records[0], nil
+}
+
+func (s *JumpbridgeService) findSystemByEveID(id int) (*core.Record, error) {
+	records, recordsErr := s.App.FindRecordsByFilter(
+		store.CollectionSolarSystems,
+		"eve_id = {:id}",
+		"",
+		1,
+		0,
+		map[string]any{"id": id},
+	)
+	if recordsErr != nil {
+		return nil, recordsErr
+	}
+	if len(records) == 0 {
+		return nil, sql.ErrNoRows
 	}
 	return records[0], nil
 }
