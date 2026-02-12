@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ESI_BASE } from "@/config/esi";
 import { useUIStore } from "@/app/store/uiStore";
+import { toErrorMeta } from "@/utils/httpError";
 import {
   ContextMenuItem,
   ContextMenuList,
@@ -37,8 +38,17 @@ export default function ContextMenuCharacterSearch({ text }: { text: string }) {
         });
         const names = await namesRes.json();
         if (!cancelled) setCharacters(names as Character[]);
-      } catch (err) {
-        setToast({ text: "Error searching for characters", color: "error" });
+      } catch (error: unknown) {
+        setToast({
+          text: "Error searching for characters",
+          color: "error",
+          meta: {
+            scope: "context-menu-character-search",
+            operation: "esi_character_search",
+            query: text,
+            error: toErrorMeta(error),
+          },
+        });
       }
     };
     if (text) {

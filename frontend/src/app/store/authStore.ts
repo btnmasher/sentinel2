@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import { useUIStore } from "@/app/store/uiStore";
+import { getHttpStatus } from "@/utils/httpError";
 
 type AuthState = {
   loaded: boolean;
@@ -139,8 +140,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         refreshFailures = 0;
         set(resolveAuthState());
         scheduleRefresh();
-      } catch (error: any) {
-        const status = error?.response?.status;
+      } catch (error: unknown) {
+        const status = getHttpStatus(error);
         if (status === 401 || status === 403) {
           useAuthStore.getState().forceLogout();
         } else {

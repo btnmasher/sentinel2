@@ -133,7 +133,7 @@ export default function IntelPanelLog({
               </span>
             );
           }
-          const system = chunk.system as any;
+          const system = chunk.system;
           if (!system) return <span key={idx}>{chunk.text} </span>;
           if (system.region >= 11000000) {
             return <span key={idx}>{chunk.text} </span>;

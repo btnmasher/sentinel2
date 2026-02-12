@@ -6,6 +6,7 @@ import {
   UI_DIALOG,
   useUIStore,
 } from "@/app/store/uiStore";
+import { toErrorMeta } from "@/utils/httpError";
 import { useMapStore } from "@/features/map";
 import { useIntelStore } from "@/features/intel";
 
@@ -39,8 +40,17 @@ function ShareLinkDialogBody() {
     try {
       await navigator.clipboard.writeText(shareUrl);
       setToast({ text: "Link copied to clipboard" });
-    } catch {
-      setToast({ text: "Unable to copy link", color: "error" });
+    } catch (error: unknown) {
+      setToast({
+        text: "Unable to copy link",
+        color: "error",
+        meta: {
+          scope: "share-link",
+          operation: "copy_clipboard",
+          urlLength: shareUrl.length,
+          error: toErrorMeta(error),
+        },
+      });
     }
   };
 

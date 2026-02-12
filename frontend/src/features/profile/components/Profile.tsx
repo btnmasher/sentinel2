@@ -4,6 +4,7 @@ import { pb } from "@/config/pb";
 import CharacterList from "@/components/CharacterList";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useUIStore } from "@/app/store/uiStore";
+import { getErrorMessage, getHttpData, getHttpStatus } from "@/utils/httpError";
 import { useShallow } from "zustand/shallow";
 
 type Character = {
@@ -38,9 +39,18 @@ export default function Profile() {
         if (!mounted) return;
         setCharacters(res.data.characters || []);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!mounted) return;
-        setToast({ text: "Failed to load profile", color: "error" });
+        setToast({
+          text: getErrorMessage(error, "Failed to load profile"),
+          color: "error",
+          meta: {
+            scope: "profile",
+            operation: "load_profile",
+            status: getHttpStatus(error),
+            data: getHttpData(error),
+          },
+        });
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -64,8 +74,17 @@ export default function Profile() {
         return;
       }
       setToast({ text: "Unable to start link flow", color: "error" });
-    } catch {
-      setToast({ text: "Unable to start link flow", color: "error" });
+    } catch (error: unknown) {
+      setToast({
+        text: getErrorMessage(error, "Unable to start link flow"),
+        color: "error",
+        meta: {
+          scope: "profile",
+          operation: "start_link_flow",
+          status: getHttpStatus(error),
+          data: getHttpData(error),
+        },
+      });
     }
   };
 

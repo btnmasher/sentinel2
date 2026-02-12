@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/config/api";
 import { useUIStore } from "@/app/store/uiStore";
+import { getErrorMessage } from "@/utils/httpError";
 import { ADMIN_MODAL, useAdminStore } from "./adminStore";
 import type { Character, SearchResult } from "../types";
 import { hasSearchMain } from "../utils/formatters";
@@ -59,9 +60,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           );
           await loadUser(selectedUser.user_id);
           setToast({ text: "Sessions revoked", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to revoke sessions",
+            text: getErrorMessage(error, "Failed to revoke sessions"),
             color: "error",
           });
         }
@@ -85,9 +86,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           );
           await loadUser(selectedUser.user_id);
           setToast({ text: "Uploader tokens revoked", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to revoke uploader tokens",
+            text: getErrorMessage(error, "Failed to revoke uploader tokens"),
             color: "error",
           });
         }
@@ -111,10 +112,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           );
           await loadUser(selectedUser.user_id);
           setToast({ text: "Uploader token regenerated", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text:
-              error?.response?.data || "Failed to regenerate uploader token",
+            text: getErrorMessage(error, "Failed to regenerate uploader token"),
             color: "error",
           });
         }
@@ -135,9 +135,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
       await loadUser(selectedUser.user_id);
       setToast({ text: "Access level updated", color: "info" });
       setModal(ADMIN_MODAL.Access, false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setToast({
-        text: error?.response?.data || "Failed to update access level",
+        text: getErrorMessage(error, "Failed to update access level"),
         color: "error",
       });
     }
@@ -156,9 +156,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           });
           await loadUser(selectedUser.user_id);
           setToast({ text: "Main character updated", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to set main character",
+            text: getErrorMessage(error, "Failed to set main character"),
             color: "error",
           });
         }
@@ -180,9 +180,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
       if (selectedUser) {
         await loadUser(selectedUser.user_id);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setToast({
-        text: error?.response?.data || "Failed to refresh character",
+        text: getErrorMessage(error, "Failed to refresh character"),
         color: "error",
       });
     }
@@ -200,9 +200,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
             await loadUser(selectedUser.user_id);
           }
           setToast({ text: "Character keys revoked", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to revoke character keys",
+            text: getErrorMessage(error, "Failed to revoke character keys"),
             color: "error",
           });
         }
@@ -236,9 +236,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
             await loadUser(selectedUser.user_id);
           }
           setToast({ text: "Character removed", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to remove character",
+            text: getErrorMessage(error, "Failed to remove character"),
             color: "error",
           });
         }
@@ -298,9 +298,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           clearUser();
           setModal(ADMIN_MODAL.Merge, false);
           setToast({ text: "Accounts merged", color: "info" });
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to merge account",
+            text: getErrorMessage(error, "Failed to merge account"),
             color: "error",
           });
         }
@@ -354,9 +354,9 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
           await loadUser(selectedUser.user_id);
           setToast({ text: "Character moved", color: "info" });
           setModal(ADMIN_MODAL.Move, false);
-        } catch (error: any) {
+        } catch (error: unknown) {
           setToast({
-            text: error?.response?.data || "Failed to move character",
+            text: getErrorMessage(error, "Failed to move character"),
             color: "error",
           });
         }

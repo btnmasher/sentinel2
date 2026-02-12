@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import { useAuthStore } from "@/app/store/authStore";
+import { getHttpStatus } from "@/utils/httpError";
 import { useIntelStore } from "../store/intelStore";
 import { normalizeIntelReport } from "../utils/intelReportUtils";
 
@@ -49,9 +50,12 @@ export default function useIntelRealtime() {
               const reports = Array.isArray(res.data.intel)
                 ? res.data.intel
                     .map((report: unknown) => normalizeIntelReport(report))
-                    .filter(Boolean)
+                    .filter(
+                      (report): report is NonNullable<typeof report> =>
+                        report !== null,
+                    )
                 : [];
-              setReports(reports as any);
+              setReports(reports);
               setUploaders(res.data.uploaders ?? 0);
               setVersion(res.data.version ?? "");
             })
@@ -71,8 +75,8 @@ export default function useIntelRealtime() {
         if (active) {
           setIntelStatus("connected");
         }
-      } catch (error: any) {
-        const status = error?.status || error?.response?.status;
+      } catch (error: unknown) {
+        const status = getHttpStatus(error);
         if (status === 401 || status === 403) {
           useAuthStore
             .getState()
@@ -98,8 +102,8 @@ export default function useIntelRealtime() {
             })
             .catch(() => undefined);
         });
-      } catch (error: any) {
-        const status = error?.status || error?.response?.status;
+      } catch (error: unknown) {
+        const status = getHttpStatus(error);
         if (status === 401 || status === 403) {
           useAuthStore
             .getState()
@@ -115,8 +119,8 @@ export default function useIntelRealtime() {
     return () => {
       active = false;
       setIntelStatus("disconnected");
-      const ignoreMissingClient = (error: any) => {
-        if (error?.status === 404) {
+      const ignoreMissingClient = (error: unknown) => {
+        if (getHttpStatus(error) === 404) {
           return;
         }
         throw error;

@@ -11,10 +11,10 @@ type IntroModalKey = (typeof INTRO_MODAL)[keyof typeof INTRO_MODAL];
 function IntroductionDialogBody() {
   const { close } = useModalBody();
   const setIntroduction = useSettingsStore((s) => s.setIntroduction);
-  const [introCountdown, setIntroCountdown] = useState(15);
+  const [introCountdown, setIntroCountdown] = useState(3);
 
   useEffect(() => {
-    setIntroCountdown(15);
+    setIntroCountdown(3);
     const timer = setInterval(() => {
       setIntroCountdown((value) => {
         if (value <= 1) {

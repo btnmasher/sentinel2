@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/config/api";
 import { useUIStore } from "@/app/store/uiStore";
+import { getErrorMessage } from "@/utils/httpError";
 
 type AdminMapDataState = {
   loadingLabel: string | null;
@@ -18,9 +19,9 @@ export const useAdminMapDataStore = create<AdminMapDataState>((set) => ({
         text: `${label} started (job ${res.data?.job_id || "unknown"})`,
         color: "info",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setToast({
-        text: error?.response?.data || `Failed to start ${label}`,
+        text: getErrorMessage(error, `Failed to start ${label}`),
         color: "error",
       });
     } finally {

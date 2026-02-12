@@ -14,26 +14,30 @@ export const toNumber = (value: unknown): number => {
   return 0;
 };
 
-export const normalizeIntelReport = (input: any): IntelReport | null => {
-  const reportId = toNumber(input?.report_id ?? input?.id);
-  const reportTime = toNumber(input?.report_time ?? input?.time);
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+export const normalizeIntelReport = (input: unknown): IntelReport | null => {
+  const source = asRecord(input);
+  const reportId = toNumber(source.report_id ?? source.id);
+  const reportTime = toNumber(source.report_time ?? source.time);
   if (!reportId || !reportTime) return null;
 
   const recordId =
-    input?.recordId ??
-    input?.record_id ??
-    (typeof input?.id === "string" ? input.id : undefined);
+    source.recordId ??
+    source.record_id ??
+    (typeof source.id === "string" ? source.id : undefined);
 
   return {
     recordId,
     id: reportId,
     time: reportTime,
-    author: input?.author ?? "",
-    text: input?.text ?? "",
+    author: typeof source.author === "string" ? source.author : "",
+    text: typeof source.text === "string" ? source.text : "",
     channel_id:
-      input?.channel_id ??
-      (typeof input?.channel === "string" ? input.channel : undefined),
-    systems: decodeArray(input?.systems),
-    regions: decodeArray(input?.regions),
+      (typeof source.channel_id === "string" ? source.channel_id : undefined) ??
+      (typeof source.channel === "string" ? source.channel : undefined),
+    systems: decodeArray(source.systems),
+    regions: decodeArray(source.regions),
   };
 };

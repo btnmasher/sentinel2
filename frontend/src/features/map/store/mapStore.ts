@@ -7,6 +7,7 @@ import { useAuthStore } from "@/app/store/authStore";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { UI_DIALOG, useUIStore } from "@/app/store/uiStore";
 import { ensurePersistReset } from "@/app/store/persistReset";
+import { getHttpData, getHttpStatus } from "@/utils/httpError";
 import type {
   Character,
   Gate,
@@ -21,6 +22,12 @@ type Jumpranges = {
   selectedSystem?: number;
   primary?: number;
   secondary?: number;
+};
+
+type LocationEntry = {
+  character_id: number | string;
+  location?: number;
+  in_space?: boolean;
 };
 
 type MapState = {
@@ -90,26 +97,54 @@ type MapState = {
 
 let routePolling: number | undefined;
 
-const showRouteError = (message: unknown) => {
+type RouteErrorContext = {
+  operation:
+    | "request_route"
+    | "request_route_waypoints"
+    | "update_route"
+    | "clear_route";
+  character?: number;
+  waypoints?: number[];
+};
+
+const buildRouteErrorMeta = (error: unknown, context: RouteErrorContext) => ({
+  scope: "map-route",
+  ...context,
+  status: getHttpStatus(error),
+  data: getHttpData(error),
+});
+
+const showRouteError = (
+  message: unknown,
+  context: RouteErrorContext,
+  error?: unknown,
+) => {
   const text =
     typeof message === "string"
       ? message
       : message && typeof message === "object"
         ? ((message as { message?: string }).message ?? JSON.stringify(message))
         : "Error setting route, try again";
-  useUIStore.getState().setToast({ text, color: "error" });
+  useUIStore.getState().setToast({
+    text,
+    color: "error",
+    meta: buildRouteErrorMeta(error, context),
+  });
 };
 
-const handleRouteError = (error: any) => {
-  const response = error?.response;
-  if (response?.status === 403 && response?.data === ESI_PERMISSION_REQUIRED) {
-    useUIStore
-      .getState()
-      .setToast({ text: "Error setting route", color: "error" });
+const handleRouteError = (error: unknown, context: RouteErrorContext) => {
+  const status = getHttpStatus(error);
+  const data = getHttpData(error);
+  if (status === 403 && data === ESI_PERMISSION_REQUIRED) {
+    useUIStore.getState().setToast({
+      text: "Error setting route",
+      color: "error",
+      meta: buildRouteErrorMeta(error, context),
+    });
     useUIStore.getState().setModal(UI_DIALOG.PermissionRequired, true);
     return;
   }
-  showRouteError(response?.data || "Error finding route, try again");
+  showRouteError(data || "Error finding route, try again", context, error);
 };
 
 ensurePersistReset();
@@ -175,10 +210,19 @@ export const useMapStore = create<MapState>()(
             jumpbridges: response.data.jumpbridges,
             lastJumpgateUpdate: Date.now(),
           });
-        } catch (error) {
-          useUIStore
-            .getState()
-            .setToast({ text: "Error loading map data", color: "error" });
+        } catch (error: unknown) {
+          useUIStore.getState().setToast({
+            text: "Error loading map data",
+            color: "error",
+            meta: {
+              scope: "map-data",
+              operation: "fetch_map_data",
+              mapRegions,
+              mapLayout,
+              status: getHttpStatus(error),
+              data: getHttpData(error),
+            },
+          });
         }
       },
       loadCharacters: async () => {
@@ -273,7 +317,7 @@ export const useMapStore = create<MapState>()(
             characters: nextTargets,
           });
           const locations = response.data.locations || [];
-          locations.forEach((entry: any) => {
+          locations.forEach((entry: LocationEntry) => {
             const charId = Number(entry.character_id);
             if (!charId) return;
             const location = entry.location;
@@ -317,7 +361,11 @@ export const useMapStore = create<MapState>()(
             void get().updateRoute(character);
           }, 30000);
         } catch (error) {
-          handleRouteError(error);
+          handleRouteError(error, {
+            operation: "request_route_waypoints",
+            character,
+            waypoints,
+          });
         }
       },
       requestRoute: async (character, destination) => {
@@ -393,7 +441,11 @@ export const useMapStore = create<MapState>()(
           }
           set({ route: [], lastRouteCharacter: character });
         } catch (error) {
-          showRouteError("Error updating route");
+          showRouteError(
+            "Error updating route",
+            { operation: "update_route", character },
+            error,
+          );
         }
       },
       clearRoute: async (character) => {
@@ -411,7 +463,11 @@ export const useMapStore = create<MapState>()(
             return { route: [], routeWaypointsByCharacter: nextWaypoints };
           });
         } catch (error) {
-          showRouteError("Error clearing route, try again");
+          showRouteError(
+            "Error clearing route, try again",
+            { operation: "clear_route", character: target },
+            error,
+          );
         }
       },
       setFavoriteCharacters: (ids) => set({ favoriteCharacters: ids }),

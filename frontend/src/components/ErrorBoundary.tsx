@@ -25,7 +25,6 @@ export default class ErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     const name = this.props.name ? `(${this.props.name})` : "";
-    // eslint-disable-next-line no-console
     console.error(`ErrorBoundary ${name}`, error, info);
   }
 

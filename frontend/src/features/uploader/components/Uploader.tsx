@@ -3,6 +3,7 @@ import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import useConfirm from "@/app/hooks/useConfirm";
 import { useUIStore } from "@/app/store/uiStore";
+import { getErrorMessage } from "@/utils/httpError";
 import { useShallow } from "zustand/shallow";
 
 const DOWNLOADS = [
@@ -78,13 +79,10 @@ export default function Uploader() {
     try {
       const res = await api.post("/auth/uploader-token/rotate");
       setToken(res.data.token || "");
-    } catch (error: any) {
-      const detail =
-        error?.response?.data?.message ||
-        error?.response?.data ||
-        error?.message;
+    } catch (error: unknown) {
+      const detail = getErrorMessage(error, "Failed to regenerate token");
       setToast({
-        text: detail || "Failed to regenerate token",
+        text: detail,
         color: "error",
       });
     } finally {

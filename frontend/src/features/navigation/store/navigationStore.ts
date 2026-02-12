@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "@/config/api";
 import { ESI_PERMISSION_REQUIRED } from "@/config/esi";
 import { UI_DIALOG, useUIStore } from "@/app/store/uiStore";
+import { getHttpData, getHttpStatus } from "@/utils/httpError";
 import type { SystemSearch } from "../types";
 
 type NavigationState = {
@@ -146,21 +147,31 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         avoid: avoid.map((item) => item.id),
       });
       set({ route: res.data.route || [] });
-    } catch (error: any) {
-      const response = error?.response;
-      if (
-        response?.status === 403 &&
-        response?.data === ESI_PERMISSION_REQUIRED
-      ) {
-        useUIStore
-          .getState()
-          .setToast({ text: "Error setting route", color: "error" });
+    } catch (error: unknown) {
+      const status = getHttpStatus(error);
+      const data = getHttpData(error);
+      const meta = {
+        scope: "navigation-route",
+        operation: "request_route",
+        character,
+        waypoints: waypoints.map((item) => item.id),
+        avoid: avoid.map((item) => item.id),
+        status,
+        data,
+      };
+      if (status === 403 && data === ESI_PERMISSION_REQUIRED) {
+        useUIStore.getState().setToast({
+          text: "Error setting route",
+          color: "error",
+          meta,
+        });
         useUIStore.getState().setModal(UI_DIALOG.PermissionRequired, true);
         return;
       }
       useUIStore.getState().setToast({
-        text: response?.data || "Error setting route",
+        text: typeof data === "string" ? data : "Error setting route",
         color: "error",
+        meta,
       });
     }
   },
@@ -170,10 +181,18 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     try {
       await api.delete(`/map/route/${character}`);
       set({ route: [] });
-    } catch {
-      useUIStore
-        .getState()
-        .setToast({ text: "Error clearing route", color: "error" });
+    } catch (error: unknown) {
+      useUIStore.getState().setToast({
+        text: "Error clearing route",
+        color: "error",
+        meta: {
+          scope: "navigation-route",
+          operation: "clear_route",
+          character,
+          status: getHttpStatus(error),
+          data: getHttpData(error),
+        },
+      });
     }
   },
   loadTopRoutes: async (opts) => {

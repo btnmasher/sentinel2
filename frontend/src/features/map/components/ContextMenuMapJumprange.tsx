@@ -19,6 +19,7 @@ export default function MapJumprangeMenu() {
   const menu = useUIStore((s) => s.contextMenu);
 
   const ranges = Object.values(JUMPRANGES);
+  const noneRange = { name: "None", value: undefined } as const;
   const secondaryRanges = ranges.filter(
     (range) => (jumpranges.primary ?? 0) < range.value,
   );
@@ -82,19 +83,17 @@ export default function MapJumprangeMenu() {
           </ContextMenuItem>
         ))}
       {selection === "secondary" &&
-        secondaryRanges
-          .concat([{ name: "None", value: undefined } as any])
-          .map((range) => (
-            <ContextMenuItem
-              key={range.value ?? "none"}
-              onClick={() => {
-                setJumpranges({ enabled: true, secondary: range.value });
-                setMenu(null);
-              }}
-            >
-              {range.name}
-            </ContextMenuItem>
-          ))}
+        secondaryRanges.concat([noneRange]).map((range) => (
+          <ContextMenuItem
+            key={range.value ?? "none"}
+            onClick={() => {
+              setJumpranges({ enabled: true, secondary: range.value });
+              setMenu(null);
+            }}
+          >
+            {range.name}
+          </ContextMenuItem>
+        ))}
     </ContextMenuList>
   );
 }

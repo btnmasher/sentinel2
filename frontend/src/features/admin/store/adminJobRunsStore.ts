@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import { useUIStore } from "@/app/store/uiStore";
+import { getErrorMessage, getHttpStatus } from "@/utils/httpError";
 import type { JobRunGroup } from "../types";
 
 type AdminJobRunsState = {
@@ -76,8 +77,8 @@ export const useAdminJobRunsStore = create<AdminJobRunsState>((set, get) => ({
         loading: false,
         etag: res.headers?.etag ?? get().etag,
       });
-    } catch (error: any) {
-      if (error?.response?.status === 304) {
+    } catch (error: unknown) {
+      if (getHttpStatus(error) === 304) {
         if (!silent) {
           set({ loading: false });
         }
@@ -134,9 +135,9 @@ export const useAdminJobRunsStore = create<AdminJobRunsState>((set, get) => ({
     try {
       await api.post(`/admin/jobs/${jobId}/cancel`);
       setToast({ text: `Cancel requested for job ${jobId}`, color: "info" });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setToast({
-        text: error?.response?.data || "Failed to cancel job",
+        text: getErrorMessage(error, "Failed to cancel job"),
         color: "error",
       });
     }

@@ -34,7 +34,7 @@ export type Settings = {
 type SettingsState = {
   settings: Settings;
   toggle: (group: keyof Settings, name: string) => void;
-  apply: (group: keyof Settings, name: string, value: any) => void;
+  apply: (group: keyof Settings, name: string, value: unknown) => void;
   setTheme: (value: Settings["theme"]) => void;
   setIntroduction: (value: boolean) => void;
   reset: () => void;
@@ -75,7 +75,7 @@ export const useSettingsStore = create<SettingsState>()(
       settings: defaultSettings,
       toggle: (group, name) =>
         set((state) => {
-          const current = state.settings[group] as any;
+          const current = state.settings[group] as Record<string, unknown>;
           if (current && typeof current[name] === "boolean") {
             return {
               settings: {
@@ -90,7 +90,10 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           settings: {
             ...state.settings,
-            [group]: { ...(state.settings[group] as any), [name]: value },
+            [group]: {
+              ...(state.settings[group] as Record<string, unknown>),
+              [name]: value,
+            },
           },
         })),
       setTheme: (value) =>
@@ -106,9 +109,20 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: "intel-map-config/settings",
       version: SETTINGS_STORE_VERSION,
-      migrate: (persisted: any) => {
+      migrate: (persisted: unknown) => {
         if (!persisted) return { settings: defaultSettings };
-        const persistedSettings = persisted.settings ?? persisted;
+        const persistedRecord =
+          typeof persisted === "object" && persisted !== null
+            ? (persisted as Record<string, unknown>)
+            : {};
+        const persistedSettingsRaw =
+          (persistedRecord.settings as Record<string, unknown> | undefined) ??
+          persistedRecord;
+        const persistedSettings = persistedSettingsRaw as Partial<Settings> & {
+          intel?: Partial<Settings["intel"]>;
+          map?: Partial<Settings["map"]>;
+          alarm?: Partial<Settings["alarm"]>;
+        };
         const mergedSettings: Settings = {
           ...defaultSettings,
           ...persistedSettings,

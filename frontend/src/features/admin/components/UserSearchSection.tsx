@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/shallow";
 import { useUIStore } from "@/app/store/uiStore";
+import { getErrorMessage, getHttpData, getHttpStatus } from "@/utils/httpError";
 import { useAdminStore } from "../store/adminStore";
 import { useAdminSearchStore } from "../store/adminSearchStore";
 import { buildSearchLabel } from "../utils/formatters";
@@ -29,8 +30,18 @@ export default function UserSearchSection() {
   const handleSelectUser = async (userId: string) => {
     try {
       await loadUser(userId);
-    } catch {
-      setToast({ text: "Failed to load user", color: "error" });
+    } catch (error: unknown) {
+      setToast({
+        text: getErrorMessage(error, "Failed to load user"),
+        color: "error",
+        meta: {
+          scope: "admin-user-search",
+          operation: "load_user",
+          userId,
+          status: getHttpStatus(error),
+          data: getHttpData(error),
+        },
+      });
     }
   };
 

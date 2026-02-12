@@ -1,9 +1,10 @@
 import { useMapStore } from "../store/mapStore";
 import { REGIONS } from "../types/regions";
 import { placeUnloadedMarker } from "../utils/mapUtils";
+import type { Gate } from "../types";
 import UnloadedLink from "./UnloadedLink";
 
-export default function MapRegionGateUnloaded({ gate }: { gate: any }) {
+export default function MapRegionGateUnloaded({ gate }: { gate: Gate }) {
   const systems = useMapStore((s) => s.systems);
   const regions = useMapStore((s) => s.regions);
   const mapScale = useMapStore((s) => s.mapScale);

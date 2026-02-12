@@ -27,6 +27,7 @@ function AuditLogModalBody() {
     setActor,
     setSummary,
     setPage,
+    clear,
     fetchAudit,
   } = useAdminAuditStore(
     useShallow((s) => ({
@@ -41,6 +42,7 @@ function AuditLogModalBody() {
       setActor: s.setActor,
       setSummary: s.setSummary,
       setPage: s.setPage,
+      clear: s.clear,
       fetchAudit: s.fetchAudit,
     })),
   );
