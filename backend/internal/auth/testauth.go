@@ -20,16 +20,17 @@ import (
 )
 
 type TestAuthProvider struct {
-	App  *pocketbase.PocketBase
-	OIDC *oidc.Client
+	App   *pocketbase.PocketBase
+	OIDC  *oidc.Client
+	Intel *intel.IntelService
 }
 
 type idTokenClaims struct {
 	Sub string `json:"sub"`
 }
 
-func NewTestAuthProvider(app *pocketbase.PocketBase, oidcClient *oidc.Client) *TestAuthProvider {
-	return &TestAuthProvider{App: app, OIDC: oidcClient}
+func NewTestAuthProvider(app *pocketbase.PocketBase, oidcClient *oidc.Client, intelService *intel.IntelService) *TestAuthProvider {
+	return &TestAuthProvider{App: app, OIDC: oidcClient, Intel: intelService}
 }
 
 func (p *TestAuthProvider) Name() string {
@@ -329,12 +330,14 @@ func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 			Warn("oidc user create failed")
 		return nil, saveErr
 	}
-	if _, tokenErr := intel.NewIntelService(p.App).GetOrCreateUploaderToken(record.Id); tokenErr != nil {
-		logging.New(p.App).
-			WithFields(logging.Fields{"user_id": record.Id}).
-			WithErr(tokenErr).
-			Warn("oidc uploader token seed failed")
-		return nil, tokenErr
+	if p.Intel != nil {
+		if _, tokenErr := p.Intel.GetOrCreateUploaderToken(record.Id); tokenErr != nil {
+			logging.New(p.App).
+				WithFields(logging.Fields{"user_id": record.Id}).
+				WithErr(tokenErr).
+				Warn("oidc uploader token seed failed")
+			return nil, tokenErr
+		}
 	}
 	return record, nil
 }

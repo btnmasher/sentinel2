@@ -39,6 +39,7 @@ func registerCleanupCron(app *pocketbase.PocketBase, deps dependencies) {
 		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
 			var reportHashCount int
 			var intelUploaderCount int
+			var uploaderSessionCount int
 			var uploaderTokenCount int
 			var intelReportCount int
 
@@ -55,6 +56,14 @@ func registerCleanupCron(app *pocketbase.PocketBase, deps dependencies) {
 			if err := stepper.Run("cleanup_intel_uploaders", false, func(ctx context.Context) error {
 				count, err := deps.cleanup.RemoveExpired(store.CollectionIntelUploaders)
 				intelUploaderCount = count
+				return err
+			}); err != nil {
+				return err
+			}
+
+			if err := stepper.Run("cleanup_uploader_sessions", false, func(ctx context.Context) error {
+				count, err := deps.cleanup.RemoveExpired(store.CollectionUploaderSessions)
+				uploaderSessionCount = count
 				return err
 			}); err != nil {
 				return err
@@ -79,6 +88,7 @@ func registerCleanupCron(app *pocketbase.PocketBase, deps dependencies) {
 			runner.WithFields(logging.Fields{
 				"intel_report_hash_count": reportHashCount,
 				"intel_uploaders_count":   intelUploaderCount,
+				"uploader_sessions_count": uploaderSessionCount,
 				"uploader_tokens_count":   uploaderTokenCount,
 				"intel_reports_count":     intelReportCount,
 			})

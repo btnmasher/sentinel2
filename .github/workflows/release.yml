@@ -32,6 +32,44 @@ jobs:
         with:
           bun-version: "1.3.8"
 
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: "0.14.1"
+
+      - name: Restore Go caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp/go-build-cache
+          key: ${{ runner.os }}-go-release-${{ hashFiles('backend/go.sum', 'uploader/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-release-
+
+      - name: Restore Bun caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.tmp/bun
+            ${{ github.workspace }}/.tmp/bun-install
+            ${{ github.workspace }}/frontend/node_modules
+          key: ${{ runner.os }}-bun-release-${{ hashFiles('frontend/bun.lockb', 'frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-release-
+
+      - name: Restore Zig cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.tmp/zig-cache
+          key: ${{ runner.os }}-zig-release-${{ hashFiles('uploader/go.sum', 'Taskfile.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-release-
+
+      - name: Setup project dependencies
+        run: task setup
+
       - name: Build release assets
         run: task release:assets
 

@@ -27,6 +27,7 @@ type EVEProvider struct {
 	OAuth2    oauth2.Config
 	ESI       esi.ESIClient
 	PublicESI *esi.ESIPublicClient
+	Intel     *intel.IntelService
 }
 
 type eveTokenClaims struct {
@@ -36,12 +37,13 @@ type eveTokenClaims struct {
 	Scp  []string `json:"scp"`
 }
 
-func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient) *EVEProvider {
+func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) *EVEProvider {
 	return &EVEProvider{
 		App:       app,
 		OAuth2:    oauthConfig,
 		ESI:       esiClient,
 		PublicESI: publicESI,
+		Intel:     intelService,
 	}
 }
 
@@ -669,8 +671,10 @@ func (p *EVEProvider) findOrCreateUser(characterID int) (*core.Record, error) {
 	if saveErr := p.App.Save(record); saveErr != nil {
 		return nil, saveErr
 	}
-	if _, tokenErr := intel.NewIntelService(p.App).GetOrCreateUploaderToken(record.Id); tokenErr != nil {
-		return nil, tokenErr
+	if p.Intel != nil {
+		if _, tokenErr := p.Intel.GetOrCreateUploaderToken(record.Id); tokenErr != nil {
+			return nil, tokenErr
+		}
 	}
 	return record, nil
 }

@@ -59,6 +59,39 @@ func init() {
 			return err
 		}
 
+		uploaderSessions := core.NewAuthCollection("uploader_sessions")
+		uploaderSessions.AuthRule = nil
+		uploaderSessions.PasswordAuth.Enabled = false
+		uploaderSessions.OAuth2.Enabled = false
+		uploaderSessions.OTP.Enabled = false
+		uploaderSessions.MFA.Enabled = false
+		uploaderSessions.AuthAlert.Enabled = false
+		uploaderSessions.AuthToken.Duration = 300
+		uploaderSessions.Fields.Add(
+			&core.RelationField{
+				Name:         "user",
+				Required:     true,
+				CollectionId: users.Id,
+				MaxSelect:    1,
+			},
+			&core.RelationField{
+				Name:         "uploader_token",
+				Required:     true,
+				CollectionId: uploaderTokens.Id,
+				MaxSelect:    1,
+			},
+			&core.TextField{Name: "scope", Required: true},
+			&core.DateField{Name: "expires_at", Required: true},
+			&core.DateField{Name: "last_seen_at"},
+		)
+		uploaderSessions.AddIndex("idx_uploader_sessions_user", false, "user", "")
+		uploaderSessions.AddIndex("idx_uploader_sessions_uploader_token", false, "uploader_token", "")
+		uploaderSessions.AddIndex("idx_uploader_sessions_scope", false, "scope", "")
+		uploaderSessions.AddIndex("idx_uploader_sessions_expires_at", false, "expires_at", "")
+		if err := app.Save(uploaderSessions); err != nil {
+			return err
+		}
+
 		intelChannels := core.NewBaseCollection("intel_channels")
 		intelChannels.Fields.Add(
 			&core.TextField{Name: "channel_name", Required: true},
@@ -390,6 +423,7 @@ func init() {
 			"constellations",
 			"regions",
 			"intel_channels",
+			"uploader_sessions",
 			"uploader_tokens",
 			"users",
 		}

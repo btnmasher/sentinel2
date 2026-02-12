@@ -13,8 +13,10 @@ import (
 	"sentinel2/internal/config"
 	"sentinel2/internal/esi"
 	"sentinel2/internal/intel"
+	"sentinel2/internal/jumpbridges"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/oidc"
+	"sentinel2/internal/realtime"
 
 	adminapi "sentinel2/internal/api/admin"
 	authapi "sentinel2/internal/api/auth"
@@ -27,6 +29,7 @@ type dependencies struct {
 	provider           auth.Provider
 	authManager        *auth.Manager
 	eveProvider        *auth.EVEProvider
+	intelService       *intel.IntelService
 	esiClient          esi.ESIClient
 	publicESI          *esi.ESIPublicClient
 	intelHandler       *intelapi.IntelHandler
@@ -47,8 +50,11 @@ func Run(cfg config.Config) error {
 
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{Dir: "pb_migrations"})
 
+	intelService := intel.NewIntelService(app)
+	intelService.SetReportHashSlots(cfg.IntelReportHashSlots)
+
 	publicESI := esi.NewESIPublicClient(cfg.ESIUserAgent)
-	provider, providerErr := buildAuthProvider(cfg, app, publicESI)
+	provider, providerErr := buildAuthProvider(cfg, app, publicESI, intelService)
 	if providerErr != nil {
 		return fmt.Errorf("auth init failed: %w", providerErr)
 	}
@@ -60,7 +66,10 @@ func Run(cfg config.Config) error {
 	}
 	esiClient := buildESIClient(app, cfg)
 
-	intelHandler := intelapi.NewIntelHandler(app, cfg)
+	intelHandler := intelapi.NewIntelHandler(app, cfg, intelService)
+	jumpbridgeService := jumpbridges.NewJumpbridgeService(app)
+	realtimePublisher := realtime.NewPublisher(app)
+	defer realtimePublisher.Stop()
 	mapHandler := mapapi.NewMapHandler(
 		app,
 		cfg,
@@ -73,15 +82,16 @@ func Run(cfg config.Config) error {
 	authHandler := authapi.NewAuthHandler(authManager)
 	cleanup := cleanup.New(app)
 	staffChannels := staffapi.NewChannelsHandler(app)
-	staffJumpbridges := staffapi.NewJumpbridgeHandler(app)
+	staffJumpbridges := staffapi.NewJumpbridgeHandler(app, jumpbridgeService)
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app)
-	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI)
-	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanup)
+	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService)
+	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanup, intelService)
 
 	deps := dependencies{
 		provider:           provider,
 		authManager:        authManager,
 		eveProvider:        eveProvider,
+		intelService:       intelService,
 		esiClient:          esiClient,
 		publicESI:          publicESI,
 		intelHandler:       intelHandler,
@@ -97,6 +107,7 @@ func Run(cfg config.Config) error {
 
 	registerRoutes(app, cfg, deps)
 	registerCrons(app, cfg, deps)
+	registerRealtime(app, intelService, realtimePublisher)
 
 	if startErr := app.Start(); startErr != nil {
 		logging.New(app).
@@ -107,7 +118,7 @@ func Run(cfg config.Config) error {
 	return nil
 }
 
-func buildAuthProvider(cfg config.Config, app *pocketbase.PocketBase, publicESI *esi.ESIPublicClient) (auth.Provider, error) {
+func buildAuthProvider(cfg config.Config, app *pocketbase.PocketBase, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (auth.Provider, error) {
 	switch cfg.AuthBackend {
 	case "eve":
 		oauthConfig := oauth2.Config{
@@ -120,13 +131,13 @@ func buildAuthProvider(cfg config.Config, app *pocketbase.PocketBase, publicESI 
 			Scopes: cfg.EVEScopeList(),
 		}
 		esiClient := esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
-		return auth.NewEVEProvider(app, oauthConfig, esiClient, publicESI), nil
+		return auth.NewEVEProvider(app, oauthConfig, esiClient, publicESI, intelService), nil
 	default:
 		oidcClient, oidcErr := oidc.New(context.Background(), cfg)
 		if oidcErr != nil {
 			return nil, oidcErr
 		}
-		return auth.NewTestAuthProvider(app, oidcClient), nil
+		return auth.NewTestAuthProvider(app, oidcClient, intelService), nil
 	}
 }
 

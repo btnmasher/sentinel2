@@ -1,49 +1,56 @@
-FROM golang:1.25-bullseye AS uploader
-WORKDIR /app/uploader
+FROM golang:1.25-bullseye AS toolchain
+ARG ZIG_VERSION=0.14.1
+ARG BUN_VERSION=1.3.8
+WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends zip \
+  && apt-get install -y --no-install-recommends ca-certificates curl git bash zip xz-utils \
+  && ARCH="$(dpkg --print-architecture)" \
+  && case "$ARCH" in \
+  amd64) ZIG_ARCH="x86_64" ;; \
+  arm64) ZIG_ARCH="aarch64" ;; \
+  *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;; \
+  esac \
+  && curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-${ZIG_ARCH}-${ZIG_VERSION}.tar.xz" -o /tmp/zig.tar.xz \
+  && tar -C /opt -xJf /tmp/zig.tar.xz \
+  && mv "/opt/zig-linux-${ZIG_ARCH}-${ZIG_VERSION}" /opt/zig \
+  && ln -s /opt/zig/zig /usr/local/bin/zig \
+  && rm -f /tmp/zig.tar.xz \
+  && curl -fsSL https://bun.sh/install | bash -s -- bun-v${BUN_VERSION} \
+  && ln -s /root/.bun/bin/bun /usr/local/bin/bun \
+  && go install github.com/go-task/task/v3/cmd/task@latest \
+  && ln -s /go/bin/task /usr/local/bin/task \
   && rm -rf /var/lib/apt/lists/*
-COPY uploader/go.mod uploader/go.sum ./
-RUN go mod download
-COPY uploader/ ./
-RUN mkdir -p /out/downloads \
-  && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/sentinel2-uploader . \
-  && zip -j /out/downloads/sentinel2-uploader-linux.zip /tmp/sentinel2-uploader \
-  && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o /tmp/sentinel2-uploader.exe . \
-  && zip -j /out/downloads/sentinel2-uploader-windows.zip /tmp/sentinel2-uploader.exe \
-  && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o /tmp/sentinel2-uploader . \
-  && zip -j /out/downloads/sentinel2-uploader-macos.zip /tmp/sentinel2-uploader
 
-FROM oven/bun:1.3.8 AS frontend
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/bun.lockb* ./
-RUN bun install --frozen-lockfile
-COPY frontend/ .
-COPY --from=uploader /out/downloads /app/frontend/public/downloads
-RUN bun run build
+FROM toolchain AS deps
+WORKDIR /app
+RUN mkdir -p /root/.cache/go-build /go/pkg/mod /app/.tmp/bun /app/.tmp/bun-install
+COPY backend/go.mod backend/go.sum ./backend/
+COPY uploader/go.mod uploader/go.sum ./uploader/
+RUN cd backend && go mod download \
+  && cd /app/uploader && go mod download
+COPY frontend/package.json frontend/bun.lockb* ./frontend/
+RUN cd frontend \
+  && BUN_TMPDIR=/app/.tmp/bun BUN_INSTALL=/app/.tmp/bun-install bun install --frozen-lockfile
 
-FROM golang:1.25-bullseye AS backend
+FROM toolchain AS build
 WORKDIR /app
 ARG BUILD_VERSION=""
-COPY backend/go.mod backend/go.sum ./backend/
-RUN cd backend && go mod download
-COPY backend/ ./backend/
-COPY --from=frontend /app/frontend/dist /app/backend/internal/web/dist
-RUN cd backend && \
-  LDFLAGS="" && \
-  if [ -n "$BUILD_VERSION" ]; then LDFLAGS="-X main.BuildVersion=$BUILD_VERSION"; fi && \
-  if [ -n "$LDFLAGS" ]; then \
-  go build -tags embed_frontend -ldflags "$LDFLAGS" -o /app/bin/sentinel2-server ./main.go; \
-  else \
-  go build -tags embed_frontend -o /app/bin/sentinel2-server ./main.go; \
-  fi
+ENV BUILD_VERSION=${BUILD_VERSION}
+ENV BUN_TMPDIR=/app/.tmp/bun
+ENV BUN_INSTALL=/app/.tmp/bun-install
+COPY --from=deps /go/pkg/mod /go/pkg/mod
+COPY --from=deps /root/.cache/go-build /root/.cache/go-build
+COPY --from=deps /app/frontend/node_modules /app/frontend/node_modules
+COPY --from=deps /app/.tmp /app/.tmp
+COPY . .
+RUN task build
 
 FROM debian:bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=backend /app/bin/sentinel2-server /app/sentinel2-server
+COPY --from=build /app/bin/sentinel2-server /app/sentinel2-server
 VOLUME ["/app/pb_data"]
 EXPOSE 8090
 ENV PB_DATA=/app/pb_data

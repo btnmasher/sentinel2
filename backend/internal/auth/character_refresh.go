@@ -24,6 +24,7 @@ type CharacterRefresher struct {
 	EVE       *EVEProvider
 	ESI       esi.ESIClient
 	PublicESI *esi.ESIPublicClient
+	Intel     *intel.IntelService
 }
 
 type throttleDelayProvider interface {
@@ -53,8 +54,8 @@ func getRefreshJobMeta(ctx context.Context) refreshJobMeta {
 	return meta
 }
 
-func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esi esi.ESIClient, publicESI *esi.ESIPublicClient) *CharacterRefresher {
-	return &CharacterRefresher{App: app, EVE: eve, ESI: esi, PublicESI: publicESI}
+func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esi esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) *CharacterRefresher {
+	return &CharacterRefresher{App: app, EVE: eve, ESI: esi, PublicESI: publicESI, Intel: intelService}
 }
 
 func (r *CharacterRefresher) RefreshAll(ctx context.Context) (int, int) {
@@ -234,7 +235,9 @@ func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *co
 	if refreshErr != nil {
 		accessDenied := errors.Is(refreshErr, ErrAccessDenied)
 		if accessDenied && userID != "" {
-			_ = intel.NewIntelService(r.App).RevokeUploaderTokensForUser(userID)
+			if r.Intel != nil {
+				_ = r.Intel.RevokeUploaderTokensForUser(userID)
+			}
 			audit.New(r.App).Log(
 				"user.revoke_upload_tokens",
 				"Revoked uploader tokens (allowlist)",

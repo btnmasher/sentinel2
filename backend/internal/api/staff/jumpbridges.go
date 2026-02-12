@@ -14,21 +14,8 @@ import (
 	"sentinel2/internal/mapdata"
 )
 
-type jumpbridgeImportResponse struct {
-	Count int `json:"count"`
-}
-
-type jumpbridgeMutationResponse struct {
-	Changed bool `json:"changed"`
-	Count   int  `json:"count"`
-}
-
-type JumpbridgeHandler struct {
-	App *pocketbase.PocketBase
-}
-
-func NewJumpbridgeHandler(app *pocketbase.PocketBase) *JumpbridgeHandler {
-	return &JumpbridgeHandler{App: app}
+func NewJumpbridgeHandler(app *pocketbase.PocketBase, service *jumpbridges.JumpbridgeService) *JumpbridgeHandler {
+	return &JumpbridgeHandler{App: app, Service: service}
 }
 
 func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
@@ -36,37 +23,34 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 		Jumpbridges string `json:"jumpbridges"`
 	}{}
 	if bindErr := c.BindBody(&payload); bindErr != nil {
-		logging.WithRequest(h.App, c).
-			WithErr(bindErr).
-			Warn("jumpbridge import malformed payload")
-		return router.NewBadRequestError("Invalid payload.", nil)
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{
+			"error": bindErr.Error(),
+		})
 	}
 
 	if strings.TrimSpace(payload.Jumpbridges) == "" {
-		return router.NewBadRequestError("Jumpbridge import failed: empty input.", nil)
+		return router.NewBadRequestError("Jumpbridge import failed: empty input.", logging.Fields{
+			"jumpbridges": payload.Jumpbridges,
+		})
 	}
 
 	lines := strings.Split(strings.ReplaceAll(payload.Jumpbridges, "\r", ""), "\n")
-	service := jumpbridges.NewJumpbridgeService(h.App)
-	count, updateErr := service.UpdateFromLines(lines)
-	if updateErr != nil {
-		logFields := logging.Fields{
+	if h.Service == nil {
+		return router.NewInternalServerError("Jumpbridge service unavailable.", logging.Fields{
 			"line_count": len(lines),
-		}
-		if c.Auth != nil {
-			logFields["user_id"] = c.Auth.Id
-		}
-		logging.WithRequest(h.App, c).
-			WithFields(logFields).
-			WithErr(updateErr).
-			Warn("jumpbridge import failed")
-		return router.NewInternalServerError("Failed to import jumpbridges.", nil)
+		})
 	}
-
+	count, updateErr := h.Service.UpdateFromLines(lines)
 	logFields := logging.Fields{
 		"line_count": len(lines),
 		"count":      count,
 	}
+
+	if updateErr != nil {
+		logFields["error"] = updateErr.Error()
+		return router.NewInternalServerError("Failed to import jumpbridges.", logFields)
+	}
+
 	if c.Auth != nil {
 		logFields["user_id"] = c.Auth.Id
 	}
@@ -90,13 +74,16 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 }
 
 func (h *JumpbridgeHandler) Clear(c *core.RequestEvent) error {
-	service := jumpbridges.NewJumpbridgeService(h.App)
-	_, updateErr := service.UpdateFromLines([]string{})
+	if h.Service == nil {
+		return router.NewInternalServerError("Jumpbridge service unavailable.", logging.Fields{
+			"operation": "clear",
+		})
+	}
+	_, updateErr := h.Service.UpdateFromLines([]string{})
 	if updateErr != nil {
-		logging.WithRequest(h.App, c).
-			WithErr(updateErr).
-			Warn("jumpbridge clear failed")
-		return router.NewInternalServerError("Failed to clear jumpbridges.", nil)
+		return router.NewInternalServerError("Failed to clear jumpbridges.", logging.Fields{
+			"error": updateErr.Error(),
+		})
 	}
 
 	actorID := ""
@@ -120,16 +107,29 @@ func (h *JumpbridgeHandler) Add(c *core.RequestEvent) error {
 		ToID   int `json:"to_id"`
 	}{}
 	if bindErr := c.BindBody(&payload); bindErr != nil {
-		return router.NewBadRequestError("Invalid payload.", nil)
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{
+			"error": bindErr.Error(),
+		})
 	}
 	if payload.FromID <= 0 || payload.ToID <= 0 {
-		return router.NewBadRequestError("Both from_id and to_id are required.", nil)
+		return router.NewBadRequestError("Both from_id and to_id are required.", logging.Fields{
+			"from_id": payload.FromID,
+			"to_id":   payload.ToID,
+		})
 	}
 
-	service := jumpbridges.NewJumpbridgeService(h.App)
-	changed, addErr := service.AddPair(payload.FromID, payload.ToID)
+	if h.Service == nil {
+		return router.NewInternalServerError("Jumpbridge service unavailable.", logging.Fields{
+			"operation": "add",
+		})
+	}
+	changed, addErr := h.Service.AddPair(payload.FromID, payload.ToID)
 	if addErr != nil {
-		return router.NewBadRequestError(addErr.Error(), nil)
+		return router.NewBadRequestError(addErr.Error(), logging.Fields{
+			"from_id": payload.FromID,
+			"to_id":   payload.ToID,
+			"error":   addErr.Error(),
+		})
 	}
 
 	if changed {
@@ -159,16 +159,29 @@ func (h *JumpbridgeHandler) Remove(c *core.RequestEvent) error {
 		ToID   int `json:"to_id"`
 	}{}
 	if bindErr := c.BindBody(&payload); bindErr != nil {
-		return router.NewBadRequestError("Invalid payload.", nil)
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{
+			"error": bindErr.Error(),
+		})
 	}
 	if payload.FromID <= 0 || payload.ToID <= 0 {
-		return router.NewBadRequestError("Both from_id and to_id are required.", nil)
+		return router.NewBadRequestError("Both from_id and to_id are required.", logging.Fields{
+			"from_id": payload.FromID,
+			"to_id":   payload.ToID,
+		})
 	}
 
-	service := jumpbridges.NewJumpbridgeService(h.App)
-	deleted, removeErr := service.RemovePair(payload.FromID, payload.ToID)
+	if h.Service == nil {
+		return router.NewInternalServerError("Jumpbridge service unavailable.", logging.Fields{
+			"operation": "remove",
+		})
+	}
+	deleted, removeErr := h.Service.RemovePair(payload.FromID, payload.ToID)
 	if removeErr != nil {
-		return router.NewInternalServerError("Failed to remove jumpbridge.", nil)
+		return router.NewInternalServerError("Failed to remove jumpbridge.", logging.Fields{
+			"from_id": payload.FromID,
+			"to_id":   payload.ToID,
+			"error":   removeErr.Error(),
+		})
 	}
 
 	if deleted > 0 {
@@ -196,16 +209,33 @@ func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
 		ToID      int `json:"to_id"`
 	}{}
 	if bindErr := c.BindBody(&payload); bindErr != nil {
-		return router.NewBadRequestError("Invalid payload.", nil)
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{
+			"error": bindErr.Error(),
+		})
 	}
 	if payload.OldFromID <= 0 || payload.OldToID <= 0 || payload.FromID <= 0 || payload.ToID <= 0 {
-		return router.NewBadRequestError("old_from_id, old_to_id, from_id, and to_id are required.", nil)
+		return router.NewBadRequestError("old_from_id, old_to_id, from_id, and to_id are required.", logging.Fields{
+			"old_from_id": payload.OldFromID,
+			"old_to_id":   payload.OldToID,
+			"from_id":     payload.FromID,
+			"to_id":       payload.ToID,
+		})
 	}
 
-	service := jumpbridges.NewJumpbridgeService(h.App)
-	changed, updateErr := service.UpdatePair(payload.OldFromID, payload.OldToID, payload.FromID, payload.ToID)
+	if h.Service == nil {
+		return router.NewInternalServerError("Jumpbridge service unavailable.", logging.Fields{
+			"operation": "update",
+		})
+	}
+	changed, updateErr := h.Service.UpdatePair(payload.OldFromID, payload.OldToID, payload.FromID, payload.ToID)
 	if updateErr != nil {
-		return router.NewBadRequestError(updateErr.Error(), nil)
+		return router.NewBadRequestError(updateErr.Error(), logging.Fields{
+			"old_from_id": payload.OldFromID,
+			"old_to_id":   payload.OldToID,
+			"from_id":     payload.FromID,
+			"to_id":       payload.ToID,
+			"error":       updateErr.Error(),
+		})
 	}
 
 	if changed {

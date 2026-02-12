@@ -1,7 +1,6 @@
-package main
+package logging
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,75 +10,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 )
-
-type uploaderLogger struct {
-	debugEnabled bool
-	inner        *slog.Logger
-	pretty       bool
-}
-
-func newUploaderLogger(debug bool) *uploaderLogger {
-	level := slog.LevelInfo
-	if debug {
-		level = slog.LevelDebug
-	}
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: level,
-	})
-	return &uploaderLogger{
-		debugEnabled: debug,
-		inner:        slog.New(handler),
-		pretty:       shouldPrettyPrint(),
-	}
-}
-
-func field(key string, value any) slog.Attr {
-	return slog.Any(key, value)
-}
-
-func (l *uploaderLogger) Debug(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil || !l.debugEnabled {
-		return
-	}
-	if l.pretty {
-		prettyPrint(slog.LevelDebug, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelDebug, msg, fields...)
-}
-
-func (l *uploaderLogger) Info(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil {
-		return
-	}
-	if l.pretty {
-		prettyPrint(slog.LevelInfo, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelInfo, msg, fields...)
-}
-
-func (l *uploaderLogger) Warn(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil {
-		return
-	}
-	if l.pretty {
-		prettyPrint(slog.LevelWarn, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelWarn, msg, fields...)
-}
-
-func (l *uploaderLogger) Error(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil {
-		return
-	}
-	if l.pretty {
-		prettyPrint(slog.LevelError, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelError, msg, fields...)
-}
 
 func shouldPrettyPrint() bool {
 	term := strings.TrimSpace(os.Getenv("TERM"))
@@ -131,14 +61,7 @@ func renderAttrs(attrs []slog.Attr) string {
 		return ""
 	}
 
-	values := map[string]any{}
-	for _, attr := range attrs {
-		key, value := resolveAttr(attr)
-		if key == "" {
-			continue
-		}
-		values[key] = value
-	}
+	values := attrsToMap(attrs)
 	if len(values) == 0 {
 		return ""
 	}
@@ -159,24 +82,4 @@ func renderAttrs(attrs []slog.Attr) string {
 	}
 
 	return lipgloss.NewStyle().MarginLeft(2).Render(strings.Join(parts, " "))
-}
-
-func resolveAttr(attr slog.Attr) (string, any) {
-	if attr.Key == "" {
-		return "", nil
-	}
-	value := attr.Value.Resolve()
-	switch value.Kind() {
-	case slog.KindGroup:
-		inner := map[string]any{}
-		for _, groupAttr := range value.Group() {
-			key, val := resolveAttr(groupAttr)
-			if key != "" {
-				inner[key] = val
-			}
-		}
-		return attr.Key, inner
-	default:
-		return attr.Key, value.Any()
-	}
 }

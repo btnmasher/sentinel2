@@ -25,29 +25,14 @@ import (
 	"sentinel2/internal/store"
 )
 
-type Handler struct {
-	App       *pocketbase.PocketBase
-	Refresher *auth.CharacterRefresher
-	Provider  *auth.EVEProvider
-	Cleanup   *cleanup.Service
-}
-
-func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service) *Handler {
+func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService) *Handler {
 	return &Handler{
 		App:       app,
 		Refresher: refresher,
 		Provider:  provider,
 		Cleanup:   cleanupSvc,
+		Intel:     intelSvc,
 	}
-}
-
-type searchItem struct {
-	CharacterRecordID string `json:"character_record_id"`
-	CharacterID       int    `json:"character_id"`
-	Name              string `json:"name"`
-	UserID            string `json:"user_id"`
-	IsMain            bool   `json:"is_main"`
-	MainName          string `json:"main_name"`
 }
 
 func (h *Handler) Search(c *core.RequestEvent) error {
@@ -91,62 +76,6 @@ func (h *Handler) Search(c *core.RequestEvent) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{"results": results})
-}
-
-type characterResponse struct {
-	ID               string `json:"id"`
-	CharacterID      int    `json:"character_id"`
-	Name             string `json:"name"`
-	CorpID           int    `json:"corp_id"`
-	CorpName         string `json:"corp_name"`
-	AllianceID       int    `json:"alliance_id"`
-	AllianceName     string `json:"alliance_name"`
-	IsMain           bool   `json:"is_main"`
-	Scopes           string `json:"scopes"`
-	ESILastRefreshAt string `json:"esi_last_refresh_at"`
-	ESILastError     string `json:"esi_last_error"`
-	ESITokenValid    bool   `json:"esi_token_valid"`
-}
-
-type auditLogEntry struct {
-	ID                  string `json:"id"`
-	Action              string `json:"action"`
-	Summary             string `json:"summary"`
-	ActorID             string `json:"actor_id"`
-	ActorDisplayName    string `json:"actor_display_name"`
-	TargetUserID        string `json:"target_user_id"`
-	TargetUserName      string `json:"target_user_name"`
-	TargetCharacterID   int    `json:"target_character_id"`
-	TargetCharacterName string `json:"target_character_name"`
-	Created             string `json:"created"`
-}
-
-type jobRunEntry struct {
-	ID               string `json:"id"`
-	JobID            string `json:"job_id"`
-	Kind             string `json:"kind"`
-	Step             string `json:"step"`
-	Trigger          string `json:"trigger"`
-	Status           string `json:"status"`
-	ActorID          string `json:"actor_id"`
-	ActorDisplayName string `json:"actor_display_name"`
-	StartedAt        string `json:"started_at"`
-	CompletedAt      string `json:"completed_at"`
-	DurationMs       int64  `json:"duration_ms"`
-	Error            string `json:"error"`
-}
-
-type jobRunGroup struct {
-	Parent jobRunEntry   `json:"parent"`
-	Steps  []jobRunEntry `json:"steps"`
-}
-
-type userResponse struct {
-	UserID             string              `json:"user_id"`
-	AccessLevel        string              `json:"access_level"`
-	SessionRevokedAt   string              `json:"session_revoked_at"`
-	UploaderTokenValid bool                `json:"uploader_token_valid"`
-	Characters         []characterResponse `json:"characters"`
 }
 
 func (h *Handler) AuditLogs(c *core.RequestEvent) error {
@@ -672,8 +601,10 @@ func (h *Handler) UserDetails(c *core.RequestEvent) error {
 		AccessLevel: record.GetString("access_level"),
 		Characters:  []characterResponse{},
 	}
-	if tokenValid, tokenErr := intel.NewIntelService(h.App).HasValidUploaderToken(record.Id); tokenErr == nil {
-		response.UploaderTokenValid = tokenValid
+	if h.Intel != nil {
+		if tokenValid, tokenErr := h.Intel.HasValidUploaderToken(record.Id); tokenErr == nil {
+			response.UploaderTokenValid = tokenValid
+		}
 	}
 	if revokedAt := record.GetDateTime("session_revoked_at").Time(); !revokedAt.IsZero() {
 		response.SessionRevokedAt = revokedAt.Format(time.RFC3339)
@@ -1085,27 +1016,25 @@ func (h *Handler) RevokeSessions(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
+	if h.Intel != nil {
+		if revokeErr := h.Intel.RevokeUploaderSessionsForUser(userID); revokeErr != nil {
+			return router.NewInternalServerError("Failed to revoke uploader sessions.", logging.Fields{
+				"user_id": userID,
+			})
+		}
+	}
 	h.logAction(c, "user.revoke_sessions", "Revoked sessions", userID, user.GetString("eve_character_name"), nil)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h *Handler) RevokeUploaderTokens(c *core.RequestEvent) error {
 	userID := c.Request.PathValue("id")
-	records, recordsErr := h.App.FindRecordsByFilter(
-		store.CollectionUploaderTokens,
-		"user = {:user}",
-		"",
-		0,
-		0, dbx.Params{"user": userID},
-	)
-	if recordsErr != nil {
-		return router.NewInternalServerError("Failed to load tokens.", logging.Fields{
-			"user_id": userID,
-		})
-	}
-	for _, rec := range records {
-		rec.Set("revoked", true)
-		_ = h.App.Save(rec)
+	if h.Intel != nil {
+		if revokeErr := h.Intel.RevokeUploaderTokensForUser(userID); revokeErr != nil {
+			return router.NewInternalServerError("Failed to revoke uploader tokens.", logging.Fields{
+				"user_id": userID,
+			})
+		}
 	}
 	h.logAction(c, "user.revoke_upload_tokens", "Revoked uploader tokens", userID, "", nil)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
@@ -1119,7 +1048,12 @@ func (h *Handler) RegenerateUploaderToken(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
-	record, regenErr := intel.NewIntelService(h.App).RegenerateUploaderToken(userID)
+	if h.Intel == nil {
+		return router.NewInternalServerError("Intel service unavailable.", logging.Fields{
+			"user_id": userID,
+		})
+	}
+	record, regenErr := h.Intel.RegenerateUploaderToken(userID)
 	if regenErr != nil {
 		return router.NewInternalServerError("Failed to regenerate uploader token.", logging.Fields{
 			"user_id": userID,

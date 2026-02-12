@@ -61,6 +61,20 @@ task setup
 task dev
 ```
 
+## 7) Zig For Uploader Cross-Builds
+
+Uploader Windows cross-builds use Zig as the C toolchain.
+
+1. Install Zig in WSL:
+
+```bash
+sudo snap install zig --classic
+# or download from https://ziglang.org/download/
+zig version
+```
+
+If Zig is unavailable in WSL, `task build:uploader:windows` and `task build:uploader:linux:zig` will fail. These paths are primarily used for cross-compilation (for example CI/Docker release builds).
+
 ## Shell Completion (Optional)
 
 ```bash

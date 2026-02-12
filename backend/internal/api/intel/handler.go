@@ -2,6 +2,7 @@ package intel
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -12,19 +13,11 @@ import (
 	"sentinel2/internal/config"
 	"sentinel2/internal/intel"
 	"sentinel2/internal/logging"
+	"sentinel2/internal/realtime"
 	"sentinel2/internal/store"
 )
 
-type IntelHandler struct {
-	App     *pocketbase.PocketBase
-	Config  config.Config
-	Service *intel.IntelService
-}
-
-func NewIntelHandler(app *pocketbase.PocketBase, cfg config.Config) *IntelHandler {
-	service := intel.NewIntelService(app)
-	service.SetReportHashSlots(cfg.IntelReportHashSlots)
-
+func NewIntelHandler(app *pocketbase.PocketBase, cfg config.Config, service *intel.IntelService) *IntelHandler {
 	return &IntelHandler{
 		App:     app,
 		Config:  cfg,
@@ -32,69 +25,64 @@ func NewIntelHandler(app *pocketbase.PocketBase, cfg config.Config) *IntelHandle
 	}
 }
 
-type intelRetrieveResponse struct {
-	Intel     []intel.IntelReport `json:"intel"`
-	Uploaders int                 `json:"uploaders"`
-	Version   string              `json:"version"`
-}
-
-type intelMetaResponse struct {
-	Uploaders int    `json:"uploaders"`
-	Version   string `json:"version"`
-}
-
-type uploaderTokenResponse struct {
-	Token string `json:"token"`
-}
-
-type intelBroadcast struct {
-	Intel     intel.IntelReport `json:"intel"`
-	Uploaders int               `json:"uploaders"`
-	Version   string            `json:"version"`
-}
-type submitPayload struct {
-	Text      string `json:"text"`
-	ChannelID string `json:"channel_id"`
-}
-
 func (h *IntelHandler) Submit(c *core.RequestEvent) error {
-	log := logging.WithRequest(h.App, c)
-	submitLog := log
 	ctxUserID, _ := c.Get("uploader_user_id").(string)
 	payload := submitPayload{}
 	if bindErr := c.BindBody(&payload); bindErr != nil {
-		submitLog.
-			WithErr(bindErr).
-			Warn("intel submit malformed payload")
-		return router.NewBadRequestError("Malformed JSON.", nil)
+		return router.NewBadRequestError("Malformed JSON.", logging.Fields{
+			"error": bindErr.Error(),
+		})
 	}
 
 	userID := ctxUserID
 	if userID == "" {
-		submitLog.Warn("intel submit missing uploader context")
-		return router.NewUnauthorizedError("Invalid uploader token.", nil)
+		return router.NewUnauthorizedError("Invalid uploader token.", logging.Fields{
+			"reason": "missing uploader user context",
+		})
 	}
 	_ = h.Service.UpdateUploader(userID)
 
 	if payload.Text != "" {
-		if payload.ChannelID == "" {
-			submitLog.Warn("intel submit missing channel")
-			return router.NewBadRequestError("Missing channel id.", nil)
+		channelID := strings.TrimSpace(payload.ChannelID)
+		if channelID == "" {
+			return router.NewBadRequestError("Missing channel id.", logging.Fields{
+				"uploader_user_id": userID,
+			})
+		}
+		if _, channelErr := h.App.FindRecordById(store.CollectionIntelChannels, channelID); channelErr != nil {
+			return router.NewBadRequestError("Invalid channel id.", logging.Fields{
+				"channel_id":       channelID,
+				"uploader_user_id": userID,
+				"error":            channelErr.Error(),
+			})
 		}
 		parsed, parseErr := intel.ParseReportText(payload.Text)
 		if parseErr != nil {
-			submitLog.
-				WithErr(parseErr).
-				Warn("intel submit parse failed")
-			return router.NewBadRequestError(parseErr.Error(), nil)
+			return router.NewBadRequestError(parseErr.Error(), logging.Fields{
+				"channel_id":       channelID,
+				"uploader_user_id": userID,
+				"error":            parseErr.Error(),
+				"text":             payload.Text,
+			})
+		}
+		parsed.Author = strings.TrimSpace(parsed.Author)
+		parsed.Text = strings.TrimSpace(parsed.Text)
+		if parsed.Author == "" {
+			return router.NewBadRequestError("Missing report author.", logging.Fields{
+				"channel_id":       channelID,
+				"uploader_user_id": userID,
+			})
+		}
+		if parsed.Text == "" {
+			return router.NewBadRequestError("Missing report text.", logging.Fields{
+				"channel_id":       channelID,
+				"uploader_user_id": userID,
+			})
 		}
 
 		reportTime := parsed.Date.Unix()
 		systems, systemsErr := intel.LinkSystemNames(h.App, parsed.Text)
 		if systemsErr != nil {
-			submitLog.
-				WithErr(systemsErr).
-				Warn("intel submit link systems failed")
 			return router.NewInternalServerError("Failed to link systems.", logging.Fields{
 				"author": parsed.Author,
 			})
@@ -112,9 +100,6 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 
 		shouldCreate, shouldErr := h.Service.ShouldCreateReport(parsed.Author, parsed.Text, reportTime)
 		if shouldErr != nil {
-			submitLog.
-				WithErr(shouldErr).
-				Error("intel submit store check failed")
 			return router.NewInternalServerError("Failed to store report.", logging.Fields{
 				"author": parsed.Author,
 			})
@@ -130,46 +115,26 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 				Systems:   systems,
 				Regions:   regions,
 				Uploader:  userID,
-				ChannelID: payload.ChannelID,
+				ChannelID: channelID,
 			}
 			if createErr := h.Service.CreateReport(report); createErr != nil {
-				submitLog.
-					WithErr(createErr).
-					Error("intel submit create failed")
 				return router.NewInternalServerError("Failed to save report.", logging.Fields{
 					"author":     parsed.Author,
-					"channel_id": payload.ChannelID,
+					"channel_id": channelID,
 				})
 			}
-			submitLog.WithFields(logging.Fields{
-				"report_id":        reportID,
-				"uploader_user_id": userID,
-				"channel_id":       payload.ChannelID,
-				"systems":          len(systems),
-				"regions":          len(regions),
-			}).Info("intel report created")
-
 		}
 	}
 
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (h *IntelHandler) Meta(c *core.RequestEvent) error {
-	uploaders, _ := h.Service.UploaderCount()
-	return c.JSON(http.StatusOK, intelMetaResponse{
-		Uploaders: uploaders,
-		Version:   h.Config.SentinelVersion,
-	})
-}
-
 func (h *IntelHandler) ListReports(c *core.RequestEvent) error {
 	reports, reportsErr := h.Service.ListReports(50)
 	if reportsErr != nil {
-		logging.WithRequest(h.App, c).
-			WithErr(reportsErr).
-			Error("intel list reports failed")
-		return router.NewInternalServerError("Failed to load reports.", nil)
+		return router.NewInternalServerError("Failed to load reports.", logging.Fields{
+			"error": reportsErr.Error(),
+		})
 	}
 	uploaders, _ := h.Service.UploaderCount()
 	return c.JSON(http.StatusOK, intelRetrieveResponse{
@@ -191,13 +156,13 @@ func (h *IntelHandler) GetUploaderToken(c *core.RequestEvent) error {
 	record, recordErr := h.Service.GetValidUploaderToken(user.Id)
 	if recordErr != nil {
 		if recordErr == intel.ErrExpiredOrRevoked {
-			return router.NewForbiddenError("Uploader token revoked.", nil)
+			return router.NewForbiddenError("Uploader token revoked.", logging.Fields{
+				"user_id": user.Id,
+			})
 		}
-		logging.WithRequest(h.App, c).
-			WithErr(recordErr).
-			Error("uploader token create failed")
 		return router.NewInternalServerError("Failed to get uploader token.", logging.Fields{
 			"user_id": user.Id,
+			"error":   recordErr.Error(),
 		})
 	}
 
@@ -216,13 +181,13 @@ func (h *IntelHandler) RotateUploaderToken(c *core.RequestEvent) error {
 	record, recordErr := h.Service.RotateUploaderToken(user.Id)
 	if recordErr != nil {
 		if recordErr == intel.ErrExpiredOrRevoked {
-			return router.NewForbiddenError("Uploader token revoked.", nil)
+			return router.NewForbiddenError("Uploader token revoked.", logging.Fields{
+				"user_id": user.Id,
+			})
 		}
-		logging.WithRequest(h.App, c).
-			WithErr(recordErr).
-			Error("uploader token rotate failed")
 		return router.NewInternalServerError("Failed to rotate uploader token.", logging.Fields{
 			"user_id": user.Id,
+			"error":   recordErr.Error(),
 		})
 	}
 
@@ -230,32 +195,40 @@ func (h *IntelHandler) RotateUploaderToken(c *core.RequestEvent) error {
 }
 
 func (h *IntelHandler) UploaderConfig(c *core.RequestEvent) error {
-	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionIntelChannels, "", "", 0, 0, nil)
-	if recordsErr != nil {
-		logging.WithRequest(h.App, c).
-			WithErr(recordsErr).
-			Error("uploader config load failed")
-		return router.NewInternalServerError("Failed to load channels.", nil)
-	}
-
-	channels := []uploaderChannel{}
-	for _, rec := range records {
-		name := rec.GetString("channel_name")
-		channels = append(channels, uploaderChannel{
-			ID:   rec.Id,
-			Name: name,
+	cfg, cfgErr := h.Service.UploaderConfig()
+	if cfgErr != nil {
+		return router.NewInternalServerError("Failed to load channels.", logging.Fields{
+			"error": cfgErr.Error(),
 		})
 	}
-	return c.JSON(http.StatusOK, uploaderConfigResponse{
-		Channels: channels,
+
+	return c.JSON(http.StatusOK, cfg)
+}
+
+func (h *IntelHandler) UploaderRealtimeToken(c *core.RequestEvent) error {
+	ctxUserID, _ := c.Get("uploader_user_id").(string)
+	ctxUploaderTokenID, _ := c.Get("uploader_token_id").(string)
+
+	if ctxUserID == "" || ctxUploaderTokenID == "" {
+		return router.NewUnauthorizedError("Invalid uploader token.", logging.Fields{
+			"user_id":           ctxUserID,
+			"uploader_token_id": ctxUploaderTokenID,
+		})
+	}
+
+	session, sessionErr := h.Service.IssueUploaderRealtimeSession(ctxUserID, ctxUploaderTokenID)
+	if sessionErr != nil {
+		return router.NewInternalServerError("Failed to issue realtime token.", logging.Fields{
+			"user_id":           ctxUserID,
+			"uploader_token_id": ctxUploaderTokenID,
+			"error":             sessionErr.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, uploaderRealtimeTokenResponse{
+		Token:               session.Token,
+		Topic:               realtime.TopicUploaderConfig,
+		ExpiresAt:           session.ExpiresAt.Unix(),
+		RefreshAfterSeconds: int64(session.RefreshAfter.Seconds()),
 	})
-}
-
-type uploaderConfigResponse struct {
-	Channels []uploaderChannel `json:"channels"`
-}
-
-type uploaderChannel struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }

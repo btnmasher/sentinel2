@@ -1,15 +1,15 @@
-//go:build windows
+//go:build linux
 
-package main
+package config
 
 import (
 	"os"
 	"path/filepath"
 )
 
-func defaultLogDir() string {
+func DefaultLogDir() string {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
+	if err != nil {
 		return ""
 	}
 	return filepath.Join(home, "Documents", "EVE", "logs", "Chatlogs")

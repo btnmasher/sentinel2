@@ -204,7 +204,9 @@ type authExchangeResponse struct {
 func (h *AuthHandler) Exchange(c *core.RequestEvent) error {
 	code := c.Request.URL.Query().Get("code")
 	if code == "" {
-		return router.NewBadRequestError("Missing code.", nil)
+		return router.NewBadRequestError("Missing code.", logging.Fields{
+			"required_field": "code",
+		})
 	}
 	user, token, exchangeErr := h.Auth.Exchange(code)
 	if exchangeErr != nil {

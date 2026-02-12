@@ -52,6 +52,7 @@ tasks:
 
   build:
     cmds:
+      - echo "[build] starting full build (uploader, frontend, backend)"
       - task: setup
       - task: build:uploader
       - task: build:frontend
@@ -60,7 +61,7 @@ tasks:
 
   clean:
     cmds:
-      - rm -rf dist frontend/dist backend/internal/web/dist uploader/dist .tmp/go-build-cache .tmp/golangci-lint-cache .tmp/bun .tmp/bun-install
+      - rm -rf dist frontend/dist backend/internal/web/dist uploader/dist .tmp/go-build-cache .tmp/golangci-lint-cache .tmp/bun .tmp/bun-install .tmp/zig-cache
       - |
         if [ -d bin ]; then
           find bin -mindepth 1 -maxdepth 1 ! -name 'pb_data' ! -name '.env' -exec rm -rf {} +
@@ -69,21 +70,26 @@ tasks:
     desc: Remove local build artifacts and tool caches (preserves bin/.env and bin/pb_data).
 
   build:frontend:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
+      - echo "[build:frontend] installing dependencies"
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
+      - echo "[build:frontend] building production bundle"
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run build
     desc: Build frontend bundle.
 
   build:frontend:dev:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
+      - echo "[build:frontend:dev] installing dependencies"
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
+      - echo "[build:frontend:dev] building non-minified bundle"
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run build -- --minify false
     desc: Build frontend bundle without minification.
 
   build:uploader:
     cmds:
+      - echo "[build:uploader] preparing uploader output directories"
       - |
         set -euo pipefail
         if ! command -v zip >/dev/null 2>&1; then
@@ -94,34 +100,131 @@ tasks:
       - mkdir -p frontend/public/downloads uploader/dist
       - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
       - rm -rf uploader/dist/*
-      - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-linux .
+      - echo "[build:uploader] building linux uploader binary"
+      - |
+        set -euo pipefail
+        case "${UPLOADER_LINUX_TOOLCHAIN:-native}" in
+          native) task build:uploader:linux ;;
+          zig) task build:uploader:linux:zig ;;
+          *)
+            echo "Unsupported UPLOADER_LINUX_TOOLCHAIN='${UPLOADER_LINUX_TOOLCHAIN:-}' (expected: native|zig)." >&2
+            exit 1
+            ;;
+        esac
+      - echo "[build:uploader] packaging linux archive"
       - zip -j frontend/public/downloads/sentinel2-uploader-linux.zip uploader/dist/sentinel2-uploader-linux
-      - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-windows.exe .
+      - echo "[build:uploader] building windows uploader binary"
+      - task: build:uploader:windows
+      - echo "[build:uploader] packaging windows archive"
       - zip -j frontend/public/downloads/sentinel2-uploader-windows.zip uploader/dist/sentinel2-uploader-windows.exe
-      - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-macos .
+      - echo "[build:uploader] building macOS uploader binary"
+      - task: build:uploader:darwin
+      - echo "[build:uploader] packaging macOS archive"
       - zip -j frontend/public/downloads/sentinel2-uploader-macos.zip uploader/dist/sentinel2-uploader-macos
-    desc: Build uploader bundles.
+    desc: Build uploader bundles (set UPLOADER_LINUX_TOOLCHAIN=zig for Zig Linux build).
 
   build:uploader:linux:
     cmds:
+      - echo "[build:uploader:linux] building linux uploader (native toolchain)"
       - mkdir -p uploader/dist
-      - cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-linux .
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-linux"
+        cd uploader && GOOS=linux GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
     desc: Build uploader for Linux (amd64).
 
-  build:uploader:darwin:
+  build:uploader:linux:zig:
+    deps: [ensure-deps:zig]
     cmds:
+      - echo "[build:uploader:linux:zig] building linux uploader with zig cc/c++"
       - mkdir -p uploader/dist
-      - cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-macos .
-    desc: Build uploader for macOS (amd64).
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-linux"
+        mkdir -p "{{.TASKFILE_DIR}}/.tmp/zig-cache"
+        cd uploader && \
+          ZIG_GLOBAL_CACHE_DIR="{{.TASKFILE_DIR}}/.tmp/zig-cache" \
+          CC='zig cc -target x86_64-linux-gnu' \
+          CXX='zig c++ -target x86_64-linux-gnu' \
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+          go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
+    desc: Build uploader for Linux (amd64) using Zig as CC/CXX.
+
+  build:uploader:darwin:
+    deps: [ensure-deps:zig]
+    cmds:
+      - echo "[build:uploader:darwin] building macOS uploader with zig cc/c++ (yolo mode)"
+      - mkdir -p uploader/dist
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-macos"
+        mkdir -p "{{.TASKFILE_DIR}}/.tmp/zig-cache"
+        cd uploader && \
+          ZIG_GLOBAL_CACHE_DIR="{{.TASKFILE_DIR}}/.tmp/zig-cache" \
+          CC='zig cc -target aarch64-macos' \
+          CXX='zig c++ -target aarch64-macos' \
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+          go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
+    desc: Build uploader for macOS (arm64) using Zig as CC/CXX.
+
+  build:uploader:headless:
+    cmds:
+      - echo "[build:uploader:headless] building headless uploader binaries for all platforms"
+      - task: build:uploader:linux:headless
+      - task: build:uploader:windows:headless
+      - task: build:uploader:darwin:headless
+    desc: Build headless uploader binaries for Linux, Windows, and macOS (arm64 macOS).
+
+  build:uploader:linux:headless:
+    cmds:
+      - echo "[build:uploader:linux:headless] building linux headless uploader"
+      - mkdir -p uploader/dist
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-linux"
+        cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
+    desc: Build headless uploader for Linux (amd64).
+
+  build:uploader:darwin:headless:
+    cmds:
+      - echo "[build:uploader:darwin:headless] building macOS headless uploader"
+      - mkdir -p uploader/dist
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-macos"
+        cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
+    desc: Build headless uploader for macOS (arm64).
+
+  build:uploader:windows:headless:
+    cmds:
+      - echo "[build:uploader:windows:headless] building windows headless uploader"
+      - mkdir -p uploader/dist
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-windows.exe"
+        cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
+    desc: Build headless uploader for Windows (amd64).
 
   build:uploader:windows:
+    deps: [ensure-deps:zig]
     cmds:
+      - echo "[build:uploader:windows] building windows uploader with zig cc/c++"
       - mkdir -p uploader/dist
-      - cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o dist/sentinel2-uploader-windows.exe .
+      - |
+        set -euo pipefail
+        APP_NAME="sentinel2-uploader-windows.exe"
+        mkdir -p "{{.TASKFILE_DIR}}/.tmp/zig-cache"
+        cd uploader && \
+          ZIG_GLOBAL_CACHE_DIR="{{.TASKFILE_DIR}}/.tmp/zig-cache" \
+          CC='zig cc -target x86_64-windows-gnu' \
+          CXX='zig c++ -target x86_64-windows-gnu' \
+          CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+          go build -ldflags "-H windowsgui -X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
     desc: Build uploader for Windows (amd64).
 
   prepare:embed:
     cmds:
+      - echo "[prepare:embed] syncing frontend dist into backend embed directory"
       - |
         set -euo pipefail
         if [ ! -d frontend/dist ]; then
@@ -164,6 +267,7 @@ tasks:
   build:backend:
     deps: [prepare:embed]
     cmds:
+      - echo "[build:backend] building backend with embedded frontend"
       - mkdir -p bin
       - cd backend && go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/${OUTPUT_NAME:-sentinel2-server} ./main.go
     desc: Build backend binary with embedded frontend.
@@ -171,6 +275,7 @@ tasks:
   build:backend:linux:
     deps: [prepare:embed]
     cmds:
+      - echo "[build:backend:linux] building linux backend with embedded frontend"
       - mkdir -p bin
       - cd backend && GOOS=linux GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64 ./main.go
     desc: Build backend binary for Linux (amd64).
@@ -178,19 +283,22 @@ tasks:
   build:backend:darwin:
     deps: [prepare:embed]
     cmds:
+      - echo "[build:backend:darwin] building macOS backend with embedded frontend"
       - mkdir -p bin
-      - cd backend && GOOS=darwin GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-amd64 ./main.go
-    desc: Build backend binary for macOS (amd64).
+      - cd backend && GOOS=darwin GOARCH=arm64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64 ./main.go
+    desc: Build backend binary for macOS (arm64).
 
   build:backend:windows:
     deps: [prepare:embed]
     cmds:
+      - echo "[build:backend:windows] building windows backend with embedded frontend"
       - mkdir -p bin
       - cd backend && GOOS=windows GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe ./main.go
     desc: Build backend binary for Windows (amd64).
 
   build:backend:skip-embed:
     cmds:
+      - echo "[build:backend:skip-embed] building backend without embedded frontend"
       - mkdir -p bin
       - cd backend && go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/${OUTPUT_NAME:-sentinel2-server} ./main.go
     desc: Build backend binary without embed tag.
@@ -211,6 +319,12 @@ tasks:
     cmds:
       - cd bin && ./sentinel2-server migrate
     desc: Build everything and run migrations.
+
+  build:migrate:skip-embed:
+    deps: [build:backend:skip-embed]
+    cmds:
+      - cd bin && ./sentinel2-server migrate
+    desc: Build backend without embed assets and run migrations.
 
   build:migrate-run:
     deps: [build]
@@ -265,14 +379,14 @@ tasks:
     desc: Run backend lint with auto-fix (local only).
 
   lint:frontend:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run lint
     desc: Run frontend lint.
 
   lint:frontend:fix:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run lint -- --fix
@@ -288,11 +402,47 @@ tasks:
       - docker compose up --build
     desc: Start production compose.
 
+  docker:up:detach:
+    cmds:
+      - docker compose up --build -d
+    desc: Start production compose in detached mode.
+
+  docker:logs:
+    cmds:
+      - docker compose logs -f
+    desc: Tail production compose logs.
+
+  docker:status:
+    cmds:
+      - docker compose ps
+    desc: Show production compose status.
+
+  docker:down:
+    cmds:
+      - docker compose down
+    desc: Stop production compose.
+
+  docker:restart:
+    cmds:
+      - task: docker:up:detach
+    desc: Alias for docker:up:detach.
+
+  docker:restart:migrate:
+    cmds:
+      - task: docker:up:migrate:detach
+    desc: Alias for docker:up:migrate:detach.
+
   docker:up:migrate:
     cmds:
       - docker compose run --rm sentinel2 /app/sentinel2-server migrate
       - docker compose up --build
     desc: Run migrations, then start production compose.
+
+  docker:up:migrate:detach:
+    cmds:
+      - docker compose run --rm sentinel2 /app/sentinel2-server migrate
+      - docker compose up --build -d
+    desc: Run migrations, then start production compose in detached mode.
 
   docker:dev:up:
     cmds:
@@ -301,7 +451,7 @@ tasks:
 
   docker:dev:up:migrate:
     cmds:
-      - docker compose -f docker-compose.dev.yml run --rm sentinel2-dev task build:migrate
+      - docker compose -f docker-compose.dev.yml run --rm sentinel2-dev task build:migrate:skip-embed
       - docker compose -f docker-compose.dev.yml up --build
     desc: Run migrations, then start dev compose.
 
@@ -321,7 +471,7 @@ tasks:
     desc: Show dev compose status.
 
   dev:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - |
         set -euo pipefail
@@ -365,7 +515,7 @@ tasks:
     desc: Run Vite + backend in a tmux session.
 
   dev:plain:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - |
         set -euo pipefail
@@ -491,13 +641,8 @@ tasks:
       - DEV_MIGRATIONS=1 task dev
     desc: Run dev workflow with migrations first.
 
-  dev:migrate:tmux:
-    cmds:
-      - DEV_MIGRATIONS=1 task dev:tmux
-    desc: Run dev workflow with migrations first in tmux.
-
   dev:frontend:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - task: setup
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
@@ -512,7 +657,7 @@ tasks:
     desc: Run backend with DEV_PROXY set.
 
   dev:container:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - |
         set -euo pipefail
@@ -536,13 +681,30 @@ tasks:
     desc: Run Vite + backend in a dev container.
 
   setup:
-    deps: [bun:ensure]
+    deps: [ensure-deps:bun]
     cmds:
       - go version
       - BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun --version
       - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
       - cd backend && go mod download
-    desc: Verify Go and Bun are installed.
+      - cd uploader && go mod download
+    desc: Verify Go/Bun and install frontend/backend/uploader dependencies.
+
+  ensure-deps:
+    deps: [ensure-deps:bun, ensure-deps:zig]
+    desc: Ensure Bun and Zig build dependencies are available.
+
+  ensure-deps:zig:
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v zig >/dev/null 2>&1; then
+          echo "zig is required for uploader cross-build tasks." >&2
+          echo "Install zig from https://ziglang.org/download/" >&2
+          exit 1
+        fi
+        zig version
+    desc: Ensure zig is installed.
 
   completion:install:
     cmds:
@@ -582,7 +744,7 @@ tasks:
         echo "Restart your shell to load it."
     desc: Install task shell completion for the current shell.
 
-  bun:ensure:
+  ensure-deps:bun:
     cmds:
       - mkdir -p "{{.BUN_TMPDIR_DEFAULT}}" "{{.BUN_INSTALL_DEFAULT}}"
     desc: Ensure Bun temp/cache directories exist.
@@ -612,14 +774,22 @@ tasks:
 
   release:assets:
     cmds:
+      - echo "[release:assets] building uploader/frontend/backend release artifacts"
       - task: build:uploader
       - task: build:frontend
+      - echo "[release:assets] preparing dist directory"
+      - rm -rf dist
       - mkdir -p dist
+      - echo "[release:assets] building backend binaries for linux, macOS, and windows"
       - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" GOOS=linux GOARCH=amd64 task build:backend
-      - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-darwin-amd64" GOOS=darwin GOARCH=amd64 task build:backend
+      - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" GOOS=darwin GOARCH=arm64 task build:backend
       - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" GOOS=windows GOARCH=amd64 task build:backend
-      - cp bin/sentinel2-server* dist/
+      - echo "[release:assets] copying backend binaries and versioned uploader archives"
+      - cp "bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" dist/
+      - cp "bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" dist/
+      - cp "bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" dist/
+      # Copy stable uploader archives into release artifacts with versioned filenames.
       - cp frontend/public/downloads/sentinel2-uploader-linux.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64.zip
       - cp frontend/public/downloads/sentinel2-uploader-windows.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.zip
-      - cp frontend/public/downloads/sentinel2-uploader-macos.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-amd64.zip
+      - cp frontend/public/downloads/sentinel2-uploader-macos.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-arm64.zip
     desc: Build release assets (backend binaries + uploader zips).

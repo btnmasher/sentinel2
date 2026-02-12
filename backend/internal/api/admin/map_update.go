@@ -12,15 +12,6 @@ import (
 	"sentinel2/internal/mapdata"
 )
 
-type mapDataResponse struct {
-	JobID string `json:"job_id"`
-	Step  string `json:"step"`
-}
-
-type MapUpdateHandler struct {
-	App *pocketbase.PocketBase
-}
-
 func NewMapUpdateHandler(app *pocketbase.PocketBase) *MapUpdateHandler {
 	return &MapUpdateHandler{App: app}
 }

@@ -47,6 +47,15 @@ type IntelReport struct {
 	ChannelID string        `json:"channel_id"`
 }
 
+type UploaderChannel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type UploaderConfig struct {
+	Channels []UploaderChannel `json:"channels"`
+}
+
 func NewIntelService(app *pocketbase.PocketBase) *IntelService {
 	return &IntelService{
 		App:             app,
@@ -138,6 +147,10 @@ func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, err
 		return nil, collErr
 	}
 
+	if err := s.RevokeUploaderSessionsForUser(userID); err != nil {
+		return nil, err
+	}
+
 	records, recordsErr := s.App.FindRecordsByFilter(
 		coll.Name,
 		"user = {:user}",
@@ -162,6 +175,15 @@ func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, err
 				}).
 				WithErr(saveErr).
 				Debug("uploader token revoke save failed")
+		}
+		if revokeErr := s.RevokeUploaderSessionsForUploaderToken(rec.Id); revokeErr != nil {
+			logging.New(s.App).
+				WithFields(logging.Fields{
+					"user_id":  userID,
+					"token_id": rec.Id,
+				}).
+				WithErr(revokeErr).
+				Debug("uploader sessions revoke failed")
 		}
 	}
 	if failed > 0 {
@@ -244,7 +266,31 @@ func (s *IntelService) RevokeUploaderTokensForUser(userID string) error {
 			}).
 			Warn("uploader token revoke failures")
 	}
+	if err := s.RevokeUploaderSessionsForUser(userID); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *IntelService) UploaderConfig() (UploaderConfig, error) {
+	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionIntelChannels, "", "channel_name", 0, 0, nil)
+	if recordsErr != nil {
+		return UploaderConfig{}, recordsErr
+	}
+
+	channels := make([]UploaderChannel, 0, len(records))
+	for _, rec := range records {
+		name := rec.GetString("channel_name")
+		if name == "" {
+			continue
+		}
+		channels = append(channels, UploaderChannel{
+			ID:   rec.Id,
+			Name: name,
+		})
+	}
+
+	return UploaderConfig{Channels: channels}, nil
 }
 
 func (s *IntelService) UpdateUploader(userID string) error {

@@ -5,6 +5,10 @@ import { useAuthStore } from "@/app/store/authStore";
 import { getHttpStatus } from "@/utils/httpError";
 import { useIntelStore } from "../store/intelStore";
 import { normalizeIntelReport } from "../utils/intelReportUtils";
+import {
+  INTEL_UPLOADER_COUNT_TOPIC,
+  normalizeUploaderCountMessage,
+} from "../utils/intelRealtimeUtils";
 
 type IntelRecord = {
   report_id?: number | string;
@@ -91,16 +95,11 @@ export default function useIntelRealtime() {
 
     const subscribeUploaders = async () => {
       try {
-        await pb.collection("intel_uploaders").subscribe("*", () => {
-          api
-            .get("/intel/meta", { headers: { "X-Auth-Check": "1" } })
-            .then((res) => {
-              setUploaders(res.data.uploaders ?? 0);
-              if (res.data.version) {
-                setVersion(res.data.version);
-              }
-            })
-            .catch(() => undefined);
+        await pb.realtime.subscribe(INTEL_UPLOADER_COUNT_TOPIC, (data) => {
+          const payload = normalizeUploaderCountMessage(data);
+          if (payload) {
+            setUploaders(payload.uploaders);
+          }
         });
       } catch (error: unknown) {
         const status = getHttpStatus(error);
@@ -130,9 +129,8 @@ export default function useIntelRealtime() {
           .collection("intel_reports")
           .unsubscribe()
           .catch(ignoreMissingClient);
-        void pb
-          .collection("intel_uploaders")
-          .unsubscribe()
+        void pb.realtime
+          .unsubscribe(INTEL_UPLOADER_COUNT_TOPIC)
           .catch(ignoreMissingClient);
       }
     };
