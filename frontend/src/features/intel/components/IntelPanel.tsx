@@ -3,7 +3,6 @@ import { ESI_BASE } from "@/config/esi";
 import { pb } from "@/config/pb";
 import { useIntelStore } from "../store/intelStore";
 import { useMapStore } from "@/features/map";
-import PanelContainer from "@/components/PanelContainer";
 import IntelFiltersCard from "./IntelFiltersCard";
 import IntelCharacterVisibilityCard from "./IntelCharacterVisibilityCard";
 import IntelFeedCard from "./IntelFeedCard";
@@ -23,6 +22,7 @@ export default function IntelPanel() {
   const { panelOpen, filtersOpen, charactersOpen, feedOpen } = useSettingsStore(
     (s) => s.settings.intel,
   );
+  const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
   const applySetting = useSettingsStore((s) => s.apply);
 
   useEffect(() => {
@@ -132,37 +132,47 @@ export default function IntelPanel() {
     });
   }, [logFilters, regions, reports]);
 
-  if (!panelOpen) {
+  const forceVisible = mapViewMode !== "full";
+  if (!forceVisible && !panelOpen) {
     return null;
   }
 
   return (
-    <PanelContainer
-      title="Intel Console"
-      subtitle="Filters and live report feed"
-    >
-      <div className="grid grid-cols-1 gap-3">
-        <IntelFiltersCard
-          logFilters={logFilters}
-          setLogFilters={setLogFilters}
-          toggleSystemFilter={toggleSystemFilter}
-          systemNames={systemNames}
-          open={filtersOpen}
-          onToggle={() => applySetting("intel", "filtersOpen", !filtersOpen)}
-        />
-        <IntelCharacterVisibilityCard
-          open={charactersOpen}
-          onToggle={() =>
-            applySetting("intel", "charactersOpen", !charactersOpen)
-          }
-        />
-        <IntelFeedCard
-          logs={filteredLogs}
-          channelNames={channelNames}
-          open={feedOpen}
-          onToggle={() => applySetting("intel", "feedOpen", !feedOpen)}
-        />
+    <div className="flex h-full min-h-0 max-h-full flex-col">
+      <div className="shrink-0">
+        <h2 className="text-lg font-display leading-none">Intel Console</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          Filters and live report feed
+        </p>
       </div>
-    </PanelContainer>
+      <div className="mt-4 min-h-0 flex flex-1 flex-col gap-3">
+        <div className="shrink-0">
+          <IntelFiltersCard
+            logFilters={logFilters}
+            setLogFilters={setLogFilters}
+            toggleSystemFilter={toggleSystemFilter}
+            systemNames={systemNames}
+            open={filtersOpen}
+            onToggle={() => applySetting("intel", "filtersOpen", !filtersOpen)}
+          />
+        </div>
+        <div className="shrink-0">
+          <IntelCharacterVisibilityCard
+            open={charactersOpen}
+            onToggle={() =>
+              applySetting("intel", "charactersOpen", !charactersOpen)
+            }
+          />
+        </div>
+        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
+          <IntelFeedCard
+            logs={filteredLogs}
+            channelNames={channelNames}
+            open={feedOpen}
+            onToggle={() => applySetting("intel", "feedOpen", !feedOpen)}
+          />
+        </div>
+      </div>
+    </div>
   );
 }

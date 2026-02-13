@@ -365,14 +365,21 @@ func renderQuitConfirmDialog(state *State) string {
 		quitButton = theme.ButtonFocusedStyle.Render("Quit")
 	}
 
+	buttonRow := lipgloss.JoinHorizontal(lipgloss.Top, cancelButton, "  ", quitButton)
+	dialogWidth := min(state.ContentWidth()-dialogHorizontalInset, quitDialogWidth)
+	buttonLine := lipgloss.NewStyle().
+		Width(max(dialogWidth-frameInnerInset, 1)).
+		AlignHorizontal(lipgloss.Center).
+		Render(buttonRow)
+
 	body := strings.Join([]string{
 		theme.TitleStyle.Render("Quit while connected?"),
 		"This will stop the uploader connection.",
-		cancelButton + "  " + quitButton,
+		buttonLine,
 		theme.HelpStyle.Render("tab/arrow switch • enter confirms"),
 	}, "\n")
 
-	return renderFrame(state, body, min(state.ContentWidth()-dialogHorizontalInset, quitDialogWidth))
+	return renderFrame(state, body, dialogWidth)
 }
 
 func renderErrorDialog(state *State) string {

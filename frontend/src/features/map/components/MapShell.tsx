@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { useEffect, useRef, type ReactNode } from "react";
 import { LayoutGrid, Maximize2, Menu } from "lucide-react";
 import { useAuthStore } from "@/app/store/authStore";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useShallow } from "zustand/shallow";
 import ThemeToggle from "@/components/ThemeToggle";
+import ResponsiveNavMenu, {
+  type ResponsiveNavMenuItem,
+} from "@/components/ResponsiveNavMenu";
 import { useSettingsStore } from "@/app/store/settingsStore";
 
 export type MapNavItem = {
@@ -30,8 +32,11 @@ type MapShellProps = {
   panel?: ReactNode;
   panelOpen?: boolean;
   panelClassName?: string;
+  onAutoHidePanel?: () => void;
   children?: ReactNode;
 };
+
+const panelModeMinViewportWidth = 1024;
 
 function MapTopBar({
   className = "",
@@ -119,8 +124,10 @@ export default function MapShell({
   panel,
   panelOpen,
   panelClassName,
+  onAutoHidePanel,
   children,
 }: MapShellProps) {
+  const autoSwitchedToFullRef = useRef(false);
   const { mapViewMode, setMapViewMode } = useSettingsStore(
     useShallow((s) => ({
       mapViewMode: s.settings.map.viewMode,
@@ -158,12 +165,67 @@ export default function MapShell({
   const isPanelOpen = panelOpen ?? Boolean(panel);
   const showPanelMode = mapViewMode === "panel";
   const showNavMenu = !showPanelMode;
-  const toggleViewMode = () =>
+  const responsiveNavItems: ResponsiveNavMenuItem[] = navItems
+    .filter((item) => {
+      if (item.staff && !(authLoaded && isStaff)) return false;
+      if (item.admin && !(authLoaded && isAdmin)) return false;
+      if (item.auth && !(authLoaded && isAuthenticated)) return false;
+      return true;
+    })
+    .map((item) => {
+      if (item.label === "Profile" && configLoaded && authBackend !== "eve") {
+        return {
+          key: item.to,
+          label: item.label,
+          href: oidcPortalUrl,
+        };
+      }
+      return {
+        key: item.to,
+        label: item.label,
+        to: item.to,
+      };
+    });
+  const toggleViewMode = () => {
+    autoSwitchedToFullRef.current = false;
     setMapViewMode("map", "viewMode", showPanelMode ? "full" : "panel");
+  };
+
+  useEffect(() => {
+    const syncResponsiveViewMode = () => {
+      if (
+        mapViewMode === "panel" &&
+        window.innerWidth < panelModeMinViewportWidth
+      ) {
+        autoSwitchedToFullRef.current = true;
+        setMapViewMode("map", "viewMode", "full");
+        onAutoHidePanel?.();
+        onCloseNav();
+        return;
+      }
+      if (
+        mapViewMode === "full" &&
+        autoSwitchedToFullRef.current &&
+        window.innerWidth >= panelModeMinViewportWidth
+      ) {
+        autoSwitchedToFullRef.current = false;
+        setMapViewMode("map", "viewMode", "panel");
+      }
+    };
+    syncResponsiveViewMode();
+    window.addEventListener("resize", syncResponsiveViewMode);
+    return () => window.removeEventListener("resize", syncResponsiveViewMode);
+  }, [mapViewMode, onAutoHidePanel, onCloseNav, setMapViewMode]);
 
   if (showPanelMode) {
     return (
-      <div className="grid gap-6 lg:grid-cols-[3fr_1fr] h-[calc(100vh-5rem-3rem)] items-stretch">
+      <div
+        className={`grid gap-6 h-[calc(100vh-4rem-3rem)] items-stretch ${
+          panel
+            ? "grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]"
+            : "grid-cols-1"
+        }`.trim()}
+      >
         <section className="card bg-base-200/70 border border-slate-800 h-full min-h-0 overflow-hidden">
           <div className="card-body h-full min-h-0 grid grid-rows-[auto_1fr] gap-4 p-4">
             <MapTopBar
@@ -197,89 +259,49 @@ export default function MapShell({
     <div className="w-full h-full relative">
       <div className="absolute inset-0">{children}</div>
 
-      {showNavMenu && navOpen && (
-        <div className="absolute top-16 left-4 z-40 w-56 rounded-lg border border-slate-800 bg-base-200/90 shadow-lg backdrop-blur">
-          <div className="px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-slate-500">
-            Menu
-          </div>
-          <div className="flex flex-col">
-            {navItems.map((item) => {
-              if (item.staff && !(authLoaded && isStaff)) return null;
-              if (item.admin && !(authLoaded && isAdmin)) return null;
-              if (item.auth && !(authLoaded && isAuthenticated)) {
-                return null;
-              }
-              if (
-                item.label === "Profile" &&
-                configLoaded &&
-                authBackend !== "eve"
-              ) {
-                return (
-                  <a
-                    key={item.to}
-                    href={oidcPortalUrl}
-                    className="px-3 py-2 text-sm hover:bg-base-300"
-                    onClick={onCloseNav}
-                  >
-                    Profile
-                  </a>
-                );
-              }
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `px-3 py-2 text-sm hover:bg-base-300 ${
-                      isActive ? "nav-active" : ""
-                    }`.trim()
-                  }
-                  onClick={onCloseNav}
-                >
-                  {item.label}
-                </NavLink>
-              );
-            })}
-            {isAuthenticated && configLoaded && standaloneAuth && (
-              <button
-                className="px-3 py-2 text-sm text-left hover:bg-base-300"
-                onClick={() => {
-                  onCloseNav();
-                  void logout();
-                }}
-              >
-                Log out
-              </button>
-            )}
-          </div>
+      <div className="absolute inset-4 z-30 pointer-events-none flex min-h-0 flex-col gap-3">
+        <div className="pointer-events-auto shrink-0">
+          <MapTopBar
+            className="rounded-lg border border-slate-800 bg-base-200/90 px-3 py-2 shadow-lg backdrop-blur text-xs"
+            showNavToggle={showNavMenu}
+            onToggleNav={onToggleNav}
+            pageBadge={pageBadge}
+            leftControls={leftControls}
+            rightControls={rightControls}
+            viewMode={mapViewMode}
+            onToggleViewMode={toggleViewMode}
+            showThemeToggle
+          />
         </div>
-      )}
 
-      <div className="absolute left-4 top-4 right-4 z-30">
-        <MapTopBar
-          className="rounded-lg border border-slate-800 bg-base-200/90 px-3 py-2 shadow-lg backdrop-blur text-xs"
-          showNavToggle={showNavMenu}
-          onToggleNav={onToggleNav}
-          pageBadge={pageBadge}
-          leftControls={leftControls}
-          rightControls={rightControls}
-          viewMode={mapViewMode}
-          onToggleViewMode={toggleViewMode}
-          showThemeToggle
-        />
+        <div className="min-h-0 flex flex-1 gap-4">
+          <div className="min-w-0 flex-1 relative">
+            <ResponsiveNavMenu
+              open={showNavMenu && navOpen}
+              items={responsiveNavItems}
+              onClose={onCloseNav}
+              onLogout={
+                isAuthenticated && configLoaded && standaloneAuth
+                  ? () => void logout()
+                  : undefined
+              }
+              className="absolute top-0 left-0 pointer-events-auto bg-base-200/90"
+            />
+          </div>
+
+          {panel && isPanelOpen && (
+            <div
+              className={`map-full-panel shrink-0 self-stretch h-full min-h-0 max-h-full overflow-hidden rounded-xl border border-slate-800 bg-base-200/90 shadow-lg backdrop-blur pointer-events-auto ${
+                panelClassName ?? "w-80"
+              }`}
+            >
+              <div className="min-h-0 max-h-full overflow-hidden p-3 flex flex-col">
+                {panel}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-
-      {panel && isPanelOpen && (
-        <div
-          className={`absolute top-16 right-4 z-20 max-h-[calc(100vh-7rem)] overflow-hidden rounded-xl border border-slate-800 bg-base-200/90 shadow-lg backdrop-blur mt-3 ${
-            panelClassName ?? "w-80"
-          }`}
-        >
-          <div className="max-h-[calc(100vh-7rem)] overflow-auto p-3">
-            {panel}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

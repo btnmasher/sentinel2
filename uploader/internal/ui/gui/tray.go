@@ -15,6 +15,9 @@ func (c *controller) setupTray() {
 }
 
 func (c *controller) refreshTrayMenu() {
+	if c.shuttingDown {
+		return
+	}
 	desk, ok := c.app.(desktop.App)
 	if !ok {
 		return
@@ -64,7 +67,7 @@ func (c *controller) refreshTrayMenu() {
 	startMinItem.Checked = c.settings.StartMinimized
 
 	exitItem := fyne.NewMenuItem("Exit", func() {
-		c.quitApp()
+		c.requestQuit()
 	})
 
 	tray := fyne.NewMenu("Sentinel2 Uploader",

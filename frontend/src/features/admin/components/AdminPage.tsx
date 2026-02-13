@@ -17,7 +17,7 @@ export default function AdminPage() {
     <AdminLayout
       left={
         <>
-          <div className="grid grid-rows-[minmax(0,1fr)_auto] gap-4 h-full min-h-0">
+          <div className="grid grid-rows-[minmax(0,1fr)_auto] gap-6 h-full min-h-0">
             <div className="min-h-0">
               <SectionErrorBoundary fallbackTitle="Job Runs">
                 <JobRunsSection />

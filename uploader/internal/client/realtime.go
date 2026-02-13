@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -83,8 +84,20 @@ func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []C
 			if err == nil {
 				return struct{}{}, nil
 			}
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return struct{}{}, err
+			}
+
+			if isExpectedRealtimeReconnect(err) {
+				c.logger.Debug("realtime channel sync reconnecting", logging.Field("error", err))
+				return struct{}{}, err
+			}
+
 			c.logger.Warn("realtime channel sync disconnected", logging.Field("error", err))
+
 			fallbackFetch()
+
 			return struct{}{}, err
 		},
 			backoff.WithBackOff(retry),
@@ -98,6 +111,7 @@ func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []C
 			c.logger.Warn("realtime channel sync stopped", logging.Field("error", retryErr))
 			return
 		}
+
 		if ctx.Err() != nil {
 			c.logger.Debug("channel config sync stopped: context canceled", logging.Field("error", ctx.Err()))
 		} else {
@@ -106,6 +120,10 @@ func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []C
 	}()
 
 	return updates
+}
+
+func isExpectedRealtimeReconnect(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, pbrealtime.ErrSessionRefreshDue)
 }
 
 func (c *SentinelClient) runRealtimeConfigSession(ctx context.Context, onUpdate func([]ChannelConfig), hooks SyncHooks, prefetched *pbrealtime.Session) error {

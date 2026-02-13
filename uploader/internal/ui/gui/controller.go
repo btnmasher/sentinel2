@@ -44,6 +44,7 @@ const (
 	channelStatusWarnAfter   = 10 * time.Minute
 	channelStatusStaleAfter  = time.Hour
 	channelStatusRefreshRate = 30 * time.Second
+	tooltipCursorGap         = 10
 )
 
 type channelHealth struct {
@@ -72,8 +73,7 @@ type controller struct {
 	connectOnStart *sliderToggle
 	minimizeToTray *sliderToggle
 	startMinimized *sliderToggle
-	statusDot      *canvas.Circle
-	statusDotWrap  fyne.CanvasObject
+	statusBadge    *statusBadge
 	statusText     *widget.Label
 
 	startButton    *widget.Button
@@ -95,6 +95,11 @@ type controller struct {
 	logRawLines     []string
 	logRows         []widget.TextGridRow
 	logCols         int
+	hoverTipLayer   *fyne.Container
+	hoverTipShadow  *canvas.Rectangle
+	hoverTipCard    *fyne.Container
+	hoverTipLabel   *widget.Label
+	hoverTipBG      *canvas.Rectangle
 	channels        []client.ChannelConfig
 	channelRows     []channelStatusRow
 	channelList     *container.Scroll
@@ -108,16 +113,18 @@ type controller struct {
 	dirPickerItems   []string
 	dirPickerList    *widget.List
 
-	cleanupOnce  sync.Once
-	bgWG         sync.WaitGroup
-	unsubscribe  func()
-	appCtx       context.Context
-	appCancel    context.CancelFunc
-	shuttingDown bool
+	cleanupOnce    sync.Once
+	quitOnce       sync.Once
+	bgWG           sync.WaitGroup
+	unsubscribe    func()
+	appCtx         context.Context
+	appCancel      context.CancelFunc
+	shuttingDown   bool
+	confirmingQuit bool
 }
 
 func Run(rootCtx context.Context, buildVersion string, defaults config.Options) {
-	uiApp := app.NewWithID("com.sentinel2.uploader")
+	uiApp := app.New()
 	uiApp.Settings().SetTheme(newUploaderTheme())
 	c := newController(rootCtx, uiApp, defaults)
 	c.logger.Info("starting uploader UI", logging.Field("version", buildVersion))
@@ -176,6 +183,16 @@ func newController(rootCtx context.Context, uiApp fyne.App, defaults config.Opti
 func (c *controller) run() {
 	c.setRunningState(false)
 	c.startChannelHealthLoop()
+	go func() {
+		<-c.appCtx.Done()
+		fyne.Do(func() {
+			if c.shuttingDown {
+				return
+			}
+			c.logger.Info("root context canceled; shutting down uploader UI")
+			c.quitApp()
+		})
+	}()
 	c.win.SetOnClosed(func() {
 		c.logger.Debug("main window OnClosed hook triggered")
 		if c.shuttingDown {
@@ -193,8 +210,8 @@ func (c *controller) run() {
 			c.win.Hide()
 			return
 		}
-		c.logger.Debug("main window close intercepted: invoking quit")
-		c.quitApp()
+		c.logger.Debug("main window close intercepted: requesting quit")
+		c.requestQuit()
 	})
 
 	if c.settings.StartMinimized {
@@ -262,8 +279,12 @@ func (c *controller) buildUI(defaults config.Options) {
 	})
 	c.startMinimized.SetChecked(c.draft.StartMinimized)
 
-	c.statusDot = canvas.NewCircle(statusIdleColor)
-	c.statusDotWrap = container.NewGridWrap(fyne.NewSize(12, 12), c.statusDot)
+	c.statusBadge = newStatusBadge(statusBadgeHandlers{
+		Show: c.showHoverTooltip,
+		Move: c.moveHoverTooltip,
+		Hide: c.hideHoverTooltip,
+	})
+	c.statusBadge.SetStatus(statusIdleColor, "Idle")
 	c.statusText = widget.NewLabel("Idle")
 	c.channelRowsBox = container.NewVBox()
 	c.channelList = container.NewVScroll(c.channelRowsBox)
@@ -284,6 +305,8 @@ func (c *controller) buildUI(defaults config.Options) {
 		c.refreshTrayMenu()
 	})
 	c.stopButton.Disable()
+	controlsGap := canvas.NewRectangle(color.Transparent)
+	controlsGap.SetMinSize(fyne.NewSize(12, 1))
 
 	c.baseURL.OnChanged = func(v string) {
 		c.draft.BaseURL = strings.TrimSpace(v)
@@ -323,8 +346,8 @@ func (c *controller) buildUI(defaults config.Options) {
 	c.saveSettings = widget.NewButton("Save", c.saveDraftSettings)
 	c.cancelSettings = widget.NewButton("Cancel", c.cancelDraftSettings)
 	settingsActions := container.NewHBox(c.saveSettings, c.cancelSettings)
-	statusRow := container.NewHBox(container.NewCenter(c.statusDotWrap), c.statusText)
-	controls := container.NewHBox(c.startButton, c.stopButton, c.showLogsButton, widget.NewLabel("Status:"), statusRow)
+	statusRow := container.NewHBox(c.statusBadge, c.statusText)
+	controls := container.NewHBox(c.startButton, c.stopButton, controlsGap, c.showLogsButton, widget.NewLabel("Status:"), statusRow)
 
 	overviewTop := container.NewPadded(container.NewVBox(
 		controls,
@@ -366,7 +389,15 @@ func (c *controller) buildUI(defaults config.Options) {
 	tabs.SetTabLocation(container.TabLocationTop)
 	minAnchor := canvas.NewRectangle(color.Transparent)
 	minAnchor.SetMinSize(fyne.NewSize(500, 340))
-	c.win.SetContent(container.NewStack(minAnchor, tabs))
+	c.hoverTipLabel = widget.NewLabel("")
+	c.hoverTipLabel.Wrapping = fyne.TextWrapOff
+	c.hoverTipBG = canvas.NewRectangle(color.NRGBA{R: 44, G: 44, B: 44, A: 250})
+	c.hoverTipShadow = canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 120})
+	c.hoverTipShadow.Hide()
+	c.hoverTipCard = container.NewMax(c.hoverTipBG, container.NewPadded(c.hoverTipLabel))
+	c.hoverTipCard.Hide()
+	c.hoverTipLayer = container.NewWithoutLayout(c.hoverTipShadow, c.hoverTipCard)
+	c.win.SetContent(container.NewStack(minAnchor, tabs, c.hoverTipLayer))
 	c.refreshStartAvailability()
 	c.refreshChannelHealth()
 	c.refreshSettingsActions()
@@ -432,8 +463,68 @@ func (c *controller) verticalGap(height float32) fyne.CanvasObject {
 
 func (c *controller) setStatus(text string, dotColor color.NRGBA) {
 	c.statusText.SetText(text)
-	c.statusDot.FillColor = dotColor
-	c.statusDot.Refresh()
+	if c.statusBadge != nil {
+		c.statusBadge.SetStatus(dotColor, "")
+	}
+}
+
+func (c *controller) showHoverTooltip(text string, anchor fyne.Position) {
+	if c.hoverTipCard == nil || c.hoverTipLabel == nil || c.hoverTipBG == nil {
+		return
+	}
+	c.hoverTipLabel.SetText(text)
+	size := c.hoverTipCard.MinSize()
+	c.hoverTipCard.Resize(size)
+	pos := c.hoverTooltipPosition(anchor, size)
+	c.hoverTipCard.Move(pos)
+	if c.hoverTipShadow != nil {
+		c.hoverTipShadow.Resize(size)
+		c.hoverTipShadow.Move(fyne.NewPos(pos.X+2, pos.Y+2))
+		c.hoverTipShadow.Show()
+	}
+	c.hoverTipCard.Show()
+	c.hoverTipLayer.Refresh()
+}
+
+func (c *controller) moveHoverTooltip(anchor fyne.Position) {
+	if c.hoverTipCard == nil || !c.hoverTipCard.Visible() {
+		return
+	}
+	size := c.hoverTipCard.Size()
+	if size.Width <= 0 || size.Height <= 0 {
+		size = c.hoverTipCard.MinSize()
+		c.hoverTipCard.Resize(size)
+	}
+	pos := c.hoverTooltipPosition(anchor, size)
+	c.hoverTipCard.Move(pos)
+	if c.hoverTipShadow != nil {
+		c.hoverTipShadow.Resize(size)
+		c.hoverTipShadow.Move(fyne.NewPos(pos.X+2, pos.Y+2))
+	}
+	c.hoverTipLayer.Refresh()
+}
+
+func (c *controller) hideHoverTooltip() {
+	if c.hoverTipCard == nil {
+		return
+	}
+	if c.hoverTipShadow != nil {
+		c.hoverTipShadow.Hide()
+	}
+	c.hoverTipCard.Hide()
+	c.hoverTipLayer.Refresh()
+}
+
+func (c *controller) hoverTooltipPosition(anchor fyne.Position, size fyne.Size) fyne.Position {
+	const pad = float32(4)
+	x := anchor.X + tooltipCursorGap
+	y := anchor.Y + tooltipCursorGap
+	canvasSize := c.win.Canvas().Size()
+	maxX := max(pad, canvasSize.Width-size.Width-pad)
+	maxY := max(pad, canvasSize.Height-size.Height-pad)
+	x = min(max(pad, x), maxX)
+	y = min(max(pad, y), maxY)
+	return fyne.NewPos(x, y)
 }
 
 func (c *controller) applyRuntimeStatus(status string) {
@@ -522,22 +613,21 @@ func (c *controller) refreshChannelHealth() {
 		name := strings.TrimSpace(channel.Name)
 		health := channelHealth{
 			Color:  channelRedColor,
-			Reason: "Channel log file was not found in the configured log directory.",
+			Reason: "Log file for channel not found.",
 		}
 		if scanErrText != "" {
 			health.Reason = scanErrText
 		} else if last, ok := latestByChannel[id]; ok {
 			age := now.Sub(last)
-			fileName := latestPathByChannel[id]
 			if age <= channelStatusWarnAfter {
 				health.Color = channelGreenColor
-				health.Reason = fmt.Sprintf("Active: %s updated %s ago.", fileName, age.Round(time.Second))
+				health.Reason = fmt.Sprintf("Active: Last report %s ago.", age.Round(time.Second))
 			} else if age <= channelStatusStaleAfter {
 				health.Color = channelYellowColor
-				health.Reason = fmt.Sprintf("Stale: %s has no updates for %s.", fileName, age.Round(time.Second))
+				health.Reason = fmt.Sprintf("Stale: Last report %s ago.", age.Round(time.Second))
 			} else {
 				health.Color = channelOrangeColor
-				health.Reason = fmt.Sprintf("Very stale: %s has no updates for %s.", fileName, age.Round(time.Second))
+				health.Reason = fmt.Sprintf("Very stale: Last report %s ago.", age.Round(time.Second))
 			}
 		}
 
@@ -578,7 +668,11 @@ func (c *controller) rebuildChannelRows() {
 	}
 	rows := make([]fyne.CanvasObject, 0, len(c.channelRows))
 	for _, item := range c.channelRows {
-		badge := newStatusBadge()
+		badge := newStatusBadge(statusBadgeHandlers{
+			Show: c.showHoverTooltip,
+			Move: c.moveHoverTooltip,
+			Hide: c.hideHoverTooltip,
+		})
 		badge.SetStatus(item.Health.Color, item.Health.Reason)
 		name := item.Channel.Name
 		if strings.TrimSpace(name) == "" {
@@ -587,7 +681,7 @@ func (c *controller) rebuildChannelRows() {
 		label := widget.NewLabel(name)
 		label.Truncation = fyne.TextTruncateEllipsis
 		label.Wrapping = fyne.TextWrapOff
-		row := container.NewBorder(nil, nil, badge, nil, label)
+		row := container.NewBorder(nil, nil, container.NewCenter(badge), nil, label)
 		rows = append(rows, row)
 	}
 	c.channelRowsBox.Objects = rows

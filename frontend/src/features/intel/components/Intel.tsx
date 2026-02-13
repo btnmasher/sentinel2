@@ -237,10 +237,7 @@ export default function Intel() {
 
   const rightControls = (
     <>
-      <IntelServerStatus />
-      <span className="px-2 py-1 rounded border border-slate-700 bg-base-300/70">
-        Version: {version || "-"}
-      </span>
+      <IntelServerStatus version={version} />
       <span className="flex items-center gap-2 rounded-full bg-base-300/70 px-2 py-1 text-base-content">
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-base-100/80 text-base-content">
           <Upload className="h-3.5 w-3.5" />
@@ -275,8 +272,9 @@ export default function Intel() {
       leftControls={leftControls}
       rightControls={rightControls}
       panel={<IntelPanel />}
-      panelOpen={intelPanelOpen}
+      panelOpen={mapViewMode !== "full" || intelPanelOpen}
       panelClassName="w-96"
+      onAutoHidePanel={() => applySetting("intel", "panelOpen", true)}
     >
       <MapCanvas />
       <ContextMenu />

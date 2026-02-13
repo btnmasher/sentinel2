@@ -28,6 +28,8 @@ type StreamClient struct {
 	Logger      *logging.Logger
 }
 
+var ErrSessionRefreshDue = errors.New("realtime session refresh due")
+
 func (s StreamClient) RunSession(ctx context.Context, session Session, subscribe SubscribeFunc, handlers SessionHandlers) error {
 	if strings.TrimSpace(session.Topic) == "" {
 		session.Topic = DefaultTopic
@@ -57,7 +59,16 @@ func (s StreamClient) RunSession(ctx context.Context, session Session, subscribe
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, respErr := s.HTTP.Do(req)
+	httpClient := s.HTTP
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	// SSE is a long-lived stream; disable whole-request timeout so the body can
+	// stay open until server disconnect/reconnect boundaries.
+	streamHTTP := *httpClient
+	streamHTTP.Timeout = 0
+
+	resp, respErr := streamHTTP.Do(req)
 	if respErr != nil {
 		return respErr
 	}
@@ -94,7 +105,7 @@ func (s StreamClient) RunSession(ctx context.Context, session Session, subscribe
 			if s.Logger != nil {
 				s.Logger.Debug("realtime stream refresh boundary reached")
 			}
-			return errors.New("realtime session refresh due")
+			return ErrSessionRefreshDue
 		case streamErr := <-streamErrs:
 			if s.Logger != nil {
 				s.Logger.Debug("realtime stream ended", logging.Field("error", streamErr))

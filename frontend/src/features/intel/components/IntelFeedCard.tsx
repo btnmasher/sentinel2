@@ -21,16 +21,15 @@ export default function IntelFeedCard({
       subtitle="Latest reports"
       open={open}
       onToggle={onToggle}
+      className="intel-feed-card min-h-0 flex flex-1 flex-col"
+      contentClassName="min-h-0 flex flex-1 flex-col overflow-hidden"
     >
       {logs.length === 0 ? (
-        <div className="flex items-center justify-center text-xs text-slate-500 min-h-32">
+        <div className="flex min-h-32 items-center justify-center text-xs text-slate-500">
           No reports yet.
         </div>
       ) : (
-        <div
-          className="space-y-3 overflow-y-auto pr-2"
-          style={{ maxHeight: "clamp(12rem, 45vh, calc(100vh - 32rem))" }}
-        >
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
           {logs.map((report) => (
             <IntelPanelLog
               key={report.id}

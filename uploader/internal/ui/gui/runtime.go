@@ -133,7 +133,9 @@ func (c *controller) startUploaderWithContext(auto bool) {
 		OnExit: func(runErr error) {
 			fyne.Do(func() {
 				c.setRunningState(false)
-				c.refreshTrayMenu()
+				if !c.shuttingDown {
+					c.refreshTrayMenu()
+				}
 				if runErr != nil {
 					c.setStatus("Disconnected", statusErrorColor)
 					dialog.ShowError(runErr, c.win)
@@ -351,8 +353,36 @@ func (c *controller) cleanup() {
 }
 
 func (c *controller) quitApp() {
-	c.logger.Debug("quit requested")
-	c.cleanup()
-	c.logger.Debug("calling fyne app quit")
-	c.app.Quit()
+	c.quitOnce.Do(func() {
+		c.logger.Debug("quit requested")
+		c.cleanup()
+		c.logger.Debug("calling fyne app quit")
+		c.app.Quit()
+	})
+}
+
+func (c *controller) requestQuit() {
+	if c.shuttingDown {
+		return
+	}
+	if !c.runner.IsRunning() {
+		c.quitApp()
+		return
+	}
+	if c.confirmingQuit {
+		return
+	}
+	c.confirmingQuit = true
+	dialog.ShowConfirm(
+		"Quit Sentinel2 Uploader?",
+		"This will stop the uploader connection.",
+		func(ok bool) {
+			c.confirmingQuit = false
+			if !ok {
+				return
+			}
+			c.quitApp()
+		},
+		c.win,
+	)
 }

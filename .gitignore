@@ -36,6 +36,7 @@ downloads/
 .bun/
 sentinel2-*
 *.zip
+.cache/
 
 # local dev artifacts
 pb_data/

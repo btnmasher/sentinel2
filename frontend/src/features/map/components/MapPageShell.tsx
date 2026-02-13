@@ -25,6 +25,7 @@ type MapPageShellProps = {
   panel?: ReactNode;
   panelOpen?: boolean;
   panelClassName?: string;
+  onAutoHidePanel?: () => void;
   children?: ReactNode;
 };
 
@@ -35,6 +36,7 @@ export default function MapPageShell({
   panel,
   panelOpen,
   panelClassName,
+  onAutoHidePanel,
   children,
 }: MapPageShellProps) {
   const [navOpen, setNavOpen] = useState(false);
@@ -58,6 +60,7 @@ export default function MapPageShell({
         panel={panel}
         panelOpen={panelOpen}
         panelClassName={panelClassName}
+        onAutoHidePanel={onAutoHidePanel}
       >
         {children}
       </MapShell>

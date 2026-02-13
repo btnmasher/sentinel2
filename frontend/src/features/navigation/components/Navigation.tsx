@@ -69,6 +69,7 @@ export default function Navigation() {
       panel={<NavigationPanel />}
       panelOpen={panelOpen}
       panelClassName="w-96"
+      onAutoHidePanel={() => setPanelOpen(true)}
     >
       <MapCanvas />
       <ContextMenu />
