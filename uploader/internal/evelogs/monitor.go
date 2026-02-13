@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -17,9 +18,13 @@ const (
 	defaultRescanPeriod    = 5 * time.Second
 	defaultDedupWindow     = 15 * time.Second
 	defaultInitialLookback = 1 * time.Minute
+	defaultStaleAfter      = 10 * time.Minute
 )
 
 func NewMonitor(opts MonitorOptions, logger *logging.Logger, callbacks MonitorCallbacks) *Monitor {
+	if logger == nil {
+		panic("evelogs.NewMonitor: logger must not be nil")
+	}
 	if opts.RescanPeriod <= 0 {
 		opts.RescanPeriod = defaultRescanPeriod
 	}
@@ -36,6 +41,7 @@ func NewMonitor(opts MonitorOptions, logger *logging.Logger, callbacks MonitorCa
 		channels:  append([]client.ChannelConfig(nil), opts.Channels...),
 		tracked:   map[string]*trackedLog{},
 		recent:    map[string]time.Time{},
+		health:    map[string]channelHealthState{},
 	}
 }
 
@@ -45,7 +51,7 @@ func (m *Monitor) RunContext(ctx context.Context, configUpdates <-chan []client.
 		logging.Field("log_dir", m.opts.LogDir),
 		logging.Field("log_file", m.opts.LogFile),
 	)
-	if err := m.initialize(); err != nil {
+	if err := m.Prepare(); err != nil {
 		return err
 	}
 
@@ -85,11 +91,18 @@ func (m *Monitor) RunContext(ctx context.Context, configUpdates <-chan []client.
 	}
 }
 
-func (m *Monitor) initialize() error {
-	if len(m.channels) == 0 {
-		return fmt.Errorf("no channels configured")
+func (m *Monitor) Prepare() error {
+	if m.prepared {
+		return nil
 	}
+	if err := m.initialize(); err != nil {
+		return err
+	}
+	m.prepared = true
+	return nil
+}
 
+func (m *Monitor) initialize() error {
 	m.watchDir = m.opts.LogDir
 	if m.watchDir == "" {
 		m.watchDir = filepath.Dir(m.opts.LogFile)
@@ -101,8 +114,9 @@ func (m *Monitor) initialize() error {
 	if err := m.syncTrackedLogs(); err != nil {
 		return err
 	}
+	m.reportChannelHealthTransitions(time.Now())
 	if len(m.tracked) == 0 {
-		return fmt.Errorf("no matching log files found")
+		m.logger.Warn("no matching log files found for configured channels")
 	}
 
 	cutoff := time.Now().Add(-1 * m.opts.InitialLookback)
@@ -152,19 +166,17 @@ func (m *Monitor) handlePollTick() {
 	for _, tracked := range m.tracked {
 		m.readAndProcessTrackedLog(tracked)
 	}
+	m.reportChannelHealthTransitions(time.Now())
 	m.pruneRecentDedup(time.Now())
 }
 
 func (m *Monitor) handleChannelUpdate(updated []client.ChannelConfig) {
-	if len(updated) == 0 {
-		m.logger.Warn("received empty channel update; keeping previous config")
-		return
-	}
 	m.logger.Info("received channel update", logging.Field("count", len(updated)))
 	m.channels = updated
 	if err := m.syncTrackedLogs(); err != nil {
 		m.logger.Warn("failed to sync logs after channel update", logging.Field("error", err))
 	}
+	m.reportChannelHealthTransitions(time.Now())
 }
 
 func (m *Monitor) syncTrackedLogs() error {
@@ -232,6 +244,54 @@ func (m *Monitor) addTrackedLog(sel LogSelection) {
 	)
 	if m.callbacks.OnTracked != nil {
 		m.callbacks.OnTracked(sel)
+	}
+}
+
+func (m *Monitor) reportChannelHealthTransitions(now time.Time) {
+	latestByID := map[string]time.Time{}
+	for _, tracked := range m.tracked {
+		id := strings.TrimSpace(tracked.selection.Channel.ID)
+		if id == "" {
+			continue
+		}
+		info, err := os.Stat(tracked.selection.Path)
+		if err != nil {
+			continue
+		}
+		mod := info.ModTime()
+		if prev, ok := latestByID[id]; !ok || mod.After(prev) {
+			latestByID[id] = mod
+		}
+	}
+
+	for _, ch := range m.channels {
+		id := strings.TrimSpace(ch.ID)
+		if id == "" {
+			continue
+		}
+		next := channelHealthMissing
+		if mod, ok := latestByID[id]; ok {
+			if now.Sub(mod) > defaultStaleAfter {
+				next = channelHealthStale
+			} else {
+				next = channelHealthOK
+			}
+		}
+		prev, had := m.health[id]
+		if had && prev == next {
+			continue
+		}
+		m.health[id] = next
+		switch next {
+		case channelHealthMissing:
+			m.logger.Warn("channel log not found",
+				logging.Field("channel", ch.Name),
+				logging.Field("channel_id", ch.ID))
+		case channelHealthStale:
+			m.logger.Info("channel log is stale",
+				logging.Field("channel", ch.Name),
+				logging.Field("channel_id", ch.ID))
+		}
 	}
 }
 

@@ -40,6 +40,10 @@ func splitLogLines(input string) []string {
 	return lines
 }
 
+func stripANSIText(input string) string {
+	return ansi.Strip(input)
+}
+
 func wrapANSILines(lines []string, columns int) []string {
 	if columns <= 1 {
 		return append([]string(nil), lines...)

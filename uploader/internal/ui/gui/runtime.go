@@ -3,10 +3,13 @@
 package gui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -17,8 +20,37 @@ import (
 	"sentinel2-uploader/internal/client"
 	"sentinel2-uploader/internal/config"
 	"sentinel2-uploader/internal/logging"
+	"sentinel2-uploader/internal/runctx"
 	"sentinel2-uploader/internal/runtime"
 )
+
+func waitGroupWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	if timeout <= 0 {
+		<-done
+		return true
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func (c *controller) startBackgroundLoop(name string, fn func(context.Context)) {
+	c.bgWG.Go(func() {
+		c.logger.Debug("background loop started", logging.Field("loop", name))
+		fn(c.appCtx)
+		c.logger.Debug("background loop stopped", logging.Field("loop", name))
+	})
+}
 
 func (c *controller) bindLogs() {
 	logCh := make(chan string, 256)
@@ -35,19 +67,18 @@ func (c *controller) bindLogs() {
 		}
 	})
 
-	go func() {
+	c.startBackgroundLoop("gui log pump", func(ctx context.Context) {
 		for {
-			select {
-			case <-c.quitLogs:
+			line, ok := runctx.RecvOrDone(ctx, "GUI log pump", c.logger, logCh)
+			if !ok {
 				return
-			case line := <-logCh:
-				text := line
-				fyne.Do(func() {
-					c.appendLog(text)
-				})
 			}
+			text := line
+			fyne.Do(func() {
+				c.appendLog(text)
+			})
 		}
-	}()
+	})
 }
 
 func (c *controller) currentOptions() config.Options {
@@ -92,8 +123,25 @@ func (c *controller) startUploaderWithContext(auto bool) {
 		return
 	}
 
-	done, err := c.runner.Start(opts, c.logger, runtime.StartHooks{
+	err := c.runner.Start(opts, c.logger, runtime.StartHooks{
 		OnChannelsUpdate: c.onChannelsUpdate,
+		OnStatus: func(status string) {
+			fyne.Do(func() {
+				c.applyRuntimeStatus(status)
+			})
+		},
+		OnExit: func(runErr error) {
+			fyne.Do(func() {
+				c.setRunningState(false)
+				c.refreshTrayMenu()
+				if runErr != nil {
+					c.setStatus("Disconnected", statusErrorColor)
+					dialog.ShowError(runErr, c.win)
+					return
+				}
+				c.setStatus("Idle", statusIdleColor)
+			})
+		},
 	})
 	if err != nil {
 		c.setStatus("Error", statusErrorColor)
@@ -101,21 +149,7 @@ func (c *controller) startUploaderWithContext(auto bool) {
 		return
 	}
 	c.setRunningState(true)
-	c.setStatus("Running", statusRunningColor)
-
-	go func() {
-		runErr := <-done
-		fyne.Do(func() {
-			c.setRunningState(false)
-			c.refreshTrayMenu()
-			if runErr != nil {
-				c.setStatus("Disconnected", statusErrorColor)
-				dialog.ShowError(runErr, c.win)
-				return
-			}
-			c.setStatus("Idle", statusIdleColor)
-		})
-	}()
+	c.setStatus("Starting", statusConnectingColor)
 }
 
 func (c *controller) startErrorText(auto bool, message string) string {
@@ -223,7 +257,7 @@ func (c *controller) selectLogDir() {
 }
 
 func (c *controller) appendLog(line string) {
-	if c.logGrid == nil {
+	if c.logGrid == nil && c.logSelectable == nil {
 		return
 	}
 
@@ -234,8 +268,7 @@ func (c *controller) appendLog(line string) {
 	c.logRawLines = append(c.logRawLines, lines...)
 	c.trimLogRows()
 	c.rebuildLogRows()
-	c.logGrid.Rows = c.logRows
-	c.logGrid.Refresh()
+	c.refreshLogView()
 	if c.followEnabled {
 		c.scrollLogsToBottom()
 	}
@@ -293,16 +326,33 @@ func (c *controller) logWrapColumns() int {
 
 func (c *controller) cleanup() {
 	c.cleanupOnce.Do(func() {
+		c.shuttingDown = true
+		c.logger.Debug("gui cleanup started")
+		if c.appCancel != nil {
+			c.logger.Debug("canceling GUI root context")
+			c.appCancel()
+		}
 		if c.unsubscribe != nil {
+			c.logger.Debug("unsubscribing GUI log listener")
 			c.unsubscribe()
 		}
-		close(c.quitLogs)
-		c.runner.Stop()
-		if c.logWindow != nil {
-			c.logWindow.Close()
+		c.logger.Debug("waiting for GUI background loops to stop")
+		if ok := waitGroupWithTimeout(&c.bgWG, 2*time.Second); !ok {
+			c.logger.Warn("GUI background loops did not stop within timeout")
 		}
-		if c.dirPickerWindow != nil {
-			c.dirPickerWindow.Close()
+		c.logger.Debug("stopping runtime controller")
+		if ok := c.runner.StopAndWait(3 * time.Second); !ok {
+			c.logger.Warn("runtime controller did not stop within timeout")
+		} else {
+			c.logger.Debug("runtime controller stopped")
 		}
+		c.logger.Debug("gui cleanup complete")
 	})
+}
+
+func (c *controller) quitApp() {
+	c.logger.Debug("quit requested")
+	c.cleanup()
+	c.logger.Debug("calling fyne app quit")
+	c.app.Quit()
 }

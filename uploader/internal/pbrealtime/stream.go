@@ -86,6 +86,9 @@ func (s StreamClient) RunSession(ctx context.Context, session Session, subscribe
 	for {
 		select {
 		case <-ctx.Done():
+			if s.Logger != nil {
+				s.Logger.Debug("stopping realtime stream session: context canceled", logging.Field("error", ctx.Err()))
+			}
 			return ctx.Err()
 		case <-refreshTimer.C:
 			if s.Logger != nil {

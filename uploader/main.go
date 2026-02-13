@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"sentinel2-uploader/internal/config"
 	"sentinel2-uploader/internal/ui/gui"
@@ -15,6 +18,9 @@ import (
 var BuildVersion = "dev"
 
 func main() {
+	rootCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
 	opts, err := config.ParseOptions(nil)
 	if err != nil {
 		var flagErr *flags.Error
@@ -27,13 +33,13 @@ func main() {
 
 	// Headless-tag builds always run headless; runtime UI selection is ignored.
 	if !gui.Available() {
-		headless.Run(BuildVersion, opts)
+		headless.Run(rootCtx, BuildVersion, opts)
 		return
 	}
 
 	if opts.Headless {
-		headless.Run(BuildVersion, opts)
+		headless.Run(rootCtx, BuildVersion, opts)
 		return
 	}
-	gui.Run(BuildVersion, opts)
+	gui.Run(rootCtx, BuildVersion, opts)
 }

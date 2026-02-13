@@ -81,12 +81,12 @@ func buildAPIBaseURL(raw string) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", errors.New("expected absolute URL like https://example.com")
 	}
-
-	path := strings.TrimRight(parsed.Path, "/")
-	if !strings.HasSuffix(strings.ToLower(path), "/api") {
-		path += "/api"
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return "", errors.New("base URL scheme must be http or https")
 	}
-	parsed.Path = path
+
+	// Normalize any pasted endpoint/path to canonical API base.
+	parsed.Path = "/api"
 	parsed.RawPath = ""
 	parsed.RawQuery = ""
 	parsed.Fragment = ""

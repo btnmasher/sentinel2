@@ -31,7 +31,7 @@ func (a AuthClient) FetchSession(ctx context.Context) (Session, error) {
 	if reqErr != nil {
 		return Session{}, reqErr
 	}
-	req.Header.Set("Authorization", "Bearer "+a.BearerToken)
+	req.Header.Set("X-Uploader-Token", a.BearerToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, respErr := a.HTTP.Do(req)
@@ -56,12 +56,15 @@ func (a AuthClient) FetchSession(ctx context.Context) (Session, error) {
 	if unmarshalErr := json.Unmarshal(data, &session); unmarshalErr != nil {
 		return Session{}, fmt.Errorf("invalid realtime token response: %w", unmarshalErr)
 	}
+
 	if strings.TrimSpace(session.Token) == "" {
 		return Session{}, errors.New("missing realtime token")
 	}
+
 	if strings.TrimSpace(session.Topic) == "" {
 		session.Topic = DefaultTopic
 	}
+
 	if a.Logger != nil {
 		a.Logger.Debug("realtime session token acquired",
 			logging.Field("topic", session.Topic),
@@ -69,6 +72,7 @@ func (a AuthClient) FetchSession(ctx context.Context) (Session, error) {
 			logging.Field("refresh_after_seconds", session.RefreshAfterSeconds),
 		)
 	}
+
 	return session, nil
 }
 
@@ -79,6 +83,7 @@ func (a AuthClient) Subscribe(ctx context.Context, clientID string, sessionToken
 			logging.Field("topics", topics),
 		)
 	}
+
 	payload := subscribePayload{ClientID: clientID, Subscriptions: topics}
 	body, bodyErr := json.Marshal(payload)
 	if bodyErr != nil {
@@ -89,6 +94,7 @@ func (a AuthClient) Subscribe(ctx context.Context, clientID string, sessionToken
 	if reqErr != nil {
 		return reqErr
 	}
+
 	req.Header.Set("Authorization", "Bearer "+sessionToken)
 	req.Header.Set("Content-Type", "application/json")
 
@@ -96,7 +102,9 @@ func (a AuthClient) Subscribe(ctx context.Context, clientID string, sessionToken
 	if respErr != nil {
 		return respErr
 	}
+
 	defer resp.Body.Close()
+
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		body := logging.FormatHTTPPayload(data)
@@ -108,8 +116,10 @@ func (a AuthClient) Subscribe(ctx context.Context, clientID string, sessionToken
 		}
 		return fmt.Errorf("realtime subscribe failed: %s", resp.Status)
 	}
+
 	if a.Logger != nil {
 		a.Logger.Debug("realtime subscribe succeeded", logging.Field("client_id", clientID))
 	}
+
 	return nil
 }

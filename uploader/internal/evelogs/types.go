@@ -14,9 +14,11 @@ type Monitor struct {
 
 	channels []client.ChannelConfig
 	watchDir string
+	prepared bool
 
 	tracked map[string]*trackedLog
 	recent  map[string]time.Time
+	health  map[string]channelHealthState
 }
 
 type MonitorOptions struct {
@@ -71,3 +73,11 @@ type trackedLog struct {
 	selection LogSelection
 	tailer    *Tailer
 }
+
+type channelHealthState int
+
+const (
+	channelHealthOK channelHealthState = iota
+	channelHealthStale
+	channelHealthMissing
+)

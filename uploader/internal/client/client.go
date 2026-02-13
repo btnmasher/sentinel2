@@ -22,5 +22,8 @@ type SentinelClient struct {
 }
 
 func New(httpClient *http.Client, token string, endpoints config.APIEndpoints, logger *logging.Logger) *SentinelClient {
+	if logger == nil {
+		panic("client.New: logger must not be nil")
+	}
 	return &SentinelClient{http: httpClient, token: token, endpoints: endpoints, logger: logger}
 }

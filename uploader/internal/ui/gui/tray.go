@@ -21,7 +21,6 @@ func (c *controller) refreshTrayMenu() {
 	}
 
 	desk.SetSystemTrayIcon(uploaderIconResource())
-	desk.SetSystemTrayWindow(c.win)
 
 	running := c.runner.IsRunning()
 	canStart := c.startButton != nil && !c.startButton.Disabled()
@@ -65,8 +64,7 @@ func (c *controller) refreshTrayMenu() {
 	startMinItem.Checked = c.settings.StartMinimized
 
 	exitItem := fyne.NewMenuItem("Exit", func() {
-		c.cleanup()
-		c.app.Quit()
+		c.quitApp()
 	})
 
 	tray := fyne.NewMenu("Sentinel2 Uploader",

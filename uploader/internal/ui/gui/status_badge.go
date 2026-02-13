@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-const badgeSize = float32(10)
+const badgeSize = float32(12)
 
 type statusBadge struct {
 	widget.BaseWidget
@@ -113,7 +113,10 @@ func (b *statusBadge) showTooltipNow() {
 	if app == nil {
 		return
 	}
-	canvasForObject := app.Driver().CanvasForObject(b)
+	canvasForObject := app.Driver().CanvasForObject(b.dot)
+	if canvasForObject == nil {
+		canvasForObject = app.Driver().CanvasForObject(b)
+	}
 	if canvasForObject == nil {
 		return
 	}
@@ -128,7 +131,10 @@ func (b *statusBadge) showTooltipNow() {
 	}
 	b.pop.Resize(b.pop.Content.MinSize())
 
-	pos := app.Driver().AbsolutePositionForObject(b)
+	pos := app.Driver().AbsolutePositionForObject(b.dot)
+	if pos == (fyne.Position{}) {
+		pos = app.Driver().AbsolutePositionForObject(b)
+	}
 	b.pop.ShowAtPosition(fyne.NewPos(pos.X+14, pos.Y-4))
 	b.shown = true
 }

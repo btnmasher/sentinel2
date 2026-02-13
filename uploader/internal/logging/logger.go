@@ -86,8 +86,11 @@ func (l *Logger) Error(msg string, fields ...slog.Attr) {
 }
 
 func (l *Logger) Subscribe(fn func(Event)) func() {
-	if l == nil || fn == nil {
-		return func() {}
+	if l == nil {
+		panic("logging.Logger.Subscribe: logger must not be nil")
+	}
+	if fn == nil {
+		panic("logging.Logger.Subscribe: callback must not be nil")
 	}
 	l.mu.Lock()
 	id := l.nextID

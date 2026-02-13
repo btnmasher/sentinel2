@@ -12,7 +12,22 @@ import (
 	"sentinel2-uploader/internal/pbrealtime"
 )
 
-func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []ChannelConfig) <-chan []ChannelConfig {
+type SyncHooks struct {
+	OnConnected func(string)
+}
+
+func (c *SentinelClient) FetchRealtimeSession(ctx context.Context) (pbrealtime.Session, error) {
+	auth := pbrealtime.AuthClient{
+		HTTP:             c.http,
+		RealtimeTokenURL: c.endpoints.RealtimeTokenURL,
+		RealtimeURL:      c.endpoints.RealtimeURL,
+		BearerToken:      c.token,
+		Logger:           c.logger,
+	}
+	return auth.FetchSession(ctx)
+}
+
+func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []ChannelConfig, hooks SyncHooks, initialSession *pbrealtime.Session) <-chan []ChannelConfig {
 	updates := make(chan []ChannelConfig, 1)
 
 	go func() {
@@ -39,7 +54,7 @@ func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []C
 		// propagate while reconnect attempts are backoff-scheduled.
 		fallbackFetch := func() {
 			c.logger.Debug("running fallback channel refresh")
-			channels, fetchErr := c.FetchChannels()
+			channels, fetchErr := c.FetchChannels(ctx)
 			if fetchErr != nil {
 				c.logger.Warn("fallback channel refresh failed", logging.Field("error", fetchErr))
 				return
@@ -55,10 +70,17 @@ func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []C
 		retry.MaxInterval = reconnectMaxDelay
 		retry.Reset()
 
+		useInitialSession := initialSession != nil
 		_, retryErr := backoff.Retry(ctx, func() (struct{}, error) {
 			// Session blocks while connected; returns when disconnected/expired.
-			err := c.runRealtimeConfigSession(ctx, pushUpdate)
-			if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			var prefetched *pbrealtime.Session
+			if useInitialSession && initialSession != nil {
+				s := *initialSession
+				prefetched = &s
+				useInitialSession = false
+			}
+			err := c.runRealtimeConfigSession(ctx, pushUpdate, hooks, prefetched)
+			if err == nil {
 				return struct{}{}, nil
 			}
 			c.logger.Warn("realtime channel sync disconnected", logging.Field("error", err))
@@ -76,13 +98,17 @@ func (c *SentinelClient) StartChannelConfigSync(ctx context.Context, initial []C
 			c.logger.Warn("realtime channel sync stopped", logging.Field("error", retryErr))
 			return
 		}
-		c.logger.Debug("channel config sync stopped")
+		if ctx.Err() != nil {
+			c.logger.Debug("channel config sync stopped: context canceled", logging.Field("error", ctx.Err()))
+		} else {
+			c.logger.Debug("channel config sync stopped")
+		}
 	}()
 
 	return updates
 }
 
-func (c *SentinelClient) runRealtimeConfigSession(ctx context.Context, onUpdate func([]ChannelConfig)) error {
+func (c *SentinelClient) runRealtimeConfigSession(ctx context.Context, onUpdate func([]ChannelConfig), hooks SyncHooks, prefetched *pbrealtime.Session) error {
 	// Acquire short-lived realtime credentials scoped to uploader subscriptions.
 	auth := pbrealtime.AuthClient{
 		HTTP:             c.http,
@@ -91,26 +117,39 @@ func (c *SentinelClient) runRealtimeConfigSession(ctx context.Context, onUpdate 
 		BearerToken:      c.token,
 		Logger:           c.logger,
 	}
-	session, sessionErr := auth.FetchSession(ctx)
-	if sessionErr != nil {
-		return sessionErr
+
+	session := pbrealtime.Session{}
+	if prefetched != nil {
+		session = *prefetched
+	} else {
+		sessionErr := error(nil)
+		session, sessionErr = auth.FetchSession(ctx)
+		if sessionErr != nil {
+			return sessionErr
+		}
 	}
+
 	c.logger.Debug("fetched realtime session",
 		logging.Field("topic", session.Topic),
 		logging.Field("expires_at", session.ExpiresAt),
 		logging.Field("refresh_after_seconds", session.RefreshAfterSeconds),
 	)
+
 	stream := pbrealtime.StreamClient{
 		HTTP:        c.http,
 		RealtimeURL: c.endpoints.RealtimeURL,
 		RefreshLead: realtimeRefreshLead,
 		Logger:      c.logger,
 	}
+
 	// StreamClient owns PB_CONNECT + subscribe + SSE transport details.
 	// This layer only handles uploader-specific payload decoding and update apply.
 	return stream.RunSession(ctx, session, auth.Subscribe, pbrealtime.SessionHandlers{
 		OnConnected: func(topic string) {
 			c.logger.Info("realtime config stream connected", logging.Field("topic", topic))
+			if hooks.OnConnected != nil {
+				hooks.OnConnected(topic)
+			}
 		},
 		OnMessage: func(event pbrealtime.Event) {
 			cfg := uploaderConfigResponse{}

@@ -8,9 +8,9 @@ import (
 	"fyne.io/fyne/v2"
 )
 
-//go:embed assets/s2-uploader-icon.svg
-var s2UploaderIconSVG []byte
+//go:embed assets/s2-uploader-icon.png
+var s2UploaderIconPNG []byte
 
 func uploaderIconResource() fyne.Resource {
-	return fyne.NewStaticResource("s2-uploader-icon.svg", s2UploaderIconSVG)
+	return fyne.NewStaticResource("s2-uploader-icon.png", s2UploaderIconPNG)
 }

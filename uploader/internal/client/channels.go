@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,13 +12,13 @@ import (
 	"sentinel2-uploader/internal/logging"
 )
 
-func (c *SentinelClient) FetchChannels() ([]ChannelConfig, error) {
+func (c *SentinelClient) FetchChannels(ctx context.Context) ([]ChannelConfig, error) {
 	c.logger.Debug("fetching channel config", logging.Field("url", c.endpoints.ConfigURL))
-	req, err := http.NewRequest("GET", c.endpoints.ConfigURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.endpoints.ConfigURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-Uploader-Token", c.token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

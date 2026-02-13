@@ -117,7 +117,7 @@ tasks:
       - task: build:uploader:windows
       - echo "[build:uploader] packaging windows archive"
       - zip -j frontend/public/downloads/sentinel2-uploader-windows.zip uploader/dist/sentinel2-uploader-windows.exe
-      - echo "[build:uploader] building macOS uploader binary"
+      - echo "[build:uploader] building macOS uploader binary (headless)"
       - task: build:uploader:darwin
       - echo "[build:uploader] packaging macOS archive"
       - zip -j frontend/public/downloads/sentinel2-uploader-macos.zip uploader/dist/sentinel2-uploader-macos
@@ -151,21 +151,14 @@ tasks:
     desc: Build uploader for Linux (amd64) using Zig as CC/CXX.
 
   build:uploader:darwin:
-    deps: [ensure-deps:zig]
     cmds:
-      - echo "[build:uploader:darwin] building macOS uploader with zig cc/c++ (yolo mode)"
+      - echo "[build:uploader:darwin] building macOS headless uploader"
       - mkdir -p uploader/dist
       - |
         set -euo pipefail
         APP_NAME="sentinel2-uploader-macos"
-        mkdir -p "{{.TASKFILE_DIR}}/.tmp/zig-cache"
-        cd uploader && \
-          ZIG_GLOBAL_CACHE_DIR="{{.TASKFILE_DIR}}/.tmp/zig-cache" \
-          CC='zig cc -target aarch64-macos' \
-          CXX='zig c++ -target aarch64-macos' \
-          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-          go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build uploader for macOS (arm64) using Zig as CC/CXX.
+        cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
+    desc: Build headless uploader for macOS (arm64).
 
   build:uploader:headless:
     cmds:

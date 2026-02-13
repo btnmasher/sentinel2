@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"sentinel2-uploader/internal/logging"
 )
 
-func (c *SentinelClient) Submit(payload SubmitPayload) error {
+func (c *SentinelClient) Submit(ctx context.Context, payload SubmitPayload) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -20,12 +21,12 @@ func (c *SentinelClient) Submit(payload SubmitPayload) error {
 		logging.Field("payload", logging.FormatHTTPPayload(body)),
 	)
 
-	req, err := http.NewRequest("PUT", c.endpoints.SubmitURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "PUT", c.endpoints.SubmitURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-Uploader-Token", c.token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

@@ -2,10 +2,13 @@
 
 package gui
 
-import "sentinel2-uploader/internal/config"
+import (
+	"context"
+	"sentinel2-uploader/internal/config"
+)
 
 func Available() bool {
 	return false
 }
 
-func Run(_ string, _ config.Options) {}
+func Run(_ context.Context, _ string, _ config.Options) {}

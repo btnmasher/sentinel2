@@ -3,6 +3,7 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"os"
@@ -29,6 +30,7 @@ import (
 var (
 	statusIdleColor       = color.NRGBA{R: 145, G: 145, B: 145, A: 255}
 	statusConnectingColor = color.NRGBA{R: 219, G: 167, B: 74, A: 255}
+	statusChannelsColor   = color.NRGBA{R: 120, G: 190, B: 255, A: 255}
 	statusRunningColor    = color.NRGBA{R: 72, G: 189, B: 109, A: 255}
 	statusStoppingColor   = color.NRGBA{R: 232, G: 145, B: 77, A: 255}
 	statusErrorColor      = color.NRGBA{R: 220, G: 84, B: 84, A: 255}
@@ -80,21 +82,25 @@ type controller struct {
 	saveSettings   *widget.Button
 	cancelSettings *widget.Button
 
-	logWindow     fyne.Window
-	logWindowOpen bool
-	logGrid       *widget.TextGrid
-	logScroll     *container.Scroll
-	followButton  *widget.Button
-	followEnabled bool
-	followJumping bool
-	logRawLines   []string
-	logRows       []widget.TextGridRow
-	logCols       int
-	channels      []client.ChannelConfig
-	channelRows   []channelStatusRow
-	channelList   *widget.List
-	channelEmpty  *fyne.Container
-	channelNotice *widget.Label
+	logWindow       fyne.Window
+	logWindowOpen   bool
+	logGrid         *widget.TextGrid
+	logScroll       *container.Scroll
+	logSelectable   *widget.Entry
+	logSelectScroll *container.Scroll
+	selectableLogs  *widget.Check
+	followButton    *widget.Button
+	followEnabled   bool
+	followJumping   bool
+	logRawLines     []string
+	logRows         []widget.TextGridRow
+	logCols         int
+	channels        []client.ChannelConfig
+	channelRows     []channelStatusRow
+	channelList     *container.Scroll
+	channelRowsBox  *fyne.Container
+	channelEmpty    *fyne.Container
+	channelNotice   *widget.Label
 
 	dirPickerWindow  fyne.Window
 	dirPickerPath    *widget.Entry
@@ -102,20 +108,23 @@ type controller struct {
 	dirPickerItems   []string
 	dirPickerList    *widget.List
 
-	cleanupOnce sync.Once
-	unsubscribe func()
-	quitLogs    chan struct{}
+	cleanupOnce  sync.Once
+	bgWG         sync.WaitGroup
+	unsubscribe  func()
+	appCtx       context.Context
+	appCancel    context.CancelFunc
+	shuttingDown bool
 }
 
-func Run(buildVersion string, defaults config.Options) {
+func Run(rootCtx context.Context, buildVersion string, defaults config.Options) {
 	uiApp := app.NewWithID("com.sentinel2.uploader")
 	uiApp.Settings().SetTheme(newUploaderTheme())
-	c := newController(uiApp, defaults)
+	c := newController(rootCtx, uiApp, defaults)
 	c.logger.Info("starting uploader UI", logging.Field("version", buildVersion))
 	c.run()
 }
 
-func newController(uiApp fyne.App, defaults config.Options) *controller {
+func newController(rootCtx context.Context, uiApp fyne.App, defaults config.Options) *controller {
 	settings := config.SettingsFromOptions(defaults)
 	if saved, err := config.LoadSettings(); err == nil {
 		defaults = config.MergeOptionsWithSettings(defaults, saved)
@@ -131,36 +140,61 @@ func newController(uiApp fyne.App, defaults config.Options) *controller {
 	settings.Debug = defaults.Debug
 
 	logger := logging.New(false)
+	if logger == nil {
+		panic("gui.newController: logging.New returned nil")
+	}
 	logger.SetDebugEnabled(settings.Debug)
+	if rootCtx == nil {
+		rootCtx = context.Background()
+	}
+	appCtx, appCancel := context.WithCancel(rootCtx)
 
 	c := &controller{
-		app:      uiApp,
-		settings: settings,
-		draft:    settings,
-		logger:   logger,
-		runner:   runtime.NewController(),
-		quitLogs: make(chan struct{}),
+		app:       uiApp,
+		settings:  settings,
+		draft:     settings,
+		logger:    logger,
+		runner:    runtime.NewController(appCtx),
+		appCtx:    appCtx,
+		appCancel: appCancel,
 	}
 
 	uiApp.SetIcon(uploaderIconResource())
 	c.win = uiApp.NewWindow("Sentinel2 Uploader")
+	c.win.SetMaster()
 	c.win.Resize(fyne.NewSize(460, 390))
 	c.buildUI(defaults)
 	c.bindLogs()
 	c.setupTray()
+	c.app.Lifecycle().SetOnStopped(func() {
+		c.logger.Debug("app lifecycle OnStopped hook triggered")
+		c.cleanup()
+	})
 	return c
 }
 
 func (c *controller) run() {
 	c.setRunningState(false)
 	c.startChannelHealthLoop()
-	c.win.SetCloseIntercept(func() {
-		if c.settings.MinimizeToTray {
-			c.win.Hide()
+	c.win.SetOnClosed(func() {
+		c.logger.Debug("main window OnClosed hook triggered")
+		if c.shuttingDown {
+			c.logger.Debug("main window OnClosed hook ignored: already shutting down")
 			return
 		}
 		c.cleanup()
-		c.app.Quit()
+	})
+	c.win.SetCloseIntercept(func() {
+		c.logger.Debug("main window CloseIntercept hook triggered",
+			logging.Field("minimize_to_tray", c.shouldMinimizeToTrayOnClose()),
+		)
+		if c.shouldMinimizeToTrayOnClose() {
+			c.logger.Debug("main window close intercepted: hiding to tray")
+			c.win.Hide()
+			return
+		}
+		c.logger.Debug("main window close intercepted: invoking quit")
+		c.quitApp()
 	})
 
 	if c.settings.StartMinimized {
@@ -177,12 +211,12 @@ func (c *controller) run() {
 }
 
 func (c *controller) startChannelHealthLoop() {
-	ticker := time.NewTicker(channelStatusRefreshRate)
-	go func() {
+	c.startBackgroundLoop("channel health", func(ctx context.Context) {
+		ticker := time.NewTicker(channelStatusRefreshRate)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-c.quitLogs:
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				fyne.Do(func() {
@@ -190,7 +224,7 @@ func (c *controller) startChannelHealthLoop() {
 				})
 			}
 		}
-	}()
+	})
 }
 
 func (c *controller) buildUI(defaults config.Options) {
@@ -231,29 +265,8 @@ func (c *controller) buildUI(defaults config.Options) {
 	c.statusDot = canvas.NewCircle(statusIdleColor)
 	c.statusDotWrap = container.NewGridWrap(fyne.NewSize(12, 12), c.statusDot)
 	c.statusText = widget.NewLabel("Idle")
-	c.channelList = widget.NewList(
-		func() int {
-			return len(c.channelRows)
-		},
-		func() fyne.CanvasObject {
-			badge := newStatusBadge()
-			label := widget.NewLabel("channel")
-			return container.NewHBox(badge, label)
-		},
-		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			row := obj.(*fyne.Container)
-			badge := row.Objects[0].(*statusBadge)
-			label := row.Objects[1].(*widget.Label)
-			if id >= 0 && id < len(c.channelRows) {
-				item := c.channelRows[id]
-				badge.SetStatus(item.Health.Color, item.Health.Reason)
-				label.SetText(item.Channel.Name)
-				return
-			}
-			badge.SetStatus(channelRedColor, "")
-			label.SetText("")
-		},
-	)
+	c.channelRowsBox = container.NewVBox()
+	c.channelList = container.NewVScroll(c.channelRowsBox)
 
 	c.initLogWindow()
 	c.setStatus("Idle", statusIdleColor)
@@ -423,6 +436,19 @@ func (c *controller) setStatus(text string, dotColor color.NRGBA) {
 	c.statusDot.Refresh()
 }
 
+func (c *controller) applyRuntimeStatus(status string) {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "authenticated":
+		c.setStatus("Authenticated", statusConnectingColor)
+	case "channels received":
+		c.setStatus("Channels received", statusChannelsColor)
+	case "connected":
+		c.setStatus("Connected", statusRunningColor)
+	default:
+		c.setStatus(status, statusIdleColor)
+	}
+}
+
 func (c *controller) refreshStartAvailability() {
 	if c.runner.IsRunning() {
 		return
@@ -524,14 +550,12 @@ func (c *controller) refreshChannelHealth() {
 		})
 	}
 	c.channelRows = rows
-	if c.channelList != nil {
-		c.channelList.Refresh()
-	}
+	c.rebuildChannelRows()
 	c.refreshChannelPlaceholder()
 }
 
 func (c *controller) refreshChannelPlaceholder() {
-	if c.channelList == nil || c.channelEmpty == nil || c.channelNotice == nil {
+	if c.channelList == nil || c.channelRowsBox == nil || c.channelEmpty == nil || c.channelNotice == nil {
 		return
 	}
 	if c.runner != nil && c.runner.IsRunning() && len(c.channelRows) > 0 {
@@ -548,12 +572,51 @@ func (c *controller) refreshChannelPlaceholder() {
 	c.channelEmpty.Show()
 }
 
+func (c *controller) rebuildChannelRows() {
+	if c.channelRowsBox == nil {
+		return
+	}
+	rows := make([]fyne.CanvasObject, 0, len(c.channelRows))
+	for _, item := range c.channelRows {
+		badge := newStatusBadge()
+		badge.SetStatus(item.Health.Color, item.Health.Reason)
+		name := item.Channel.Name
+		if strings.TrimSpace(name) == "" {
+			name = item.Channel.ID
+		}
+		label := widget.NewLabel(name)
+		label.Truncation = fyne.TextTruncateEllipsis
+		label.Wrapping = fyne.TextWrapOff
+		row := container.NewBorder(nil, nil, badge, nil, label)
+		rows = append(rows, row)
+	}
+	c.channelRowsBox.Objects = rows
+	c.channelRowsBox.Refresh()
+}
+
 func (c *controller) initLogWindow() {
 	c.logGrid = widget.NewTextGrid()
 	c.logGrid.Scroll = fyne.ScrollNone
 	c.logScroll = container.NewVScroll(c.logGrid)
+	c.logSelectable = widget.NewMultiLineEntry()
+	c.logSelectable.Wrapping = fyne.TextWrapWord
+	c.logSelectScroll = container.NewVScroll(c.logSelectable)
+	c.logSelectScroll.Hide()
 	c.followEnabled = true
 	c.logCols = c.logWrapColumns()
+	c.selectableLogs = widget.NewCheck("Selectable text", func(v bool) {
+		if v {
+			c.logScroll.Hide()
+			c.logSelectScroll.Show()
+		} else {
+			c.logSelectScroll.Hide()
+			c.logScroll.Show()
+		}
+		if c.followEnabled {
+			c.scrollLogsToBottom()
+		}
+	})
+
 	c.followButton = widget.NewButton("Following", func() {
 		c.setFollowEnabled(true)
 		c.scrollLogsToBottom()
@@ -568,7 +631,7 @@ func (c *controller) initLogWindow() {
 	})
 	c.logWindow = c.app.NewWindow("Sentinel2 Uploader Logs")
 	c.logWindow.Resize(fyne.NewSize(900, 520))
-	centerGap := container.NewPadded(c.debugLogs)
+	centerGap := container.NewHBox(c.debugLogs, c.selectableLogs, layout.NewSpacer())
 	header := container.NewBorder(nil, nil, clearButton, c.followButton, centerGap)
 	logBG := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 255})
 	c.logScroll.OnScrolled = func(pos fyne.Position) {
@@ -579,15 +642,18 @@ func (c *controller) initLogWindow() {
 			c.setFollowEnabled(false)
 		}
 	}
-	c.logWindow.SetContent(container.NewBorder(header, nil, nil, nil, container.NewMax(logBG, c.logScroll)))
+	c.logWindow.SetContent(container.NewBorder(header, nil, nil, nil, container.NewMax(logBG, c.logScroll, c.logSelectScroll)))
 	c.logWindowOpen = false
 	c.logWindow.SetCloseIntercept(func() {
+		if c.shuttingDown {
+			return
+		}
 		c.logWindowOpen = false
 		c.logWindow.Hide()
 		c.refreshTrayMenu()
 	})
 
-	go c.watchLogGridWidth()
+	c.watchLogGridWidth()
 }
 
 func (c *controller) setFollowEnabled(enabled bool) {
@@ -605,11 +671,14 @@ func (c *controller) setFollowEnabled(enabled bool) {
 }
 
 func (c *controller) scrollLogsToBottom() {
-	if c.logScroll == nil {
-		return
-	}
 	c.followJumping = true
-	c.logScroll.ScrollToBottom()
+	if c.selectableLogs != nil && c.selectableLogs.Checked {
+		if c.logSelectScroll != nil {
+			c.logSelectScroll.ScrollToBottom()
+		}
+	} else if c.logScroll != nil {
+		c.logScroll.ScrollToBottom()
+	}
 	c.followJumping = false
 }
 
@@ -626,28 +695,50 @@ func (c *controller) logAtBottom(pos fyne.Position) bool {
 }
 
 func (c *controller) watchLogGridWidth() {
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-c.quitLogs:
-			return
-		case <-ticker.C:
-			next := c.logWrapColumns()
-			if next == c.logCols {
-				continue
-			}
-			c.logCols = next
-			fyne.Do(func() {
-				c.rebuildLogRows()
-				c.logGrid.Rows = c.logRows
-				c.logGrid.Refresh()
-				if c.followEnabled {
-					c.scrollLogsToBottom()
+	c.startBackgroundLoop("log wrap watcher", func(ctx context.Context) {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				next := c.logWrapColumns()
+				if next == c.logCols {
+					continue
 				}
-			})
+				c.logCols = next
+				fyne.Do(func() {
+					c.rebuildLogRows()
+					c.refreshLogView()
+					if c.followEnabled {
+						c.scrollLogsToBottom()
+					}
+				})
+			}
 		}
+	})
+}
+
+func (c *controller) refreshLogView() {
+	if c.logGrid != nil {
+		c.logGrid.Rows = c.logRows
+		c.logGrid.Refresh()
 	}
+	if c.logSelectable != nil {
+		plain := make([]string, 0, len(c.logRawLines))
+		for _, line := range c.logRawLines {
+			plain = append(plain, stripANSIText(line))
+		}
+		c.logSelectable.SetText(strings.Join(plain, "\n"))
+	}
+}
+
+func (c *controller) shouldMinimizeToTrayOnClose() bool {
+	if c.minimizeToTray != nil {
+		return c.minimizeToTray.Checked
+	}
+	return c.settings.MinimizeToTray
 }
 
 func (c *controller) ensureDirPickerStartPath(path string) string {
