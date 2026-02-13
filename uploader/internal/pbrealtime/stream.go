@@ -64,8 +64,14 @@ func (s StreamClient) RunSession(ctx context.Context, session Session, subscribe
 	if resp.StatusCode >= 400 {
 		defer resp.Body.Close()
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		body := logging.Truncate(logging.FormatHTTPPayload(data))
-		return fmt.Errorf("realtime connect failed: %s (%s)", resp.Status, body)
+		body := logging.FormatHTTPPayload(data)
+		if s.Logger != nil {
+			s.Logger.Warn("realtime connect failed",
+				logging.Field("status", resp.Status),
+				logging.Field("response", body),
+			)
+		}
+		return fmt.Errorf("realtime connect failed: %s", resp.Status)
 	}
 	defer resp.Body.Close()
 

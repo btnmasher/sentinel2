@@ -129,7 +129,7 @@ func (c *SentinelClient) runRealtimeConfigSession(ctx context.Context, onUpdate 
 		OnUnhandled: func(event pbrealtime.Event) {
 			c.logger.Debug("ignoring realtime event",
 				logging.Field("event", event.Name),
-				logging.Field("data", logging.Truncate(logging.FormatHTTPPayload(event.Data))),
+				logging.Field("data", logging.FormatHTTPPayload(event.Data)),
 			)
 		},
 	})

@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -12,7 +11,7 @@ import (
 
 type Logger struct {
 	debugEnabled atomic.Bool
-	inner        *slog.Logger
+	terminalOut  atomic.Bool
 	pretty       bool
 	mu           sync.RWMutex
 	nextID       int
@@ -27,17 +26,12 @@ type Event struct {
 }
 
 func New(debug bool) *Logger {
-	level := slog.LevelInfo
-	if debug {
-		level = slog.LevelDebug
-	}
-	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
 	logger := &Logger{
-		inner:       slog.New(handler),
 		pretty:      shouldPrettyPrint(),
 		subscribers: map[int]func(Event){},
 	}
 	logger.debugEnabled.Store(debug)
+	logger.terminalOut.Store(true)
 	return logger
 }
 
@@ -50,16 +44,10 @@ func (l *Logger) Debugf(format string, args ...any) {
 }
 
 func (l *Logger) Debug(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil || !l.debugEnabled.Load() {
+	if l == nil || !l.debugEnabled.Load() {
 		return
 	}
-	if l.pretty {
-		prettyPrint(slog.LevelDebug, msg, fields)
-		l.publish(slog.LevelDebug, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelDebug, msg, fields...)
-	l.publish(slog.LevelDebug, msg, fields)
+	l.log(slog.LevelDebug, msg, fields)
 }
 
 func (l *Logger) SetDebugEnabled(enabled bool) {
@@ -69,43 +57,32 @@ func (l *Logger) SetDebugEnabled(enabled bool) {
 	l.debugEnabled.Store(enabled)
 }
 
+func (l *Logger) SetTerminalOutputEnabled(enabled bool) {
+	if l == nil {
+		return
+	}
+	l.terminalOut.Store(enabled)
+}
+
 func (l *Logger) Info(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil {
+	if l == nil {
 		return
 	}
-	if l.pretty {
-		prettyPrint(slog.LevelInfo, msg, fields)
-		l.publish(slog.LevelInfo, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelInfo, msg, fields...)
-	l.publish(slog.LevelInfo, msg, fields)
+	l.log(slog.LevelInfo, msg, fields)
 }
 
 func (l *Logger) Warn(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil {
+	if l == nil {
 		return
 	}
-	if l.pretty {
-		prettyPrint(slog.LevelWarn, msg, fields)
-		l.publish(slog.LevelWarn, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelWarn, msg, fields...)
-	l.publish(slog.LevelWarn, msg, fields)
+	l.log(slog.LevelWarn, msg, fields)
 }
 
 func (l *Logger) Error(msg string, fields ...slog.Attr) {
-	if l == nil || l.inner == nil {
+	if l == nil {
 		return
 	}
-	if l.pretty {
-		prettyPrint(slog.LevelError, msg, fields)
-		l.publish(slog.LevelError, msg, fields)
-		return
-	}
-	l.inner.LogAttrs(context.Background(), slog.LevelError, msg, fields...)
-	l.publish(slog.LevelError, msg, fields)
+	l.log(slog.LevelError, msg, fields)
 }
 
 func (l *Logger) Subscribe(fn func(Event)) func() {
@@ -124,7 +101,28 @@ func (l *Logger) Subscribe(fn func(Event)) func() {
 	}
 }
 
-func (l *Logger) publish(level slog.Level, msg string, attrs []slog.Attr) {
+func (l *Logger) log(level slog.Level, msg string, attrs []slog.Attr) {
+	event := Event{
+		Time:    time.Now(),
+		Level:   level,
+		Message: msg,
+		Fields:  attrsToMap(attrs),
+	}
+	if l.terminalOut.Load() {
+		l.emit(event)
+	}
+	l.publishEvent(event)
+}
+
+func (l *Logger) emit(event Event) {
+	if l.pretty {
+		_, _ = os.Stderr.WriteString(FormatEventANSI(event))
+		return
+	}
+	_, _ = os.Stderr.WriteString(FormatEventLine(event))
+}
+
+func (l *Logger) publishEvent(event Event) {
 	if l == nil {
 		return
 	}
@@ -139,12 +137,6 @@ func (l *Logger) publish(level slog.Level, msg string, attrs []slog.Attr) {
 	}
 	l.mu.RUnlock()
 
-	event := Event{
-		Time:    time.Now(),
-		Level:   level,
-		Message: msg,
-		Fields:  attrsToMap(attrs),
-	}
 	for _, cb := range callbacks {
 		cb(event)
 	}

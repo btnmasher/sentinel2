@@ -43,14 +43,26 @@ func (c *controller) refreshTrayMenu() {
 	disconnectItem.Disabled = !running
 
 	minTrayItem := fyne.NewMenuItem("Minimize to tray", func() {
-		c.minimizeToTray.SetChecked(!c.minimizeToTray.Checked)
+		next := !c.settings.MinimizeToTray
+		c.settings.MinimizeToTray = next
+		c.draft.MinimizeToTray = next
+		c.minimizeToTray.SetChecked(next)
+		c.persistSettings()
+		c.refreshSettingsActions()
+		c.refreshTrayMenu()
 	})
-	minTrayItem.Checked = c.minimizeToTray.Checked
+	minTrayItem.Checked = c.settings.MinimizeToTray
 
 	startMinItem := fyne.NewMenuItem("Start minimized", func() {
-		c.startMinimized.SetChecked(!c.startMinimized.Checked)
+		next := !c.settings.StartMinimized
+		c.settings.StartMinimized = next
+		c.draft.StartMinimized = next
+		c.startMinimized.SetChecked(next)
+		c.persistSettings()
+		c.refreshSettingsActions()
+		c.refreshTrayMenu()
 	})
-	startMinItem.Checked = c.startMinimized.Checked
+	startMinItem.Checked = c.settings.StartMinimized
 
 	exitItem := fyne.NewMenuItem("Exit", func() {
 		c.cleanup()

@@ -26,16 +26,6 @@ import (
 	"sentinel2-uploader/internal/runtime"
 )
 
-const (
-	prefBaseURL        = "uploader.base_url"
-	prefToken          = "uploader.token"
-	prefLogDir         = "uploader.log_dir"
-	prefDebugLogs      = "uploader.debug_logs"
-	prefAutoConnect    = "uploader.auto_connect"
-	prefMinimizeToTray = "uploader.minimize_to_tray"
-	prefStartMinimized = "uploader.start_minimized"
-)
-
 var (
 	statusIdleColor       = color.NRGBA{R: 145, G: 145, B: 145, A: 255}
 	statusConnectingColor = color.NRGBA{R: 219, G: 167, B: 74, A: 255}
@@ -65,11 +55,12 @@ type channelStatusRow struct {
 }
 
 type controller struct {
-	app    fyne.App
-	prefs  fyne.Preferences
-	win    fyne.Window
-	logger *logging.Logger
-	runner *runtime.Controller
+	app      fyne.App
+	settings config.UploaderSettings
+	draft    config.UploaderSettings
+	win      fyne.Window
+	logger   *logging.Logger
+	runner   *runtime.Controller
 
 	baseURL *widget.Entry
 	token   *widget.Entry
@@ -86,12 +77,19 @@ type controller struct {
 	startButton    *widget.Button
 	stopButton     *widget.Button
 	showLogsButton *widget.Button
+	saveSettings   *widget.Button
+	cancelSettings *widget.Button
 
 	logWindow     fyne.Window
 	logWindowOpen bool
 	logGrid       *widget.TextGrid
-	followLogs    *widget.Check
+	logScroll     *container.Scroll
+	followButton  *widget.Button
+	followEnabled bool
+	followJumping bool
+	logRawLines   []string
 	logRows       []widget.TextGridRow
+	logCols       int
 	channels      []client.ChannelConfig
 	channelRows   []channelStatusRow
 	channelList   *widget.List
@@ -111,21 +109,34 @@ type controller struct {
 
 func Run(buildVersion string, defaults config.Options) {
 	uiApp := app.NewWithID("com.sentinel2.uploader")
+	uiApp.Settings().SetTheme(newUploaderTheme())
 	c := newController(uiApp, defaults)
 	c.logger.Info("starting uploader UI", logging.Field("version", buildVersion))
 	c.run()
 }
 
 func newController(uiApp fyne.App, defaults config.Options) *controller {
-	prefs := uiApp.Preferences()
-	defaults = applyPreferenceDefaults(prefs, defaults)
+	settings := config.SettingsFromOptions(defaults)
+	if saved, err := config.LoadSettings(); err == nil {
+		defaults = config.MergeOptionsWithSettings(defaults, saved)
+		settings = saved
+	}
+	if defaults.LogDir == "" {
+		defaults.LogDir = config.DefaultLogDir()
+	}
+	settings.BaseURL = defaults.BaseURL
+	settings.Token = defaults.Token
+	settings.LogDir = defaults.LogDir
+	settings.AutoConnect = defaults.AutoConnect
+	settings.Debug = defaults.Debug
 
 	logger := logging.New(false)
-	logger.SetDebugEnabled(false)
+	logger.SetDebugEnabled(settings.Debug)
 
 	c := &controller{
 		app:      uiApp,
-		prefs:    prefs,
+		settings: settings,
+		draft:    settings,
 		logger:   logger,
 		runner:   runtime.NewController(),
 		quitLogs: make(chan struct{}),
@@ -144,7 +155,7 @@ func (c *controller) run() {
 	c.setRunningState(false)
 	c.startChannelHealthLoop()
 	c.win.SetCloseIntercept(func() {
-		if c.minimizeToTray.Checked {
+		if c.settings.MinimizeToTray {
 			c.win.Hide()
 			return
 		}
@@ -152,7 +163,7 @@ func (c *controller) run() {
 		c.app.Quit()
 	})
 
-	if c.startMinimized.Checked {
+	if c.settings.StartMinimized {
 		c.win.Show()
 		c.win.Hide()
 		c.tryAutoConnect()
@@ -184,36 +195,38 @@ func (c *controller) startChannelHealthLoop() {
 
 func (c *controller) buildUI(defaults config.Options) {
 	c.baseURL = widget.NewEntry()
-	c.baseURL.SetText(defaults.BaseURL)
+	c.baseURL.SetText(c.draft.BaseURL)
 
 	c.token = widget.NewPasswordEntry()
-	c.token.SetText(defaults.Token)
+	c.token.SetText(c.draft.Token)
 
 	c.logDir = widget.NewEntry()
-	c.logDir.SetText(defaults.LogDir)
+	c.logDir.SetText(c.draft.LogDir)
 
 	c.debugLogs = widget.NewCheck("Debug level", func(v bool) {
-		c.prefs.SetBool(prefDebugLogs, v)
+		c.draft.Debug = v
 		c.logger.SetDebugEnabled(v)
+		c.refreshSettingsActions()
 	})
-	c.debugLogs.SetChecked(c.prefs.BoolWithFallback(prefDebugLogs, false))
-	c.logger.SetDebugEnabled(c.debugLogs.Checked)
+	c.debugLogs.SetChecked(c.draft.Debug)
+	c.logger.SetDebugEnabled(c.draft.Debug)
 	c.connectOnStart = newSliderToggle(func(v bool) {
-		c.prefs.SetBool(prefAutoConnect, v)
+		c.draft.AutoConnect = v
+		c.refreshSettingsActions()
 	})
-	c.connectOnStart.SetChecked(c.prefs.BoolWithFallback(prefAutoConnect, defaults.AutoConnect))
+	c.connectOnStart.SetChecked(c.draft.AutoConnect)
 
 	c.minimizeToTray = newSliderToggle(func(v bool) {
-		c.prefs.SetBool(prefMinimizeToTray, v)
-		c.refreshTrayMenu()
+		c.draft.MinimizeToTray = v
+		c.refreshSettingsActions()
 	})
-	c.minimizeToTray.SetChecked(c.prefs.BoolWithFallback(prefMinimizeToTray, false))
+	c.minimizeToTray.SetChecked(c.draft.MinimizeToTray)
 
 	c.startMinimized = newSliderToggle(func(v bool) {
-		c.prefs.SetBool(prefStartMinimized, v)
-		c.refreshTrayMenu()
+		c.draft.StartMinimized = v
+		c.refreshSettingsActions()
 	})
-	c.startMinimized.SetChecked(c.prefs.BoolWithFallback(prefStartMinimized, false))
+	c.startMinimized.SetChecked(c.draft.StartMinimized)
 
 	c.statusDot = canvas.NewCircle(statusIdleColor)
 	c.statusDotWrap = container.NewGridWrap(fyne.NewSize(12, 12), c.statusDot)
@@ -225,7 +238,7 @@ func (c *controller) buildUI(defaults config.Options) {
 		func() fyne.CanvasObject {
 			badge := newStatusBadge()
 			label := widget.NewLabel("channel")
-			return container.NewBorder(nil, nil, nil, badge, label)
+			return container.NewHBox(badge, label)
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
 			row := obj.(*fyne.Container)
@@ -260,15 +273,18 @@ func (c *controller) buildUI(defaults config.Options) {
 	c.stopButton.Disable()
 
 	c.baseURL.OnChanged = func(v string) {
-		c.prefs.SetString(prefBaseURL, strings.TrimSpace(v))
+		c.draft.BaseURL = strings.TrimSpace(v)
+		c.refreshSettingsActions()
 		c.refreshStartAvailability()
 	}
 	c.token.OnChanged = func(v string) {
-		c.prefs.SetString(prefToken, strings.TrimSpace(v))
+		c.draft.Token = strings.TrimSpace(v)
+		c.refreshSettingsActions()
 		c.refreshStartAvailability()
 	}
 	c.logDir.OnChanged = func(v string) {
-		c.prefs.SetString(prefLogDir, strings.TrimSpace(v))
+		c.draft.LogDir = strings.TrimSpace(v)
+		c.refreshSettingsActions()
 		c.refreshChannelHealth()
 	}
 
@@ -291,6 +307,9 @@ func (c *controller) buildUI(defaults config.Options) {
 		c.toggleRow("Close to tray", c.minimizeToTray),
 		c.toggleRow("Start minimized", c.startMinimized),
 	)
+	c.saveSettings = widget.NewButton("Save", c.saveDraftSettings)
+	c.cancelSettings = widget.NewButton("Cancel", c.cancelDraftSettings)
+	settingsActions := container.NewHBox(c.saveSettings, c.cancelSettings)
 	statusRow := container.NewHBox(container.NewCenter(c.statusDotWrap), c.statusText)
 	controls := container.NewHBox(c.startButton, c.stopButton, c.showLogsButton, widget.NewLabel("Status:"), statusRow)
 
@@ -327,6 +346,8 @@ func (c *controller) buildUI(defaults config.Options) {
 		form,
 		c.verticalGap(12),
 		settingsRow,
+		c.verticalGap(8),
+		settingsActions,
 	)))
 	tabs := container.NewAppTabs(overviewTab, settingsTab)
 	tabs.SetTabLocation(container.TabLocationTop)
@@ -335,6 +356,55 @@ func (c *controller) buildUI(defaults config.Options) {
 	c.win.SetContent(container.NewStack(minAnchor, tabs))
 	c.refreshStartAvailability()
 	c.refreshChannelHealth()
+	c.refreshSettingsActions()
+}
+
+func (c *controller) persistSettings() {
+	_ = config.SaveSettings(c.settings)
+}
+
+func (c *controller) settingsDirty() bool {
+	return c.draft != c.settings
+}
+
+func (c *controller) refreshSettingsActions() {
+	dirty := c.settingsDirty()
+	if c.saveSettings != nil {
+		if dirty {
+			c.saveSettings.Enable()
+		} else {
+			c.saveSettings.Disable()
+		}
+	}
+	if c.cancelSettings != nil {
+		if dirty {
+			c.cancelSettings.Enable()
+		} else {
+			c.cancelSettings.Disable()
+		}
+	}
+}
+
+func (c *controller) saveDraftSettings() {
+	c.settings = c.draft
+	c.persistSettings()
+	c.refreshTrayMenu()
+	c.refreshSettingsActions()
+}
+
+func (c *controller) cancelDraftSettings() {
+	c.draft = c.settings
+	c.baseURL.SetText(c.draft.BaseURL)
+	c.token.SetText(c.draft.Token)
+	c.logDir.SetText(c.draft.LogDir)
+	c.debugLogs.SetChecked(c.draft.Debug)
+	c.connectOnStart.SetChecked(c.draft.AutoConnect)
+	c.minimizeToTray.SetChecked(c.draft.MinimizeToTray)
+	c.startMinimized.SetChecked(c.draft.StartMinimized)
+	c.logger.SetDebugEnabled(c.draft.Debug)
+	c.refreshStartAvailability()
+	c.refreshChannelHealth()
+	c.refreshSettingsActions()
 }
 
 func (c *controller) toggleRow(label string, sw *sliderToggle) fyne.CanvasObject {
@@ -367,14 +437,14 @@ func (c *controller) refreshStartAvailability() {
 }
 
 func (c *controller) tryAutoConnect() {
-	if c.connectOnStart == nil || !c.connectOnStart.Checked || c.runner.IsRunning() {
+	if !c.settings.AutoConnect || c.runner.IsRunning() {
 		return
 	}
 	if strings.TrimSpace(c.baseURL.Text) == "" || strings.TrimSpace(c.token.Text) == "" {
 		return
 	}
 	fyne.Do(func() {
-		c.startUploader()
+		c.startUploaderWithContext(true)
 		c.refreshTrayMenu()
 	})
 }
@@ -464,7 +534,7 @@ func (c *controller) refreshChannelPlaceholder() {
 	if c.channelList == nil || c.channelEmpty == nil || c.channelNotice == nil {
 		return
 	}
-	if len(c.channelRows) > 0 {
+	if c.runner != nil && c.runner.IsRunning() && len(c.channelRows) > 0 {
 		c.channelEmpty.Hide()
 		c.channelList.Show()
 		return
@@ -480,24 +550,104 @@ func (c *controller) refreshChannelPlaceholder() {
 
 func (c *controller) initLogWindow() {
 	c.logGrid = widget.NewTextGrid()
-	c.logGrid.Scroll = fyne.ScrollVerticalOnly
-	c.followLogs = widget.NewCheck("Follow output", nil)
-	c.followLogs.SetChecked(true)
+	c.logGrid.Scroll = fyne.ScrollNone
+	c.logScroll = container.NewVScroll(c.logGrid)
+	c.followEnabled = true
+	c.logCols = c.logWrapColumns()
+	c.followButton = widget.NewButton("Following", func() {
+		c.setFollowEnabled(true)
+		c.scrollLogsToBottom()
+	})
+	c.followButton.Disable()
 	clearButton := widget.NewButton("Clear", func() {
+		c.logRawLines = nil
 		c.logRows = nil
 		c.logGrid.Rows = nil
 		c.logGrid.Refresh()
+		c.scrollLogsToBottom()
 	})
 	c.logWindow = c.app.NewWindow("Sentinel2 Uploader Logs")
 	c.logWindow.Resize(fyne.NewSize(900, 520))
-	header := container.NewHBox(c.debugLogs, c.followLogs, clearButton)
-	c.logWindow.SetContent(container.NewBorder(header, nil, nil, nil, c.logGrid))
+	centerGap := container.NewPadded(c.debugLogs)
+	header := container.NewBorder(nil, nil, clearButton, c.followButton, centerGap)
+	logBG := canvas.NewRectangle(color.NRGBA{R: 0, G: 0, B: 0, A: 255})
+	c.logScroll.OnScrolled = func(pos fyne.Position) {
+		if c.followJumping {
+			return
+		}
+		if !c.logAtBottom(pos) {
+			c.setFollowEnabled(false)
+		}
+	}
+	c.logWindow.SetContent(container.NewBorder(header, nil, nil, nil, container.NewMax(logBG, c.logScroll)))
 	c.logWindowOpen = false
 	c.logWindow.SetCloseIntercept(func() {
 		c.logWindowOpen = false
 		c.logWindow.Hide()
 		c.refreshTrayMenu()
 	})
+
+	go c.watchLogGridWidth()
+}
+
+func (c *controller) setFollowEnabled(enabled bool) {
+	c.followEnabled = enabled
+	if c.followButton == nil {
+		return
+	}
+	if enabled {
+		c.followButton.SetText("Following")
+		c.followButton.Disable()
+		return
+	}
+	c.followButton.SetText("Follow")
+	c.followButton.Enable()
+}
+
+func (c *controller) scrollLogsToBottom() {
+	if c.logScroll == nil {
+		return
+	}
+	c.followJumping = true
+	c.logScroll.ScrollToBottom()
+	c.followJumping = false
+}
+
+func (c *controller) logAtBottom(pos fyne.Position) bool {
+	if c.logScroll == nil || c.logGrid == nil {
+		return true
+	}
+	contentHeight := c.logGrid.MinSize().Height
+	viewportHeight := c.logScroll.Size().Height
+	if contentHeight <= viewportHeight+1 {
+		return true
+	}
+	return pos.Y+viewportHeight >= contentHeight-1
+}
+
+func (c *controller) watchLogGridWidth() {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.quitLogs:
+			return
+		case <-ticker.C:
+			next := c.logWrapColumns()
+			if next == c.logCols {
+				continue
+			}
+			c.logCols = next
+			fyne.Do(func() {
+				c.rebuildLogRows()
+				c.logGrid.Rows = c.logRows
+				c.logGrid.Refresh()
+				if c.followEnabled {
+					c.scrollLogsToBottom()
+				}
+			})
+		}
+	}
 }
 
 func (c *controller) ensureDirPickerStartPath(path string) string {

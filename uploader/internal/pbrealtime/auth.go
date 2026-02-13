@@ -42,8 +42,14 @@ func (a AuthClient) FetchSession(ctx context.Context) (Session, error) {
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		body := logging.Truncate(logging.FormatHTTPPayload(data))
-		return Session{}, fmt.Errorf("realtime token request failed: %s (%s)", resp.Status, body)
+		body := logging.FormatHTTPPayload(data)
+		if a.Logger != nil {
+			a.Logger.Warn("realtime token request failed",
+				logging.Field("status", resp.Status),
+				logging.Field("response", body),
+			)
+		}
+		return Session{}, fmt.Errorf("realtime token request failed: %s", resp.Status)
 	}
 
 	session := Session{}
@@ -93,8 +99,14 @@ func (a AuthClient) Subscribe(ctx context.Context, clientID string, sessionToken
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		body := logging.Truncate(logging.FormatHTTPPayload(data))
-		return fmt.Errorf("realtime subscribe failed: %s (%s)", resp.Status, body)
+		body := logging.FormatHTTPPayload(data)
+		if a.Logger != nil {
+			a.Logger.Warn("realtime subscribe failed",
+				logging.Field("status", resp.Status),
+				logging.Field("response", body),
+			)
+		}
+		return fmt.Errorf("realtime subscribe failed: %s", resp.Status)
 	}
 	if a.Logger != nil {
 		a.Logger.Debug("realtime subscribe succeeded", logging.Field("client_id", clientID))

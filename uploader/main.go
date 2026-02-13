@@ -15,7 +15,7 @@ import (
 var BuildVersion = "dev"
 
 func main() {
-	opts, err := config.ParseOptions(config.DefaultLogDir)
+	opts, err := config.ParseOptions(nil)
 	if err != nil {
 		var flagErr *flags.Error
 		if errors.As(err, &flagErr) && flagErr.Type == flags.ErrHelp {

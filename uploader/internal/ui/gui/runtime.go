@@ -3,7 +3,7 @@
 package gui
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"sentinel2-uploader/internal/client"
@@ -64,26 +65,30 @@ func (c *controller) currentOptions() config.Options {
 }
 
 func (c *controller) startUploader() {
+	c.startUploaderWithContext(false)
+}
+
+func (c *controller) startUploaderWithContext(auto bool) {
 	c.setStatus("Connecting", statusConnectingColor)
 	opts := c.currentOptions()
 	if strings.TrimSpace(opts.LogDir) == "" {
 		c.setStatus("Error", statusErrorColor)
-		dialog.ShowError(fmt.Errorf("log directory is required"), c.win)
+		dialog.ShowError(errors.New(c.startErrorText(auto, "log directory is required")), c.win)
 		return
 	}
 	info, statErr := os.Stat(opts.LogDir)
 	if statErr != nil || !info.IsDir() {
 		c.setStatus("Error", statusErrorColor)
 		if statErr != nil {
-			dialog.ShowError(fmt.Errorf("log directory is not accessible: %w", statErr), c.win)
+			dialog.ShowError(errors.New(c.startErrorText(auto, "log directory is not accessible: "+statErr.Error())), c.win)
 		} else {
-			dialog.ShowError(fmt.Errorf("log directory is not a directory"), c.win)
+			dialog.ShowError(errors.New(c.startErrorText(auto, "log directory is not a directory")), c.win)
 		}
 		return
 	}
 	if err := config.ValidateRequired(opts); err != nil {
 		c.setStatus("Error", statusErrorColor)
-		dialog.ShowError(err, c.win)
+		dialog.ShowError(errors.New(c.startErrorText(auto, err.Error())), c.win)
 		return
 	}
 
@@ -92,7 +97,7 @@ func (c *controller) startUploader() {
 	})
 	if err != nil {
 		c.setStatus("Error", statusErrorColor)
-		dialog.ShowError(err, c.win)
+		dialog.ShowError(errors.New(c.startErrorText(auto, err.Error())), c.win)
 		return
 	}
 	c.setRunningState(true)
@@ -111,6 +116,13 @@ func (c *controller) startUploader() {
 			c.setStatus("Idle", statusIdleColor)
 		})
 	}()
+}
+
+func (c *controller) startErrorText(auto bool, message string) string {
+	if !auto {
+		return message
+	}
+	return "Couldn't auto-connect due to: " + message
 }
 
 func (c *controller) onChannelsUpdate(channels []client.ChannelConfig) {
@@ -174,7 +186,8 @@ func (c *controller) selectLogDir() {
 		})
 		useCurrent := widget.NewButton("Use Current Folder", func() {
 			c.logDir.SetText(c.dirPickerCurrent)
-			c.prefs.SetString(prefLogDir, strings.TrimSpace(c.logDir.Text))
+			c.draft.LogDir = strings.TrimSpace(c.logDir.Text)
+			c.refreshSettingsActions()
 			c.dirPickerWindow.Hide()
 		})
 		closeButton := widget.NewButton("Close", func() {
@@ -213,25 +226,69 @@ func (c *controller) appendLog(line string) {
 	if c.logGrid == nil {
 		return
 	}
-	rows := parseANSITextGridRows(line)
-	if len(rows) == 0 {
+
+	lines := splitLogLines(line)
+	if len(lines) == 0 {
 		return
 	}
-	c.logRows = append(c.logRows, rows...)
+	c.logRawLines = append(c.logRawLines, lines...)
 	c.trimLogRows()
+	c.rebuildLogRows()
 	c.logGrid.Rows = c.logRows
 	c.logGrid.Refresh()
-	if c.followLogs != nil && c.followLogs.Checked {
-		c.logGrid.ScrollToBottom()
+	if c.followEnabled {
+		c.scrollLogsToBottom()
 	}
 }
 
 func (c *controller) trimLogRows() {
-	const maxLogRows = 5000
-	if len(c.logRows) <= maxLogRows {
+	const maxLogRows = 1000
+	if len(c.logRawLines) <= maxLogRows {
 		return
 	}
-	c.logRows = append([]widget.TextGridRow(nil), c.logRows[len(c.logRows)-maxLogRows:]...)
+	c.logRawLines = append([]string(nil), c.logRawLines[len(c.logRawLines)-maxLogRows:]...)
+	if len(c.logRows) > maxLogRows {
+		c.logRows = append([]widget.TextGridRow(nil), c.logRows[len(c.logRows)-maxLogRows:]...)
+	}
+}
+
+func (c *controller) rebuildLogRows() {
+	const maxRenderedRows = 1000
+	cols := c.logWrapColumns()
+	wrapped := wrapANSILines(c.logRawLines, cols)
+	if len(wrapped) > maxRenderedRows {
+		wrapped = wrapped[len(wrapped)-maxRenderedRows:]
+	}
+	rows := make([]widget.TextGridRow, 0, len(wrapped))
+	for _, line := range wrapped {
+		rows = append(rows, parseANSITextGridRow(line))
+	}
+	c.logRows = rows
+}
+
+func (c *controller) logWrapColumns() int {
+	if c.logGrid == nil {
+		return 120
+	}
+	widthPx := c.logGrid.Size().Width
+	if c.logScroll != nil && c.logScroll.Size().Width > 0 {
+		widthPx = c.logScroll.Size().Width
+	}
+	if widthPx <= 0 {
+		widthPx = 900
+	}
+	charSize := fyne.MeasureText("M", theme.TextSize(), fyne.TextStyle{Monospace: true})
+	if charSize.Width <= 0 {
+		return 120
+	}
+	cols := int(widthPx / charSize.Width)
+	if cols < 40 {
+		cols = 40
+	}
+	if cols > 240 {
+		cols = 240
+	}
+	return cols - 2
 }
 
 func (c *controller) cleanup() {

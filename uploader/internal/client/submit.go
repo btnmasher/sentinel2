@@ -17,7 +17,7 @@ func (c *SentinelClient) Submit(payload SubmitPayload) error {
 	}
 	c.logger.Debug("submitting report",
 		logging.Field("channel_id", payload.ChannelID),
-		logging.Field("payload", logging.Truncate(string(body))),
+		logging.Field("payload", logging.FormatHTTPPayload(body)),
 	)
 
 	req, err := http.NewRequest("PUT", c.endpoints.SubmitURL, bytes.NewReader(body))
@@ -42,7 +42,7 @@ func (c *SentinelClient) Submit(payload SubmitPayload) error {
 			logging.Field("channel_id", payload.ChannelID),
 			logging.Field("response", formatted),
 		)
-		return fmt.Errorf("%s: %s", resp.Status, logging.Truncate(formatted))
+		return fmt.Errorf("submit rejected: %s", resp.Status)
 	}
 	c.logger.Debug("report submit accepted", logging.Field("channel_id", payload.ChannelID))
 	return nil

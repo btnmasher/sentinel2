@@ -28,14 +28,25 @@ func (c *SentinelClient) FetchChannels() ([]ChannelConfig, error) {
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		body := logging.Truncate(logging.FormatHTTPPayload(data))
-		return nil, fmt.Errorf("config request failed: %s (content-type: %q, body: %s)", resp.Status, resp.Header.Get("Content-Type"), body)
+		body := logging.FormatHTTPPayload(data)
+		c.logger.Warn("config request failed",
+			logging.Field("status", resp.Status),
+			logging.Field("content_type", resp.Header.Get("Content-Type")),
+			logging.Field("response", body),
+		)
+		return nil, fmt.Errorf("config request failed: %s", resp.Status)
 	}
 
 	var cfg uploaderConfigResponse
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		body := logging.Truncate(logging.FormatHTTPPayload(data))
-		return nil, fmt.Errorf("invalid config JSON from %s (content-type: %q, body: %s): %w", c.endpoints.ConfigURL, resp.Header.Get("Content-Type"), body, err)
+		body := logging.FormatHTTPPayload(data)
+		c.logger.Warn("invalid config JSON",
+			logging.Field("url", c.endpoints.ConfigURL),
+			logging.Field("content_type", resp.Header.Get("Content-Type")),
+			logging.Field("error", err),
+			logging.Field("response", body),
+		)
+		return nil, fmt.Errorf("invalid config JSON from %s: %w", c.endpoints.ConfigURL, err)
 	}
 
 	out := []ChannelConfig{}

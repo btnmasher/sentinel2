@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -34,7 +33,7 @@ func prettyPrint(level slog.Level, msg string, attrs []slog.Attr) {
 		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")).Render(msg),
 	)
 
-	fields := renderAttrs(attrs)
+	fields := renderAttrs(level, attrs)
 	if fields != "" {
 		header = header + "\n" + fields
 	}
@@ -46,7 +45,7 @@ func levelBadge(level slog.Level) (string, lipgloss.Style) {
 	base := lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	switch {
 	case level <= slog.LevelDebug:
-		return "DEBUG", base.Foreground(lipgloss.Color("236")).Background(lipgloss.Color("239"))
+		return "DEBUG", base.Foreground(lipgloss.Color("255")).Background(lipgloss.Color("240"))
 	case level <= slog.LevelInfo:
 		return "INFO", base.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("31"))
 	case level <= slog.LevelWarn:
@@ -56,7 +55,7 @@ func levelBadge(level slog.Level) (string, lipgloss.Style) {
 	}
 }
 
-func renderAttrs(attrs []slog.Attr) string {
+func renderAttrs(level slog.Level, attrs []slog.Attr) string {
 	if len(attrs) == 0 {
 		return ""
 	}
@@ -66,20 +65,25 @@ func renderAttrs(attrs []slog.Attr) string {
 		return ""
 	}
 
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := orderedFieldKeys(level, values)
 
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	valStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+	valStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	sepStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 
 	parts := make([]string, 0, len(keys))
+	blocks := make([]string, 0, len(keys))
 	for _, k := range keys {
-		parts = append(parts, keyStyle.Render(k)+sepStyle.Render("=")+valStyle.Render(fmt.Sprintf("%v", values[k])))
+		if pretty, ok := prettyJSONString(values[k]); ok {
+			blocks = append(blocks, renderJSONFieldBlock(k, pretty))
+			continue
+		}
+		parts = append(parts, keyStyle.Render(k)+sepStyle.Render("=")+valStyle.Render(formatFieldValue(values[k])))
 	}
-
-	return lipgloss.NewStyle().MarginLeft(2).Render(strings.Join(parts, " "))
+	lines := make([]string, 0, 1+len(blocks))
+	if len(parts) > 0 {
+		lines = append(lines, strings.Join(parts, " "))
+	}
+	lines = append(lines, blocks...)
+	return lipgloss.NewStyle().MarginLeft(2).Render(strings.Join(lines, "\n"))
 }
