@@ -40,9 +40,9 @@ jobs:
           path: |
             ~/go/pkg/mod
             ${{ github.workspace }}/.tmp/go-build-cache
-          key: ${{ runner.os }}-go-taskutil-lint-${{ hashFiles('taskutil/go.sum') }}
+          key: ${{ runner.os }}-go-taskutil-${{ hashFiles('taskutil/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-taskutil-lint-
+            ${{ runner.os }}-go-taskutil-
 
       - name: Vet taskutil
         working-directory: taskutil
@@ -73,9 +73,9 @@ jobs:
           path: |
             ~/go/pkg/mod
             ${{ github.workspace }}/.tmp/go-build-cache
-          key: ${{ runner.os }}-go-taskutil-test-${{ hashFiles('taskutil/go.sum') }}
+          key: ${{ runner.os }}-go-taskutil-${{ hashFiles('taskutil/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-taskutil-test-
+            ${{ runner.os }}-go-taskutil-
 
       - name: Run taskutil tests
         working-directory: taskutil

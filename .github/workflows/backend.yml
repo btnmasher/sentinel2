@@ -45,9 +45,9 @@ jobs:
             ~/go/pkg/mod
             ${{ github.workspace }}/.tmp/go-build-cache
             ${{ github.workspace }}/.tmp/golangci-lint-cache
-          key: ${{ runner.os }}-go-backend-lint-${{ hashFiles('backend/go.sum', '.golangci-lint-version') }}
+          key: ${{ runner.os }}-go-backend-${{ hashFiles('backend/go.sum', '.golangci-lint-version') }}
           restore-keys: |
-            ${{ runner.os }}-go-backend-lint-
+            ${{ runner.os }}-go-backend-
 
       - name: Install golangci-lint
         run: |
@@ -75,9 +75,10 @@ jobs:
           path: |
             ~/go/pkg/mod
             ${{ github.workspace }}/.tmp/go-build-cache
-          key: ${{ runner.os }}-go-backend-test-${{ hashFiles('backend/go.sum') }}
+            ${{ github.workspace }}/.tmp/golangci-lint-cache
+          key: ${{ runner.os }}-go-backend-${{ hashFiles('backend/go.sum', '.golangci-lint-version') }}
           restore-keys: |
-            ${{ runner.os }}-go-backend-test-
+            ${{ runner.os }}-go-backend-
 
       - name: Run backend tests
         working-directory: backend

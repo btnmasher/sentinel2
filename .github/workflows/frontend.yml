@@ -41,9 +41,9 @@ jobs:
             ${{ github.workspace }}/.tmp/bun
             ${{ github.workspace }}/.tmp/bun-install
             ${{ github.workspace }}/frontend/node_modules
-          key: ${{ runner.os }}-bun-frontend-lint-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
+          key: ${{ runner.os }}-bun-frontend-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-frontend-lint-
+            ${{ runner.os }}-bun-frontend-
 
       - name: Lint frontend
         run: task lint:frontend
@@ -67,9 +67,9 @@ jobs:
             ${{ github.workspace }}/.tmp/bun
             ${{ github.workspace }}/.tmp/bun-install
             ${{ github.workspace }}/frontend/node_modules
-          key: ${{ runner.os }}-bun-frontend-test-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
+          key: ${{ runner.os }}-bun-frontend-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bun-frontend-test-
+            ${{ runner.os }}-bun-frontend-
 
       - name: Install frontend dependencies
         working-directory: frontend
