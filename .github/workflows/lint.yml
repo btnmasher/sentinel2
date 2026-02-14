@@ -85,7 +85,7 @@ jobs:
             ${{ github.workspace }}/.tmp/bun
             ${{ github.workspace }}/.tmp/bun-install
             ${{ github.workspace }}/frontend/node_modules
-          key: ${{ runner.os }}-bun-lint-${{ hashFiles('frontend/bun.lockb', 'frontend/package.json') }}
+          key: ${{ runner.os }}-bun-lint-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
           restore-keys: |
             ${{ runner.os }}-bun-lint-
 
