@@ -84,10 +84,19 @@ See `docs/WINDOWS_DEVELOPMENT.md` for the full Windows notes.
 
 ## CI
 
-### Lint workflow (`.github/workflows/lint.yml`)
-- backend lint job
-- frontend lint job
-- uploader lint job (runs from `uploader/` taskfile)
+### CI workflows
+- `.github/workflows/backend.yml`:
+  - backend lint (`task lint:backend`)
+  - backend tests (`go test ./...` in `backend/`)
+  - path-gated to backend/task/lint/workflow changes
+- `.github/workflows/frontend.yml`:
+  - frontend lint (`task lint:frontend`)
+  - frontend build check (`bun run build` in `frontend/`)
+  - path-gated to frontend/task/workflow changes
+- `.github/workflows/taskutil.yml`:
+  - taskutil vet (`go vet ./...` in `taskutil/`)
+  - taskutil tests (`go test ./...` in `taskutil/`)
+  - path-gated to `taskutil/**` and workflow changes
 
 ### Release workflow (`.github/workflows/release.yml`)
 - trigger: tag push `v*`

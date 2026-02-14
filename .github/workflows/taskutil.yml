@@ -1,0 +1,84 @@
+name: Taskutil
+
+on:
+  pull_request:
+    paths:
+      - "taskutil/**"
+      - ".github/workflows/taskutil.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "taskutil/**"
+      - ".github/workflows/taskutil.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Taskutil vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install Linux clipboard headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libx11-dev
+
+      - name: Restore Go cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp/go-build-cache
+          key: ${{ runner.os }}-go-taskutil-lint-${{ hashFiles('taskutil/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-taskutil-lint-
+
+      - name: Vet taskutil
+        working-directory: taskutil
+        env:
+          GOCACHE: ${{ github.workspace }}/.tmp/go-build-cache
+        run: go vet ./...
+
+  test:
+    name: Taskutil go test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install Linux clipboard headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libx11-dev
+
+      - name: Restore Go cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp/go-build-cache
+          key: ${{ runner.os }}-go-taskutil-test-${{ hashFiles('taskutil/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-taskutil-test-
+
+      - name: Run taskutil tests
+        working-directory: taskutil
+        env:
+          GOCACHE: ${{ github.workspace }}/.tmp/go-build-cache
+        run: go test ./...

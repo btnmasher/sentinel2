@@ -1,0 +1,86 @@
+name: Frontend
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "Taskfile.yml"
+      - ".github/workflows/frontend.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - "Taskfile.yml"
+      - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Frontend lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Task
+        uses: go-task/setup-task@v1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: "1.3.8"
+
+      - name: Restore Bun caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.tmp/bun
+            ${{ github.workspace }}/.tmp/bun-install
+            ${{ github.workspace }}/frontend/node_modules
+          key: ${{ runner.os }}-bun-frontend-lint-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-frontend-lint-
+
+      - name: Lint frontend
+        run: task lint:frontend
+
+  test:
+    name: Frontend build check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: "1.3.8"
+
+      - name: Restore Bun caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.tmp/bun
+            ${{ github.workspace }}/.tmp/bun-install
+            ${{ github.workspace }}/frontend/node_modules
+          key: ${{ runner.os }}-bun-frontend-test-${{ hashFiles('frontend/bun.lock', 'frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-frontend-test-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        env:
+          BUN_TMPDIR: ${{ github.workspace }}/.tmp/bun
+          BUN_INSTALL: ${{ github.workspace }}/.tmp/bun-install
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          BUN_TMPDIR: ${{ github.workspace }}/.tmp/bun
+          BUN_INSTALL: ${{ github.workspace }}/.tmp/bun-install
+        run: bun run build
