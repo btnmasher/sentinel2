@@ -9,13 +9,6 @@ vars:
   GO_BUILD_CACHE_DEFAULT: "{{.TASKFILE_DIR}}/.tmp/go-build-cache"
   TASKUTIL_BIN: '{{.TASKFILE_DIR}}/.tmp/bin/taskutil{{if eq OS "windows"}}.exe{{end}}'
   BACKEND_BIN: '{{.TASKFILE_DIR}}/bin/sentinel2-server{{if eq OS "windows"}}.exe{{end}}'
-  BUILD_VERSION:
-    sh: |
-      if [ ! -x "{{.TASKUTIL_BIN}}" ]; then
-        mkdir -p "{{.TASKFILE_DIR}}/.tmp/bin"
-        cd taskutil && GOCACHE="{{.GO_BUILD_CACHE_DEFAULT}}" go build -o "{{.TASKUTIL_BIN}}" .
-      fi
-      "{{.TASKUTIL_BIN}}" version
 
 tasks:
   default:
@@ -65,7 +58,10 @@ tasks:
     desc: Copy frontend dist to embed location.
 
   build:backend:
-    deps: [prepare:embed]
+    deps: [prepare:embed, setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     dir: backend
     env:
       GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
@@ -76,7 +72,10 @@ tasks:
     desc: Build backend binary with embedded frontend.
 
   build:backend:linux:
-    deps: [prepare:embed]
+    deps: [prepare:embed, setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     dir: backend
     env:
       GOOS: linux
@@ -89,7 +88,10 @@ tasks:
     desc: Build backend binary for Linux (amd64).
 
   build:backend:darwin:
-    deps: [prepare:embed]
+    deps: [prepare:embed, setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     dir: backend
     env:
       GOOS: darwin
@@ -102,7 +104,10 @@ tasks:
     desc: Build backend binary for macOS (arm64).
 
   build:backend:windows:
-    deps: [prepare:embed]
+    deps: [prepare:embed, setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     dir: backend
     env:
       GOOS: windows
@@ -116,6 +121,9 @@ tasks:
 
   build:backend:skip-embed:
     deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     dir: backend
     env:
       GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
@@ -227,6 +235,10 @@ tasks:
     desc: Run frontend lint with auto-fix (local only).
 
   docker:build:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
       - docker build --build-arg BUILD_VERSION={{.BUILD_VERSION}} -t {{.DOCKER_IMAGE}} .
     desc: Build Docker image with version tags.
@@ -528,6 +540,10 @@ tasks:
     desc: Update module toolchain to latest Go (requires Go 1.21+).
 
   release:assets:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
       - echo "[release:assets] building frontend/backend release artifacts"
       - task: build:frontend
