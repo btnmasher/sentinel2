@@ -31,11 +31,17 @@ func installPocketBasePrinterHook() {
 
 	original := pocketbasePrintLog
 	pocketbasePrintLog = func(log *pblogger.Log) {
+		handled := false
 		if prettyEnabled {
 			prettyPrintFromPB(log)
+			handled = true
 		}
 		if jsonEnabled {
 			writeJSONFromPB(log)
+			handled = true
+		}
+		if handled {
+			return
 		}
 		if original != nil {
 			original(log)

@@ -42,19 +42,11 @@ See `docs/WINDOWS_DEVELOPMENT.md` for the full Windows notes.
 
 ### `task dev`
 - builds backend without embedded frontend (`task build:backend:skip-embed`)
-- runs `taskutil` supervisor with:
+- runs `taskutil` Dev Console with:
   - frontend and backend side-by-side TUI panes
   - keybinds for restart/rebuild/migrate actions
   - session log files (`vite.log`, `backend.log`, `backend.jsonl`)
-
-Keybinds:
-- `q` or `Ctrl+C`: quit
-- `tab`, `1`, `2`: pane focus
-- `r`: restart focused process
-- `f` / `b`: restart frontend/backend
-- `F`: rebuild frontend and restart frontend
-- `R`: rebuild backend and restart backend
-- `m`: run migrate then restart backend
+- keybind reference: `taskutil/README.md#dev-console-keybinds`
 
 ### Common local entrypoints
 - `task build` -> frontend deps + frontend build + backend build
@@ -173,6 +165,7 @@ Detached HEAD:
 - `task setup` checks and downloads frontend/backend dependencies.
 - Typical day-to-day dev loop: `task dev`, and run `task setup` when dependencies/toolchain state changes.
 - `task setup:taskutil` builds the helper binary used by cross-platform dev helper tasks.
+- `taskutil` auto-loads root `.env.taskutil` without overriding existing process env vars. For `taskutil` commands, configuration variables and cleanup rule syntax are documented in `taskutil/README.md`.
 - Unix-only tasks are guarded with `platforms` in Taskfile:
   - `task dev:logs:view`
   - `task dev:logs:view:json`
@@ -185,7 +178,7 @@ Detached HEAD:
 | `task build` | Build frontend and backend. |
 | `task clean` | Remove local build artifacts and tool caches (preserves bin/.env and bin/pb_data). |
 | `task default` | Build frontend and backend. |
-| `task dev` | Run Vite dev server + backend. |
+| `task dev` | Run the platform-agnostic taskutil dev console (frontend + backend). |
 | `task ensure-deps` | Ensure Bun build dependency is available. |
 | `task lint` | Run backend and frontend lint. |
 | `task run` | Run the backend server (expects bin/sentinel2-server). |

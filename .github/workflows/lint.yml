@@ -11,6 +11,53 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      taskutil: ${{ steps.filter.outputs.taskutil }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            taskutil:
+              - 'taskutil/**'
+
+  taskutil:
+    name: Taskutil tests
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.taskutil == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Restore Go cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp/go-build-cache
+          key: ${{ runner.os }}-go-taskutil-test-${{ hashFiles('taskutil/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-taskutil-test-
+
+      - name: Run taskutil tests
+        run: go test ./...
+        working-directory: taskutil
+        env:
+          GOCACHE: ${{ github.workspace }}/.tmp/go-build-cache
+
   backend:
     name: Backend lint
     runs-on: ubuntu-latest

@@ -42,6 +42,7 @@ sentinel2-*
 # local dev artifacts
 pb_data/
 /logs/
+dev-logs/
 
 # Editor/IDE
 .idea/

@@ -1,0 +1,21 @@
+# taskutil clean-root rules
+# Include patterns are plain.
+# Ignore/protect patterns start with !.
+
+dist
+frontend/dist
+backend/internal/web/dist
+.tmp/go-build-cache
+.tmp/golangci-lint-cache
+.tmp/bun
+.tmp/bun-install
+.tmp/stamps
+.task
+.bun
+.tmp/bin/**
+!.tmp/bin/taskutil
+!.tmp/bin/taskutil.exe
+bin/**
+!bin/pb_data
+!bin/pb_data/**
+!bin/.env

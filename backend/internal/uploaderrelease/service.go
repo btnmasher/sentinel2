@@ -19,6 +19,10 @@ const (
 	linuxAssetSuffix   = "-linux-amd64.zip"
 	windowsAssetSuffix = "-windows-amd64.zip"
 	macOSAssetSuffix   = "-darwin-arm64.zip"
+
+	defaultHTTPTimeout   = 15 * time.Second
+	githubAcceptHeader   = "application/vnd.github+json"
+	githubAPIVersionDate = "2022-11-28"
 )
 
 type DownloadLinks struct {
@@ -60,7 +64,7 @@ func New(app *pocketbase.PocketBase, cfg config.Config) *Service {
 		app: app,
 		cfg: cfg,
 		client: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout: defaultHTTPTimeout,
 		},
 	}
 	s.state.links.ReleasePageURL = s.latestReleasePageURL()
@@ -77,11 +81,15 @@ func (s *Service) Snapshot() DownloadLinks {
 	return snapshot
 }
 
-func (s *Service) Refresh(ctx context.Context) (bool, error) {
+func (s *Service) RefreshNeeded(now time.Time) bool {
 	s.mu.RLock()
 	nextRefresh := s.state.nextRefresh
 	s.mu.RUnlock()
-	if !nextRefresh.IsZero() && time.Now().Before(nextRefresh) {
+	return nextRefresh.IsZero() || !now.Before(nextRefresh)
+}
+
+func (s *Service) Refresh(ctx context.Context) (bool, error) {
+	if !s.RefreshNeeded(time.Now()) {
 		return false, nil
 	}
 
@@ -89,8 +97,8 @@ func (s *Service) Refresh(ctx context.Context) (bool, error) {
 	if reqErr != nil {
 		return false, reqErr
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Accept", githubAcceptHeader)
+	req.Header.Set("X-GitHub-Api-Version", githubAPIVersionDate)
 	req.Header.Set("User-Agent", s.cfg.ESIUserAgent)
 
 	s.mu.RLock()

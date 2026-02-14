@@ -29,7 +29,7 @@ type RunOptions struct {
 
 type Runner struct {
 	app         *pocketbase.PocketBase
-	tracker     *JobTracker
+	tracker     tracker
 	record      *core.Record
 	opts        RunOptions
 	fields      logging.Fields
@@ -39,6 +39,24 @@ type Runner struct {
 	partialErr  error
 	skipped     bool
 	skipReason  string
+	stepState   stepState
+}
+
+type stepState struct {
+	started           int
+	succeeded         int
+	skipped           int
+	nonCriticalFailed int
+	criticalFailed    int
+}
+
+type tracker interface {
+	IsRunning(kind string, step string) (bool, error)
+	Start(jobID string, opts JobOptions) (*core.Record, error)
+	Finish(record *core.Record, err error)
+	FinishPartial(record *core.Record, err error)
+	FinishSkipped(record *core.Record, reason string)
+	FinishCanceled(record *core.Record, reason string)
 }
 
 type Stepper interface {
@@ -159,9 +177,14 @@ func (r *Runner) Run(fn func(ctx context.Context, step Stepper) error) error {
 		return runErr
 	}
 	if r.partialErr != nil {
-		r.tracker.FinishPartial(r.record, r.partialErr)
-		r.logCompletion(log, startedAt, StatusPartial, r.partialErr.Error(), false, false)
-		return nil
+		if r.shouldFinalizeAsPartial() {
+			r.tracker.FinishPartial(r.record, r.partialErr)
+			r.logCompletion(log, startedAt, StatusPartial, r.partialErr.Error(), false, false)
+			return nil
+		}
+		r.tracker.Finish(r.record, r.partialErr)
+		r.logCompletion(log, startedAt, StatusFailed, r.partialErr.Error(), true, false)
+		return r.partialErr
 	}
 	r.tracker.Finish(r.record, nil)
 	r.logCompletion(log, startedAt, StatusSuccess, "", false, false)
@@ -252,17 +275,21 @@ func (r *Runner) logCompletion(log *logging.Logger, startedAt time.Time, status 
 	switch status {
 	case StatusSuccess, StatusSkipped:
 		entry.Info(MessageJobCompleted)
-	case StatusPartial, StatusCanceled:
+	case StatusPartial:
+		entry.Warn(MessageJobCompletedWithErrors)
+	case StatusFailed:
+		entry.Error(MessageJobFailed)
+	case StatusTimeout:
+		entry.Error(MessageJobTimedOut)
+	case StatusCanceled:
 		if isTimeout {
-			entry.Error(MessageJobCompleted)
+			entry.Error(MessageJobTimedOut)
 		} else {
 			entry.Warn(MessageJobCompleted)
 		}
-	case StatusTimeout:
-		entry.Error(MessageJobCompleted)
 	default:
 		if isError {
-			entry.Error(MessageJobCompleted)
+			entry.Error(MessageJobFailed)
 		} else {
 			entry.Info(MessageJobCompleted)
 		}
@@ -293,10 +320,55 @@ func (r *Runner) markSkipped(reason string) {
 	r.skipReason = reason
 }
 
+func (r *Runner) noteStepStart() {
+	if r == nil {
+		return
+	}
+	r.stepState.started++
+}
+
+func (r *Runner) noteStepSuccess() {
+	if r == nil {
+		return
+	}
+	r.stepState.succeeded++
+}
+
+func (r *Runner) noteStepSkipped() {
+	if r == nil {
+		return
+	}
+	r.stepState.skipped++
+}
+
+func (r *Runner) noteStepFailure(critical bool) {
+	if r == nil {
+		return
+	}
+	if critical {
+		r.stepState.criticalFailed++
+		return
+	}
+	r.stepState.nonCriticalFailed++
+}
+
+func (r *Runner) shouldFinalizeAsPartial() bool {
+	if r == nil || r.partialErr == nil {
+		return false
+	}
+	// Partial is only valid when non-critical step failures occurred alongside
+	// at least one successful step, with no critical step failures.
+	return r.stepState.started > 0 &&
+		r.stepState.nonCriticalFailed > 0 &&
+		r.stepState.succeeded > 0 &&
+		r.stepState.criticalFailed == 0
+}
+
 func (s runnerSteps) Run(name string, critical bool, fn func(context.Context) error) error {
 	if s.runner == nil {
 		return nil
 	}
+	s.runner.noteStepStart()
 	stepRecord, err := s.runner.tracker.Start(
 		s.runner.opts.JobID,
 		JobOptions{
@@ -309,8 +381,10 @@ func (s runnerSteps) Run(name string, critical bool, fn func(context.Context) er
 	)
 	if err != nil {
 		if critical {
+			s.runner.noteStepFailure(true)
 			return err
 		}
+		s.runner.noteStepFailure(false)
 		s.runner.markPartial(err)
 		return nil
 	}
@@ -335,8 +409,10 @@ func (s runnerSteps) Run(name string, critical bool, fn func(context.Context) er
 			s.runner.logStepCompletion(stepLog, stepStartedAt, status, err.Error(), true, isTimeout)
 		}
 		if critical {
+			s.runner.noteStepFailure(true)
 			return err
 		}
+		s.runner.noteStepFailure(false)
 		s.runner.markPartial(err)
 		return nil
 	}
@@ -350,13 +426,16 @@ func (s runnerSteps) Run(name string, critical bool, fn func(context.Context) er
 		}
 		s.runner.logStepCompletion(stepLog, stepStartedAt, status, runErr.Error(), levelError, false)
 		if critical {
+			s.runner.noteStepFailure(true)
 			return runErr
 		}
+		s.runner.noteStepFailure(false)
 		s.runner.markPartial(runErr)
 		return nil
 	}
 	s.runner.tracker.Finish(stepRecord, nil)
 	s.runner.logStepCompletion(stepLog, stepStartedAt, StatusSuccess, "", false, false)
+	s.runner.noteStepSuccess()
 	return nil
 }
 
@@ -386,6 +465,7 @@ func (s runnerSteps) SkipStep(name string, reason string) error {
 	if s.runner == nil {
 		return nil
 	}
+	s.runner.noteStepStart()
 	stepRecord, err := s.runner.tracker.Start(
 		s.runner.opts.JobID,
 		JobOptions{
@@ -397,6 +477,7 @@ func (s runnerSteps) SkipStep(name string, reason string) error {
 		},
 	)
 	if err != nil {
+		s.runner.noteStepFailure(false)
 		s.runner.markPartial(err)
 		return nil
 	}
@@ -406,6 +487,7 @@ func (s runnerSteps) SkipStep(name string, reason string) error {
 	stepLog.Info(MessageStepStarted)
 	s.runner.tracker.FinishSkipped(stepRecord, reason)
 	s.runner.logStepCompletion(stepLog, stepStartedAt, StatusSkipped, reason, false, false)
+	s.runner.noteStepSkipped()
 	return nil
 }
 
@@ -428,17 +510,21 @@ func (r *Runner) logStepCompletion(log *logging.Logger, startedAt time.Time, sta
 	switch status {
 	case StatusSuccess:
 		entry.Info(MessageStepCompleted)
-	case StatusPartial, StatusCanceled:
+	case StatusPartial:
+		entry.Warn(MessageStepCompletedWithErrors)
+	case StatusFailed:
+		entry.Error(MessageStepFailed)
+	case StatusTimeout:
+		entry.Error(MessageStepTimedOut)
+	case StatusCanceled:
 		if isTimeout {
-			entry.Error(MessageStepCompleted)
+			entry.Error(MessageStepTimedOut)
 		} else {
 			entry.Warn(MessageStepCompleted)
 		}
-	case StatusTimeout:
-		entry.Error(MessageStepCompleted)
 	default:
 		if isError {
-			entry.Error(MessageStepCompleted)
+			entry.Error(MessageStepFailed)
 		} else {
 			entry.Info(MessageStepCompleted)
 		}

@@ -20,20 +20,13 @@ task setup
 task dev
 ```
 
-`task dev` uses the cross-platform `taskutil` supervisor and provides:
+`task dev` uses the platform-agnostic `taskutil` Dev Console and provides:
 - frontend/backend split-pane TUI
 - restart/rebuild controls
 - migration shortcut
 - log session files
 
-### Dev supervisor keybinds
-- `q` / `Ctrl+C`: quit
-- `tab`, `1`, `2`: pane focus
-- `r`: restart focused process
-- `f` / `b`: restart frontend/backend
-- `F`: rebuild frontend and restart frontend
-- `R`: rebuild backend and restart backend
-- `m`: run migrate then restart backend
+Keybind reference: `taskutil/README.md#dev-console-keybinds`
 
 ## Useful Commands
 
@@ -45,7 +38,7 @@ task dev
 
 ## Unix-Only Tasks
 
-These tasks are intentionally Unix-only and guarded in Taskfile:
+These tasks are intentionally Unix(like)-only and guarded in Taskfile:
 - `task dev:logs:view`
 - `task dev:logs:view:json`
 - `task completion:install`
@@ -58,4 +51,3 @@ These tasks are intentionally Unix-only and guarded in Taskfile:
 ## Notes
 
 - Docker-based workflows are still available on Windows via Docker Desktop.
-- Release asset generation remains CI-focused.

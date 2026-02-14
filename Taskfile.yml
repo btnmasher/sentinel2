@@ -10,7 +10,12 @@ vars:
   TASKUTIL_BIN: '{{.TASKFILE_DIR}}/.tmp/bin/taskutil{{if eq OS "windows"}}.exe{{end}}'
   BACKEND_BIN: '{{.TASKFILE_DIR}}/bin/sentinel2-server{{if eq OS "windows"}}.exe{{end}}'
   BUILD_VERSION:
-    sh: "{{.TASKUTIL_BIN}} version"
+    sh: |
+      if [ ! -x "{{.TASKUTIL_BIN}}" ]; then
+        mkdir -p "{{.TASKFILE_DIR}}/.tmp/bin"
+        cd taskutil && GOCACHE="{{.GO_BUILD_CACHE_DEFAULT}}" go build -o "{{.TASKUTIL_BIN}}" .
+      fi
+      "{{.TASKUTIL_BIN}}" version
 
 tasks:
   default:
@@ -327,7 +332,7 @@ tasks:
           echo "lnav is not installed. Install it to use this viewer." >&2
           exit 1
         fi
-        BASE_LOG_DIR="${LOG_DIR:-/tmp/sentinel2-dev}"
+        BASE_LOG_DIR="${LOG_DIR:-{{.TASKFILE_DIR}}/dev-logs}"
         if [ -f "$BASE_LOG_DIR/latest" ]; then
           LOG_DIR="$(cat "$BASE_LOG_DIR/latest")"
         else
@@ -349,7 +354,7 @@ tasks:
           echo "lnav is not installed. Install it to use this viewer." >&2
           exit 1
         fi
-        BASE_LOG_DIR="${LOG_DIR:-/tmp/sentinel2-dev}"
+        BASE_LOG_DIR="${LOG_DIR:-{{.TASKFILE_DIR}}/dev-logs}"
         if [ -f "$BASE_LOG_DIR/latest" ]; then
           LOG_DIR="$(cat "$BASE_LOG_DIR/latest")"
           JSON_FILE="$LOG_DIR/backend.jsonl"
@@ -394,7 +399,7 @@ tasks:
       LOG_PRETTY_PB: "1"
       LOG_JSON: "1"
       LOG_JSON_PB: "1"
-      LOG_JSON_PATH: '{{.LOG_JSON_PATH | default "/tmp/sentinel2-dev/backend.jsonl"}}'
+      LOG_JSON_PATH: '{{.LOG_JSON_PATH | default (printf "%s/dev-logs/backend.jsonl" .TASKFILE_DIR) }}'
     dir: bin
     cmds:
       - task: setup
@@ -499,7 +504,7 @@ tasks:
       - mkdir -p "{{.TASKFILE_DIR}}/.tmp/bin" "{{.GO_BUILD_CACHE_DEFAULT}}"
       - cd taskutil && GOCACHE="{{.GO_BUILD_CACHE_DEFAULT}}" go build -o "{{.TASKUTIL_BIN}}" .
     sources:
-      - taskutil/*.go
+      - taskutil/**/*.go
       - taskutil/go.mod
       - taskutil/go.sum
     generates:

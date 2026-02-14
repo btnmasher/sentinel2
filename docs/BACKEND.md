@@ -25,7 +25,8 @@ backend/
 │   ├── server/              # Server wiring: routes, cron, dependencies
 │   │   ├── server.go        # Dependency graph + app startup
 │   │   ├── routes.go        # HTTP routes + middleware bindings
-│   │   └── cron.go          # Recurring background jobs
+│   │   ├── cron.go          # Cron registration/orchestration
+│   │   └── cron_*.go        # Job specs and run helpers
 │   ├── store/               # PocketBase collection names + helpers
 │   ├── utils/               # Shared utilities
 │   └── web/                 # Embedded frontend + proxy handling
@@ -104,7 +105,7 @@ Sentinel uses a structured job runner to track background work in PocketBase and
 ### Core Concepts
 Core concepts:
 - **Job records + steps:** `Runner.Run` creates a job record; `stepper.Run` creates step records under the same job ID.
-- **Partial + skipped states:** `stepper.Partial(err)` marks the job as partial; `stepper.SkipParent(reason)` marks it skipped.
+- **Partial + skipped states:** `stepper.SkipParent(reason)` marks the job skipped. `stepper.Partial(err)` marks a recoverable issue, but final status is computed from step outcomes.
 - **Timeouts + cancellation:** `Timeout` controls max runtime; cancellation is recorded as a canceled job.
 - **Uniqueness:** `Unique: true` prevents overlapping runs for the same `Kind` + `Step`.
 - **Metadata:** `Kind`, `Step`, `Trigger`, and optional `ActorID` are persisted and logged.
@@ -123,7 +124,7 @@ API overview (when to use what):
 ### Stepper API
 Stepper API:
 - `stepper.Run(name, critical, fn)` runs a step and records its status.
-- `stepper.Partial(err)` marks the overall job partial without failing it.
+- `stepper.Partial(err)` records a recoverable issue on the parent job.
 - `stepper.SkipStep(name, reason)` records a skipped step without failing the job.
 - `stepper.SkipParent(reason)` skips the entire job (returns `ErrJobSkipped`).
 
@@ -132,6 +133,13 @@ Logging behavior:
 - Each job and step emits `started` and `completed` logs with `duration_ms` and `status`.
 - Status values: `success`, `failed`, `partial`, `skipped`, `canceled`, `timeout`.
 - Logs include `job_id`, `kind`, and `step`, plus `trigger` and `actor_id` if present.
+- Message text is explicit by outcome (for example: `job completed`, `job completed with errors`, `job failed`, `job timed out`).
+
+Finalization rules:
+- Any critical step failure fails the parent job.
+- Non-critical failures can produce `partial` only when at least one step succeeded and no critical steps failed.
+- Skipped steps are not failures.
+- If a parent has recoverable errors but no qualifying successful step, it finalizes as `failed`.
 
 ### Usage
 Typical usage:
@@ -227,7 +235,7 @@ Cancellation notes:
 
 ### Where to Use
 Where to use:
-- **Cron jobs:** `internal/server/cron.go`
+- **Cron jobs:** `internal/server/cron.go`, `internal/server/cron_*.go`
 - **Admin‑triggered jobs:** `internal/api/admin/handler.go`
 - **Background refreshers:** `internal/auth/character_refresh.go`
 
