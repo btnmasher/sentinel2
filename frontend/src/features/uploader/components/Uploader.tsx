@@ -8,28 +8,37 @@ import { useShallow } from "zustand/shallow";
 
 const DOWNLOADS = [
   {
+    key: "linux",
     label: "Linux",
-    filename: "sentinel2-uploader-linux.zip",
     icon: "/svg/linux.svg",
     iconClassName: "os-icon os-icon-linux",
   },
   {
+    key: "windows",
     label: "Windows",
-    filename: "sentinel2-uploader-windows.zip",
     icon: "/svg/windows.svg",
     iconClassName: "os-icon os-icon-windows",
   },
   {
+    key: "macos",
     label: "macOS",
-    filename: "sentinel2-uploader-macos.zip",
     icon: "/svg/macos.svg",
     iconClassName: "os-icon os-icon-apple",
   },
-];
+] as const;
+
+type DownloadKey = (typeof DOWNLOADS)[number]["key"];
+type DownloadLinks = Record<DownloadKey, string>;
 
 export default function Uploader() {
   const [token, setToken] = useState("");
   const [channels, setChannels] = useState<string[]>([]);
+  const [downloadLinks, setDownloadLinks] = useState<DownloadLinks>({
+    linux: "",
+    windows: "",
+    macos: "",
+  });
+  const [releasePageUrl, setReleasePageURL] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const requestConfirm = useConfirm();
   const { setToast } = useUIStore(
@@ -40,6 +49,10 @@ export default function Uploader() {
   const baseUrl = useMemo(() => window.location.origin, []);
   const exampleBase = baseUrl;
   const exampleToken = token || "<YOUR_TOKEN>";
+  const defaultReleasePageUrl = useMemo(
+    () => "https://github.com/btnmasher/sentinel2-uploader/releases/latest",
+    [],
+  );
 
   useEffect(() => {
     api
@@ -65,6 +78,28 @@ export default function Uploader() {
         ),
       )
       .catch(() => setChannels([]));
+    api
+      .get("/uploader/download-links")
+      .then((res) => {
+        setDownloadLinks({
+          linux:
+            typeof res.data?.linux_url === "string" ? res.data.linux_url : "",
+          windows:
+            typeof res.data?.windows_url === "string"
+              ? res.data.windows_url
+              : "",
+          macos:
+            typeof res.data?.macos_url === "string" ? res.data.macos_url : "",
+        });
+        setReleasePageURL(
+          typeof res.data?.release_page_url === "string"
+            ? res.data.release_page_url
+            : "",
+        );
+      })
+      .catch(() => {
+        setReleasePageURL("");
+      });
   }, []);
 
   const regenerate = async () => {
@@ -134,8 +169,14 @@ export default function Uploader() {
                   <a
                     key={item.label}
                     className="btn btn-sm btn-outline gap-2"
-                    href={`/downloads/${item.filename}`}
-                    download
+                    href={
+                      downloadLinks[item.key] ||
+                      releasePageUrl ||
+                      defaultReleasePageUrl
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    download={downloadLinks[item.key] ? "" : undefined}
                   >
                     <img
                       src={item.icon}

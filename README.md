@@ -25,10 +25,10 @@ These docs capture the structure, conventions, and development practices for eac
 - Other install methods are listed in the Task docs: https://taskfile.dev/installation/
 
 
-Task-based development, build, Docker, and CI/release command trees are documented in:
+Development/build/docker command trees and CI workflow notes are documented in:
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
-Platform-specific setup for Windows/WSL is documented in:
+Platform-specific setup for native Windows development is documented in:
 - [docs/WINDOWS_DEVELOPMENT.md](docs/WINDOWS_DEVELOPMENT.md)
 
 ## Key Capabilities
@@ -36,6 +36,7 @@ Platform-specific setup for Windows/WSL is documented in:
 - Region map with routes, waypoints, jump bridge links, and multiple layouts.
 - Dedicated navigation page for quick route planning.
 - Uploader companion tool with per-account tokens and cross-platform downloadable bundles.
+- Backend resolves uploader download links from GitHub latest release metadata.
 - Admin/staff views for moderation, account management, and audits.
 
 ### Notes.
@@ -74,8 +75,8 @@ Optional log settings:
 - `INTEL_REPORT_HASH_SLOTS=20` (dedupe slots per report fingerprint, default: 20)
 
 ## Docker
-The Docker build uses `task build` inside a dedicated builder stage, so Docker and local/CI builds share the same Taskfile workflow. The builder cross-compiles uploader binaries and embeds frontend assets into the backend binary.
-For Docker-based workflows, build dependencies are provided inside the image/toolchain stages (Go, Bun, Task, Zig, zip). Locally, you only need Docker and Docker Compose.
+The Docker build uses `task build` inside a dedicated builder stage, so Docker and local/CI builds share the same Taskfile workflow. The builder embeds frontend assets into the backend binary.
+For Docker-based workflows, build dependencies are provided inside the image/toolchain stages (Go, Bun, Task). Locally, you only need Docker and Docker Compose.
 ```
 docker build -t sentinel2 .
 docker run -p 8090:8090 -v pb_data:/app/pb_data sentinel2
@@ -106,11 +107,11 @@ Raw Docker/Compose fallback (no Task runner required):
 Set `DOCKER_IMAGE=sentinel2:dev` to control the tag used by Taskfile.
 Compose reads `.env` (via `env_file`) to populate container environment variables.
 
-Dev compose (Vite + backend in one container):
-```
+Dev compose (separate frontend/backend containers):
+``` 
 task docker:dev:up
 ```
-This runs Vite on `:5173` and the backend on `:8090` with `DEV_PROXY` set.
+This runs Vite in `frontend-dev` on `:5173` and backend in `backend-dev` on `:8090`, with `DEV_PROXY=frontend-dev:5173`.
 Use `task docker:dev:up:migrate` to run migrations on startup.
 
 ## Data Storage

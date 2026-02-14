@@ -1,22 +1,49 @@
 services:
-  sentinel2-dev:
+  frontend-dev:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    ports:
-      - "8090:8090"
-      - "5173:5173"
+    working_dir: /app/frontend
     env_file:
       - .env
     environment:
-      DEV_PROXY: "127.0.0.1:5173"
-      RUN_MIGRATIONS: "0"
       VITE_HOST: "0.0.0.0"
       VITE_PORT: "5173"
-    command: ["task", "dev:container"]
+      BUN_TMPDIR: "/app/.tmp/bun"
+      BUN_INSTALL: "/app/.tmp/bun-install"
+    command:
+      - bash
+      - -lc
+      - bun install --frozen-lockfile && bun run dev --host ${VITE_HOST:-0.0.0.0} --port ${VITE_PORT:-5173}
+    volumes:
+      - ./:/app
+    ports:
+      - "5173:5173"
+
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      DEV_PROXY: "frontend-dev:5173"
+      LOG_PRETTY_PB: "1"
+      LOG_JSON: "1"
+      LOG_JSON_PB: "1"
+      LOG_JSON_PATH: "/tmp/sentinel2-dev/backend.jsonl"
+    command:
+      - bash
+      - -lc
+      - task build:backend:skip-embed && cd /app/bin && ./sentinel2-server serve --dev
+    depends_on:
+      - frontend-dev
     volumes:
       - ./:/app
       - pb_data_dev:/app/pb_data
+    ports:
+      - "8090:8090"
 
 volumes:
   pb_data_dev:

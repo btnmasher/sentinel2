@@ -22,6 +22,8 @@ func registerCrons(app *pocketbase.PocketBase, cfg config.Config, deps dependenc
 	if cfg.AuthBackend == "eve" {
 		registerCharacterRefreshCron(app, deps)
 	}
+	registerUploaderReleaseBootstrap(app, deps)
+	registerUploaderReleaseCron(app, deps)
 	registerSDEBootstrap(app)
 	registerSDECron(app)
 }
@@ -170,5 +172,51 @@ func registerSDECron(app *pocketbase.PocketBase) {
 		})
 		mapdata.RunMapDataUpdateWithContext(ctx, app, runner, jobs.TriggerCronSchedule, false)
 		cancel()
+	})
+}
+
+func registerUploaderReleaseBootstrap(app *pocketbase.PocketBase, deps dependencies) {
+	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		runUploaderReleaseRefresh(app, deps, jobs.TriggerServerStartup)
+		return nil
+	})
+}
+
+func registerUploaderReleaseCron(app *pocketbase.PocketBase, deps dependencies) {
+	app.Cron().MustAdd("uploader_releases", "*/15 * * * *", func() {
+		runUploaderReleaseRefresh(app, deps, jobs.TriggerCronSchedule)
+	})
+}
+
+func runUploaderReleaseRefresh(app *pocketbase.PocketBase, deps dependencies, trigger string) {
+	runner := jobs.NewRunner(app, jobs.RunOptions{
+		JobName: jobs.JobUploaderReleases,
+		JobOptions: jobs.JobOptions{
+			Kind:    jobs.JobUploaderReleases,
+			Trigger: trigger,
+		},
+		Timeout: 30 * time.Second,
+	})
+	_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
+		return stepper.Run("refresh_latest_release", false, func(ctx context.Context) error {
+			changed, err := deps.uploaderReleases.Refresh(ctx)
+			if err != nil {
+				return err
+			}
+			if !changed {
+				stepper.WithMessage(jobs.MessageUpdateNotNeeded)
+			}
+			links := deps.uploaderReleases.Snapshot()
+			runner.WithFields(logging.Fields{
+				"updated":           changed,
+				"linux_available":   links.LinuxURL != "",
+				"windows_available": links.WindowsURL != "",
+				"macos_available":   links.MacOSURL != "",
+			})
+			return nil
+		})
 	})
 }

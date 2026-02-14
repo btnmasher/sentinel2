@@ -1,93 +1,61 @@
 # Windows Development
 
-Windows development is supported via **WSL2 (Ubuntu)**. The Taskfile and tooling are most reliable in a Linux shell.
+Native Windows development is supported for the main backend/frontend workflow without requiring WSL, Cygwin, or Git Bash.
 
-## Recommended Approach
-- Use WSL2 + Ubuntu for all project commands.
-- Keep the repo in the Linux filesystem (for example `~/Code/sentinel2`) for better file-watch performance.
+## Native Windows Setup
 
-## 1) Install WSL2 + Ubuntu
-Run in PowerShell as Administrator:
+Install:
+1. Go 1.25+
+2. Task 3.x
+3. Bun 1.3+
+
+Recommended:
+- Keep the repo on a local filesystem path (for example `C:\Code\sentinel2`).
+- Use Windows Terminal.
+
+## Core Workflow (Native Windows)
 
 ```powershell
-wsl --install -d Ubuntu
-```
-
-Reboot if prompted, then open Ubuntu and complete first-time user setup.
-
-## 2) Install Base Packages (inside WSL)
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential zip unzip curl git
-```
-
-## 3) Install Go (inside WSL)
-
-```bash
-VERSION=1.25.1
-cd /tmp
-curl -LO "https://go.dev/dl/go${VERSION}.linux-amd64.tar.gz"
-sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf "go${VERSION}.linux-amd64.tar.gz"
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-go version
-```
-
-## 4) Install Task (inside WSL)
-
-```bash
-go install github.com/go-task/task/v3/cmd/task@latest
-echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.bashrc
-source ~/.bashrc
-task --version
-```
-
-## 5) Install Bun (inside WSL)
-
-```bash
-curl -fsSL https://bun.com/install | bash
-echo 'export BUN_INSTALL="$HOME/.bun"' >> ~/.bashrc
-echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-bun --version
-```
-
-## 6) Project Setup
-
-```bash
 task setup
 task dev
 ```
 
-## 7) Zig For Uploader Cross-Builds
+`task dev` uses the cross-platform `taskutil` supervisor and provides:
+- frontend/backend split-pane TUI
+- restart/rebuild controls
+- migration shortcut
+- log session files
 
-Uploader Windows cross-builds use Zig as the C toolchain.
+### Dev supervisor keybinds
+- `q` / `Ctrl+C`: quit
+- `tab`, `1`, `2`: pane focus
+- `r`: restart focused process
+- `f` / `b`: restart frontend/backend
+- `F`: rebuild frontend and restart frontend
+- `R`: rebuild backend and restart backend
+- `m`: run migrate then restart backend
 
-1. Install Zig in WSL:
+## Useful Commands
 
-```bash
-sudo snap install zig --classic
-# or download from https://ziglang.org/download/
-zig version
-```
+- `task build`
+- `task build:migrate`
+- `task dev:migrate`
+- `task dev:logs`
+- `task dev:logs:clean`
 
-If Zig is unavailable in WSL, `task build:uploader:windows` and `task build:uploader:linux:zig` will fail. These paths are primarily used for cross-compilation (for example CI/Docker release builds).
+## Unix-Only Tasks
 
-## Shell Completion (Optional)
-
-```bash
-task completion:install
-```
+These tasks are intentionally Unix-only and guarded in Taskfile:
+- `task dev:logs:view`
+- `task dev:logs:view:json`
+- `task completion:install`
 
 ## Optional Tools
-- `lnav`:
-  - `sudo apt-get install lnav`
-- `golangci-lint`:
-  - `curl -sSfL https://golangci-lint.run/install.sh | sh -s v2.9.0`
-  - or `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`
 
-## Native Windows Notes
-- Native Windows shells do not normally include an Info-ZIP compatible `zip` command.
-- Release builds are simplest in WSL or CI.
+- `golangci-lint`:
+  - `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`
+
+## Notes
+
+- Docker-based workflows are still available on Windows via Docker Desktop.
+- Release asset generation remains CI-focused.

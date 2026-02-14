@@ -19,6 +19,7 @@ profile.cov
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+/uploader/
 
 # Go workspace file
 go.work
@@ -31,8 +32,8 @@ go.work.sum
 bin/
 dist/
 node_modules/
-downloads/
 .tmp/
+.task/
 .bun/
 sentinel2-*
 *.zip

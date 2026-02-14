@@ -26,7 +26,6 @@ func MountFrontendProxy(r *router.Router[*core.RequestEvent], target string) err
 	skipPrefixes := []string{
 		"/api",
 		"/_",
-		"/downloads",
 	}
 
 	r.BindFunc(func(c *core.RequestEvent) error {

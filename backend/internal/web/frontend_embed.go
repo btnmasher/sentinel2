@@ -12,8 +12,8 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-// Embed the full built frontend tree, including nested directories
-// like dist/downloads that contain uploader ZIP artifacts.
+// Embed the full built frontend tree.
+//
 //go:embed dist
 var frontendFS embed.FS
 

@@ -18,8 +18,10 @@ const (
 
 	JobCleanup          = "cleanup"
 	JobCharacterRefresh = "character_refresh"
+	JobUploaderReleases = "uploader_releases"
 
 	TriggerCronSchedule          = "cron.schedule"
+	TriggerServerStartup         = "server.startup"
 	TriggerAdminManual           = "admin.manual"
 	TriggerStaffJumpbridgeImport = "staff.jumpbridge_import"
 )

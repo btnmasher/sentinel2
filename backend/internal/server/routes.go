@@ -63,10 +63,13 @@ func registerRoutes(app *pocketbase.PocketBase, cfg config.Config, deps dependen
 		intelGroup.GET("/reports", deps.intelHandler.ListReports).BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app), middleware.RateLimit(intelRetrieveLimiter, userKey))
 
 		uploaderGroup := apiGroup.Group("/uploader")
-		uploaderGroup.BindFunc(middleware.RequireUploaderToken(deps.intelService))
-		uploaderGroup.PUT("/submit", deps.intelHandler.Submit)
-		uploaderGroup.GET("/config", deps.intelHandler.UploaderConfig)
-		uploaderGroup.POST("/realtime/token", deps.intelHandler.UploaderRealtimeToken)
+		uploaderGroup.GET("/download-links", deps.uploaderHandler.DownloadLinks).BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))
+
+		uploaderAgentGroup := apiGroup.Group("/uploader")
+		uploaderAgentGroup.BindFunc(middleware.RequireUploaderToken(deps.intelService))
+		uploaderAgentGroup.PUT("/submit", deps.intelHandler.Submit)
+		uploaderAgentGroup.GET("/config", deps.intelHandler.UploaderConfig)
+		uploaderAgentGroup.POST("/realtime/token", deps.intelHandler.UploaderRealtimeToken)
 
 		mapGroup := apiGroup.Group("/map")
 		mapGroup.BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))

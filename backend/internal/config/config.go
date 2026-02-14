@@ -51,6 +51,7 @@ type Config struct {
 
 	DefaultMapRegions    string `long:"default-map-regions" env:"DEFAULT_MAP_REGIONS" default:"10000029"`
 	IntelReportHashSlots int    `long:"intel-report-hash-slots" env:"INTEL_REPORT_HASH_SLOTS" default:"20"`
+	UploaderGitHubRepo   string `long:"uploader-github-repo" env:"UPLOADER_GITHUB_REPO" default:"btnmasher/sentinel2-uploader"`
 
 	FrontendDevProxy string `long:"dev-proxy" env:"DEV_PROXY"`
 	DebugEnabled     bool   `long:"dev" env:"DEBUG_ENABLED"`

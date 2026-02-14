@@ -7,20 +7,21 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
       BUILD_VERSION: ${{ github.ref_name }}
+      BUN_TMPDIR: ${{ github.workspace }}/.tmp/bun
+      BUN_INSTALL: ${{ github.workspace }}/.tmp/bun-install
+      GOCACHE: ${{ github.workspace }}/.tmp/go-build-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Task
-        uses: go-task/setup-task@v2
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -32,18 +33,13 @@ jobs:
         with:
           bun-version: "1.3.8"
 
-      - name: Set up Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: "0.14.1"
-
       - name: Restore Go caches
         uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
             ${{ github.workspace }}/.tmp/go-build-cache
-          key: ${{ runner.os }}-go-release-${{ hashFiles('backend/go.sum', 'uploader/go.sum') }}
+          key: ${{ runner.os }}-go-release-${{ hashFiles('backend/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-release-
 
@@ -58,22 +54,68 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-release-
 
-      - name: Restore Zig cache
-        uses: actions/cache@v4
+      - name: Download backend modules
+        run: go mod download
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Build frontend bundle
+        run: bun run build
+        working-directory: frontend
+
+      - name: Stage embed frontend assets
+        run: |
+          rm -rf backend/internal/web/dist
+          mkdir -p backend/internal/web/dist
+          cp -R frontend/dist/. backend/internal/web/dist/
+
+      - name: Build backend release binaries
+        run: |
+          rm -rf dist
+          mkdir -p ../dist/linux ../dist/darwin ../dist/windows
+          GOOS=linux GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion=${BUILD_VERSION}" -o ../dist/linux/sentinel2-server ./main.go
+          GOOS=darwin GOARCH=arm64 go build -tags embed_frontend -ldflags "-X main.BuildVersion=${BUILD_VERSION}" -o ../dist/darwin/sentinel2-server ./main.go
+          GOOS=windows GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion=${BUILD_VERSION}" -o ../dist/windows/sentinel2-server.exe ./main.go
+        working-directory: backend
+
+      - name: Package backend release archives
+        run: |
+          cd dist
+          zip -j "sentinel2-server-${BUILD_VERSION}-linux-amd64.zip" linux/sentinel2-server
+          zip -j "sentinel2-server-${BUILD_VERSION}-darwin-arm64.zip" darwin/sentinel2-server
+          zip -j "sentinel2-server-${BUILD_VERSION}-windows-amd64.zip" windows/sentinel2-server.exe
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          path: |
-            ${{ github.workspace }}/.tmp/zig-cache
-          key: ${{ runner.os }}-zig-release-${{ hashFiles('uploader/go.sum', 'Taskfile.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-zig-release-
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup project dependencies
-        run: task setup
+      - name: Docker metadata
+        id: docker_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/sentinel2
+          tags: |
+            type=raw,value=${{ github.ref_name }}
+            type=raw,value=latest
 
-      - name: Build release assets
-        run: task release:assets
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: dist/*.zip

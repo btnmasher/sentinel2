@@ -7,328 +7,158 @@ vars:
   BUN_INSTALL_DEFAULT: "{{.TASKFILE_DIR}}/.tmp/bun-install"
   GOLANGCI_LINT_CACHE_DEFAULT: "{{.TASKFILE_DIR}}/.tmp/golangci-lint-cache"
   GO_BUILD_CACHE_DEFAULT: "{{.TASKFILE_DIR}}/.tmp/go-build-cache"
+  TASKUTIL_BIN: '{{.TASKFILE_DIR}}/.tmp/bin/taskutil{{if eq OS "windows"}}.exe{{end}}'
+  BACKEND_BIN: '{{.TASKFILE_DIR}}/bin/sentinel2-server{{if eq OS "windows"}}.exe{{end}}'
   BUILD_VERSION:
-    sh: |
-      if [ -n "${BUILD_VERSION:-}" ]; then
-        echo "$BUILD_VERSION"
-        exit 0
-      fi
-      if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        exit 0
-      fi
-      BRANCH_NAME="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-      EXACT_TAG="$(git describe --tags --match "v[0-9]*" --exact-match 2>/dev/null || true)"
-      LATEST_TAG="$(git describe --tags --match "v[0-9]*" --abbrev=0 2>/dev/null || true)"
-      SHORT_SHA="$(git rev-parse --short HEAD 2>/dev/null || true)"
-      BUILD_VERSION=""
-      if [ -n "$EXACT_TAG" ]; then
-        BUILD_VERSION="$EXACT_TAG"
-      else
-        if [ -n "$LATEST_TAG" ]; then
-          BUILD_VERSION="$LATEST_TAG"
-        else
-          BUILD_VERSION="v0.0.0"
-        fi
-        if [ \( "$BRANCH_NAME" = "main" -o "$BRANCH_NAME" = "HEAD" \) ] && [ -n "$SHORT_SHA" ]; then
-          BUILD_VERSION="${BUILD_VERSION}-${SHORT_SHA}"
-        fi
-      fi
-      if [ -n "$BUILD_VERSION" ]; then
-        if [ -n "$(git status --porcelain)" ]; then
-          BUILD_VERSION="${BUILD_VERSION}-dev"
-        fi
-        if [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "HEAD" ] && [ "$BRANCH_NAME" != "main" ]; then
-          SAFE_BRANCH="$(echo "$BRANCH_NAME" | sed 's/[^A-Za-z0-9._-]/-/g')"
-          BUILD_VERSION="${BUILD_VERSION}-branch-${SAFE_BRANCH}"
-        fi
-      fi
-      echo "$BUILD_VERSION"
+    sh: "{{.TASKUTIL_BIN}} version"
 
 tasks:
   default:
     cmds:
       - task: build
-    desc: Build uploader, frontend, and backend.
+    desc: Build frontend and backend.
 
   build:
     cmds:
-      - echo "[build] starting full build (uploader, frontend, backend)"
-      - task: setup
-      - task: build:uploader
+      - echo "[build] starting full build (frontend, backend)"
       - task: build:frontend
       - task: build:backend
-    desc: Build uploader, frontend, and backend.
+    desc: Build frontend and backend.
 
   clean:
+    deps: [setup:taskutil]
     cmds:
-      - rm -rf dist frontend/dist backend/internal/web/dist uploader/dist .tmp/go-build-cache .tmp/golangci-lint-cache .tmp/bun .tmp/bun-install .tmp/zig-cache
-      - |
-        if [ -d bin ]; then
-          find bin -mindepth 1 -maxdepth 1 ! -name 'pb_data' ! -name '.env' -exec rm -rf {} +
-        fi
-      - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
+      - "{{.TASKUTIL_BIN}} clean-root"
     desc: Remove local build artifacts and tool caches (preserves bin/.env and bin/pb_data).
 
   build:frontend:
-    deps: [ensure-deps:bun]
+    deps: [setup:deps:frontend]
+    dir: frontend
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
-      - echo "[build:frontend] installing dependencies"
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
       - echo "[build:frontend] building production bundle"
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run build
+      - bun run build
     desc: Build frontend bundle.
 
   build:frontend:dev:
-    deps: [ensure-deps:bun]
+    deps: [setup:deps:frontend]
+    dir: frontend
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
-      - echo "[build:frontend:dev] installing dependencies"
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
       - echo "[build:frontend:dev] building non-minified bundle"
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run build -- --minify false
+      - bun run build -- --minify false
     desc: Build frontend bundle without minification.
 
-  build:uploader:
-    cmds:
-      - echo "[build:uploader] preparing uploader output directories"
-      - |
-        set -euo pipefail
-        if ! command -v zip >/dev/null 2>&1; then
-          echo "'zip' command is required to build uploader archives." >&2
-          echo "Linux: install package 'zip' (for example: sudo apt-get install zip)." >&2
-          exit 1
-        fi
-      - mkdir -p frontend/public/downloads uploader/dist
-      - rm -f frontend/public/downloads/sentinel2-uploader-*.zip
-      - rm -rf uploader/dist/*
-      - echo "[build:uploader] building linux uploader binary"
-      - |
-        set -euo pipefail
-        case "${UPLOADER_LINUX_TOOLCHAIN:-native}" in
-          native) task build:uploader:linux ;;
-          zig) task build:uploader:linux:zig ;;
-          *)
-            echo "Unsupported UPLOADER_LINUX_TOOLCHAIN='${UPLOADER_LINUX_TOOLCHAIN:-}' (expected: native|zig)." >&2
-            exit 1
-            ;;
-        esac
-      - echo "[build:uploader] packaging linux archive"
-      - zip -j frontend/public/downloads/sentinel2-uploader-linux.zip uploader/dist/sentinel2-uploader-linux
-      - echo "[build:uploader] building windows uploader binary"
-      - task: build:uploader:windows
-      - echo "[build:uploader] packaging windows archive"
-      - zip -j frontend/public/downloads/sentinel2-uploader-windows.zip uploader/dist/sentinel2-uploader-windows.exe
-      - echo "[build:uploader] building macOS uploader binary (headless)"
-      - task: build:uploader:darwin
-      - echo "[build:uploader] packaging macOS archive"
-      - zip -j frontend/public/downloads/sentinel2-uploader-macos.zip uploader/dist/sentinel2-uploader-macos
-    desc: Build uploader bundles (set UPLOADER_LINUX_TOOLCHAIN=zig for Zig Linux build).
-
-  build:uploader:linux:
-    cmds:
-      - echo "[build:uploader:linux] building linux uploader (native toolchain)"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-linux"
-        cd uploader && GOOS=linux GOARCH=amd64 go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build uploader for Linux (amd64).
-
-  build:uploader:linux:zig:
-    deps: [ensure-deps:zig]
-    cmds:
-      - echo "[build:uploader:linux:zig] building linux uploader with zig cc/c++"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-linux"
-        mkdir -p "{{.TASKFILE_DIR}}/.tmp/zig-cache"
-        cd uploader && \
-          ZIG_GLOBAL_CACHE_DIR="{{.TASKFILE_DIR}}/.tmp/zig-cache" \
-          CC='zig cc -target x86_64-linux-gnu' \
-          CXX='zig c++ -target x86_64-linux-gnu' \
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-          go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build uploader for Linux (amd64) using Zig as CC/CXX.
-
-  build:uploader:darwin:
-    cmds:
-      - echo "[build:uploader:darwin] building macOS headless uploader"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-macos"
-        cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build headless uploader for macOS (arm64).
-
-  build:uploader:headless:
-    cmds:
-      - echo "[build:uploader:headless] building headless uploader binaries for all platforms"
-      - task: build:uploader:linux:headless
-      - task: build:uploader:windows:headless
-      - task: build:uploader:darwin:headless
-    desc: Build headless uploader binaries for Linux, Windows, and macOS (arm64 macOS).
-
-  build:uploader:linux:headless:
-    cmds:
-      - echo "[build:uploader:linux:headless] building linux headless uploader"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-linux"
-        cd uploader && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build headless uploader for Linux (amd64).
-
-  build:uploader:darwin:headless:
-    cmds:
-      - echo "[build:uploader:darwin:headless] building macOS headless uploader"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-macos"
-        cd uploader && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build headless uploader for macOS (arm64).
-
-  build:uploader:windows:headless:
-    cmds:
-      - echo "[build:uploader:windows:headless] building windows headless uploader"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-windows.exe"
-        cd uploader && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags headless -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build headless uploader for Windows (amd64).
-
-  build:uploader:windows:
-    deps: [ensure-deps:zig]
-    cmds:
-      - echo "[build:uploader:windows] building windows uploader with zig cc/c++"
-      - mkdir -p uploader/dist
-      - |
-        set -euo pipefail
-        APP_NAME="sentinel2-uploader-windows.exe"
-        mkdir -p "{{.TASKFILE_DIR}}/.tmp/zig-cache"
-        cd uploader && \
-          ZIG_GLOBAL_CACHE_DIR="{{.TASKFILE_DIR}}/.tmp/zig-cache" \
-          CC='zig cc -target x86_64-windows-gnu' \
-          CXX='zig c++ -target x86_64-windows-gnu' \
-          CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-          go build -ldflags "-H windowsgui -X main.BuildVersion={{.BUILD_VERSION}}" -o "dist/${APP_NAME}" .
-    desc: Build uploader for Windows (amd64).
-
   prepare:embed:
+    deps: [setup:taskutil]
     cmds:
-      - echo "[prepare:embed] syncing frontend dist into backend embed directory"
-      - |
-        set -euo pipefail
-        if [ ! -d frontend/dist ]; then
-          echo "frontend/dist is missing. Run 'task build:frontend' first." >&2
-          exit 1
-        fi
-        MISSING=""
-        for FILE in \
-          sentinel2-uploader-linux.zip \
-          sentinel2-uploader-windows.zip \
-          sentinel2-uploader-macos.zip
-        do
-          if [ ! -f "frontend/dist/downloads/$FILE" ]; then
-            MISSING="$MISSING $FILE"
-          fi
-        done
-        if [ -n "$MISSING" ]; then
-          echo "Warning: expected uploader download archives are missing in frontend/dist/downloads:$MISSING" >&2
-          echo "Embedded frontend download links may return non-zip responses." >&2
-          if [ "${CI:-}" = "true" ] || [ "${CONTINUE_ON_WARN:-0}" = "1" ]; then
-            echo "Continuing because CI/CONTINUE_ON_WARN is set."
-          elif [ -t 0 ]; then
-            printf "Continue anyway? [y/N]: "
-            read -r ANSWER
-            case "$ANSWER" in
-              y|Y|yes|YES) ;;
-              *) echo "Aborted."; exit 1 ;;
-            esac
-          else
-            echo "Non-interactive shell detected. Re-run with CONTINUE_ON_WARN=1 to override." >&2
-            exit 1
-          fi
-        fi
-        rm -rf backend/internal/web/dist
-        mkdir -p backend/internal/web/dist
-        # Use dot copy to include hidden files such as .well-known if present.
-        cp -R frontend/dist/. backend/internal/web/dist/
+      - "{{.TASKUTIL_BIN}} prepare-embed"
     desc: Copy frontend dist to embed location.
 
   build:backend:
     deps: [prepare:embed]
+    dir: backend
+    env:
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
     cmds:
       - echo "[build:backend] building backend with embedded frontend"
-      - mkdir -p bin
-      - cd backend && go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/${OUTPUT_NAME:-sentinel2-server} ./main.go
+      - mkdir -p "{{.TASKFILE_DIR}}/bin"
+      - go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "{{.TASKFILE_DIR}}/bin/{{.OUTPUT_NAME | default "sentinel2-server"}}" ./main.go
     desc: Build backend binary with embedded frontend.
 
   build:backend:linux:
     deps: [prepare:embed]
+    dir: backend
+    env:
+      GOOS: linux
+      GOARCH: amd64
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
     cmds:
       - echo "[build:backend:linux] building linux backend with embedded frontend"
-      - mkdir -p bin
-      - cd backend && GOOS=linux GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64 ./main.go
+      - mkdir -p "{{.TASKFILE_DIR}}/bin"
+      - go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" ./main.go
     desc: Build backend binary for Linux (amd64).
 
   build:backend:darwin:
     deps: [prepare:embed]
+    dir: backend
+    env:
+      GOOS: darwin
+      GOARCH: arm64
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
     cmds:
       - echo "[build:backend:darwin] building macOS backend with embedded frontend"
-      - mkdir -p bin
-      - cd backend && GOOS=darwin GOARCH=arm64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64 ./main.go
+      - mkdir -p "{{.TASKFILE_DIR}}/bin"
+      - go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" ./main.go
     desc: Build backend binary for macOS (arm64).
 
   build:backend:windows:
     deps: [prepare:embed]
+    dir: backend
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
     cmds:
       - echo "[build:backend:windows] building windows backend with embedded frontend"
-      - mkdir -p bin
-      - cd backend && GOOS=windows GOARCH=amd64 go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe ./main.go
+      - mkdir -p "{{.TASKFILE_DIR}}/bin"
+      - go build -tags embed_frontend -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" ./main.go
     desc: Build backend binary for Windows (amd64).
 
   build:backend:skip-embed:
+    deps: [setup:taskutil]
+    dir: backend
+    env:
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
     cmds:
       - echo "[build:backend:skip-embed] building backend without embedded frontend"
-      - mkdir -p bin
-      - cd backend && go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o ../bin/${OUTPUT_NAME:-sentinel2-server} ./main.go
+      - mkdir -p "{{.TASKFILE_DIR}}/bin"
+      - go build -ldflags "-X main.BuildVersion={{.BUILD_VERSION}}" -o "{{.TASKFILE_DIR}}/bin/{{.OUTPUT_NAME | default "sentinel2-server"}}" ./main.go
     desc: Build backend binary without embed tag.
 
   build:run:
     deps: [build]
     cmds:
-      - cd bin && ./sentinel2-server serve
+      - task: run
     desc: Build everything and start the server.
 
   run:
+    dir: bin
     cmds:
-      - cd bin && ./sentinel2-server serve
+      - "{{.BACKEND_BIN}} serve"
     desc: Run the backend server (expects bin/sentinel2-server).
+
+  migrate:run:
+    dir: bin
+    cmds:
+      - "{{.BACKEND_BIN}} migrate"
+    desc: Run database migrations (expects bin/sentinel2-server).
 
   build:migrate:
     deps: [build]
     cmds:
-      - cd bin && ./sentinel2-server migrate
+      - task: migrate:run
     desc: Build everything and run migrations.
 
   build:migrate:skip-embed:
     deps: [build:backend:skip-embed]
     cmds:
-      - cd bin && ./sentinel2-server migrate
+      - task: migrate:run
     desc: Build backend without embed assets and run migrations.
 
   build:migrate-run:
     deps: [build]
     cmds:
-      - cd bin && ./sentinel2-server migrate
-      - cd bin && ./sentinel2-server serve
+      - task: migrate:run
+      - task: run
     desc: Build, run migrations, and start the server.
 
   lint:
     cmds:
-      - task: setup
       - task: lint:backend
       - task: lint:frontend
     desc: Run backend and frontend lint.
@@ -372,17 +202,23 @@ tasks:
     desc: Run backend lint with auto-fix (local only).
 
   lint:frontend:
-    deps: [ensure-deps:bun]
+    deps: [setup:deps:frontend]
+    dir: frontend
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run lint
+      - bun run lint
     desc: Run frontend lint.
 
   lint:frontend:fix:
-    deps: [ensure-deps:bun]
+    deps: [setup:deps:frontend]
+    dir: frontend
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run lint -- --fix
+      - bun run lint -- --fix
     desc: Run frontend lint with auto-fix (local only).
 
   docker:build:
@@ -444,7 +280,7 @@ tasks:
 
   docker:dev:up:migrate:
     cmds:
-      - docker compose -f docker-compose.dev.yml run --rm sentinel2-dev task build:migrate:skip-embed
+      - docker compose -f docker-compose.dev.yml run --rm backend-dev task build:migrate:skip-embed
       - docker compose -f docker-compose.dev.yml up --build
     desc: Run migrations, then start dev compose.
 
@@ -464,110 +300,26 @@ tasks:
     desc: Show dev compose status.
 
   dev:
-    deps: [ensure-deps:bun]
+    deps: [ensure-deps:bun, setup:taskutil]
     cmds:
-      - |
-        set -euo pipefail
-        task build:backend:skip-embed
-        if ! command -v tmux >/dev/null 2>&1; then
-          echo "tmux is required for task dev. Use task dev:plain if you prefer no tmux." >&2
-          exit 1
-        fi
-        echo "Using tmux for dev session..."
-        SESSION="sentinel2-dev"
-        BASE_LOG_DIR="${LOG_DIR:-/tmp/sentinel2-dev}"
-        SESSION_TS="$(date +%Y%m%d-%H%M%S)"
-        LOG_DIR="$BASE_LOG_DIR/$SESSION_TS"
-        mkdir -p "$LOG_DIR"
-        printf "%s" "$LOG_DIR" > "$BASE_LOG_DIR/latest" 2>/dev/null || true
-        tmux -2 set -g default-terminal "tmux-256color" >/dev/null 2>&1 || true
-        tmux -2 set -ga terminal-overrides ",xterm-256color:Tc" >/dev/null 2>&1 || true
-        if tmux has-session -t "$SESSION" >/dev/null 2>&1; then
-          echo "tmux session '$SESSION' already exists; attaching."
-        else
-        tmux -2 new-session -d -s "$SESSION" -n "frontend" "TERM=xterm-256color COLORTERM=truecolor bash -lc 'cd frontend && BUN_TMPDIR={{.BUN_TMPDIR_DEFAULT}} BUN_INSTALL={{.BUN_INSTALL_DEFAULT}} bun install --frozen-lockfile && BUN_TMPDIR={{.BUN_TMPDIR_DEFAULT}} BUN_INSTALL={{.BUN_INSTALL_DEFAULT}} bun run dev --host ${VITE_HOST:-127.0.0.1} --port ${VITE_PORT:-5173}; exec bash'"
-          tmux -2 split-window -h -t "$SESSION" "TERM=xterm-256color COLORTERM=truecolor bash -lc 'cd bin && if [ \"${DEV_MIGRATIONS:-0}\" = \"1\" ]; then ./sentinel2-server migrate; fi; DEV_PROXY=${DEV_PROXY:-127.0.0.1:5173} LOG_PRETTY_PB=1 LOG_JSON=1 LOG_JSON_PB=1 LOG_JSON_PATH=\"$LOG_DIR/backend.jsonl\" ./sentinel2-server serve --dev; exec bash'"
-          tmux -2 select-layout -t "$SESSION" even-horizontal
-          tmux set -t "$SESSION" remain-on-exit on >/dev/null 2>&1 || true
-          tmux pipe-pane -o -t "$SESSION:0.0" "cat >> \"$LOG_DIR/vite.log\""
-          tmux pipe-pane -o -t "$SESSION:0.1" "cat >> \"$LOG_DIR/backend.log\""
-        fi
-        tmux set -t "$SESSION" mouse on >/dev/null 2>&1 || true
-        tmux -2 attach -t "$SESSION"
-    desc: Run Vite dev server + backend (no uploader build).
-
-  dev:tmux:
-    cmds:
-      - |
-        set -euo pipefail
-        if ! command -v tmux >/dev/null 2>&1; then
-          echo "tmux is required for dev:tmux." >&2
-          exit 1
-        fi
-        task dev
-    desc: Run Vite + backend in a tmux session.
-
-  dev:plain:
-    deps: [ensure-deps:bun]
-    cmds:
-      - |
-        set -euo pipefail
-        task build:backend:skip-embed
-        echo "Installing frontend dependencies..."
-        cd frontend
-        BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
-        echo "Starting Vite dev server..."
-        BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run dev --host "${VITE_HOST:-127.0.0.1}" --port "${VITE_PORT:-5173}" &
-        FRONTEND_PID=$!
-        trap 'kill "$FRONTEND_PID" >/dev/null 2>&1 || true' EXIT
-        cd ../bin
-        echo "Starting backend..."
-        if [ "${DEV_MIGRATIONS:-0}" = "1" ]; then
-          ./sentinel2-server migrate
-        fi
-        DEV_PROXY="${DEV_PROXY:-127.0.0.1:5173}" LOG_PRETTY_PB=1 LOG_JSON=1 LOG_JSON_PB=1 LOG_JSON_PATH="${LOG_JSON_PATH:-/tmp/sentinel2-dev/backend.jsonl}" ./sentinel2-server serve --dev
-    desc: Run dev workflow without tmux.
-
-  dev:attach:
-    cmds:
-      - |
-        set -euo pipefail
-        if ! command -v tmux >/dev/null 2>&1; then
-          echo "tmux is required for dev:attach." >&2
-          exit 1
-        fi
-        tmux attach -t "sentinel2-dev"
-    desc: Attach to the dev tmux session.
+      - task: build:backend:skip-embed
+      - task: setup:deps:frontend
+      - "{{.TASKUTIL_BIN}} dev"
+    desc: Run Vite dev server + backend.
 
   dev:stop:
     cmds:
-      - |
-        set -euo pipefail
-        if ! command -v tmux >/dev/null 2>&1; then
-          echo "tmux is required for dev:stop." >&2
-          exit 1
-        fi
-        tmux kill-session -t "sentinel2-dev" 2>/dev/null || true
-    desc: Stop the dev tmux session.
+      - echo "dev runs in the foreground; stop with Ctrl+C."
+    desc: Show how to stop dev.
 
   dev:logs:
+    deps: [setup:taskutil]
     cmds:
-      - |
-        set -euo pipefail
-        BASE_LOG_DIR="${LOG_DIR:-/tmp/sentinel2-dev}"
-        if [ -f "$BASE_LOG_DIR/latest" ]; then
-          LOG_DIR="$(cat "$BASE_LOG_DIR/latest")"
-        else
-          LOG_DIR="$BASE_LOG_DIR"
-        fi
-        if [ ! -d "$LOG_DIR" ]; then
-          echo "No dev logs found at $LOG_DIR" >&2
-          exit 1
-        fi
-        tail -n 200 -f "$LOG_DIR/vite.log" "$LOG_DIR/backend.log"
+      - "{{.TASKUTIL_BIN}} dev-logs-tail"
     desc: Tail Vite and backend dev logs.
 
   dev:logs:view:
+    platforms: [linux, darwin]
     cmds:
       - |
         set -euo pipefail
@@ -586,9 +338,10 @@ tasks:
           exit 1
         fi
         lnav "$LOG_DIR/vite.log" "$LOG_DIR/backend.log"
-    desc: Open dev logs in lnav (requires lnav).
+    desc: "Unix-only: open dev logs in lnav (use task dev:logs on Windows)."
 
   dev:logs:view:json:
+    platforms: [linux, darwin]
     cmds:
       - |
         set -euo pipefail
@@ -608,98 +361,62 @@ tasks:
           exit 1
         fi
         lnav "$JSON_FILE"
-    desc: Open JSON log file in lnav (requires LOG_JSON or LOG_JSON_PATH).
+    desc: "Unix-only: open JSON log file in lnav (use task dev:logs on Windows)."
 
   dev:logs:clean:
+    deps: [setup:taskutil]
     cmds:
-      - |
-        set -euo pipefail
-        BASE_LOG_DIR="${LOG_DIR:-/tmp/sentinel2-dev}"
-        KEEP_DAYS="${KEEP_DAYS:-7}"
-        if [ ! -d "$BASE_LOG_DIR" ]; then
-          echo "No dev logs directory at $BASE_LOG_DIR" >&2
-          exit 0
-        fi
-        find "$BASE_LOG_DIR" -maxdepth 1 -type d -name "20*" -mtime "+$KEEP_DAYS" -print -exec rm -rf {} +
+      - "{{.TASKUTIL_BIN}} dev-logs-clean"
     desc: Delete dev log folders older than KEEP_DAYS (default 7).
 
-  dev:with-uploader:
-    deps: [setup, build:uploader]
+  dev:migrate:
+    env:
+      DEV_MIGRATIONS: "1"
     cmds:
       - task: dev
-    desc: Build uploader bundles, then run Vite + backend.
-
-  dev:migrate:
-    cmds:
-      - DEV_MIGRATIONS=1 task dev
     desc: Run dev workflow with migrations first.
 
   dev:frontend:
     deps: [ensure-deps:bun]
+    dir: frontend
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
       - task: setup
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run dev --host "{{.VITE_HOST | default "127.0.0.1"}}" --port "{{.VITE_PORT | default "5173"}}"
+      - bun install --frozen-lockfile
+      - bun run dev --host "{{.VITE_HOST | default "127.0.0.1"}}" --port "{{.VITE_PORT | default "5173"}}"
     desc: Run Vite dev server.
 
   dev:backend:
+    env:
+      DEV_PROXY: '{{.DEV_PROXY | default "127.0.0.1:5173"}}'
+      LOG_PRETTY_PB: "1"
+      LOG_JSON: "1"
+      LOG_JSON_PB: "1"
+      LOG_JSON_PATH: '{{.LOG_JSON_PATH | default "/tmp/sentinel2-dev/backend.jsonl"}}'
+    dir: bin
     cmds:
       - task: setup
       - task: build:backend:skip-embed
-      - cd bin && DEV_PROXY="{{.DEV_PROXY | default "127.0.0.1:5173"}}" LOG_PRETTY_PB=1 LOG_JSON=1 LOG_JSON_PB=1 LOG_JSON_PATH="${LOG_JSON_PATH:-/tmp/sentinel2-dev/backend.jsonl}" ./sentinel2-server serve --dev
+      - "{{.BACKEND_BIN}} serve --dev"
     desc: Run backend with DEV_PROXY set.
-
-  dev:container:
-    deps: [ensure-deps:bun]
-    cmds:
-      - |
-        set -euo pipefail
-        if [ -f .env ] && [ ! -f backend/.env ]; then ln -s .env backend/.env 2>/dev/null || true; fi
-        if [ -f .env ] && [ ! -f frontend/.env ]; then ln -s .env frontend/.env 2>/dev/null || true; fi
-        echo "Installing frontend dependencies..."
-        cd frontend
-        BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
-        echo "Starting Vite dev server..."
-        BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun run dev --host "${VITE_HOST:-0.0.0.0}" --port "${VITE_PORT:-5173}" &
-        FRONTEND_PID=$!
-        trap 'kill "$FRONTEND_PID" >/dev/null 2>&1 || true' EXIT
-        task build:backend:skip-embed
-        cd ../bin
-        if [ "${RUN_MIGRATIONS:-0}" = "1" ]; then
-          echo "Running migrations..."
-          ./sentinel2-server migrate
-        fi
-        echo "Starting backend..."
-        DEV_PROXY="${DEV_PROXY:-127.0.0.1:5173}" LOG_PRETTY_PB=1 LOG_JSON=1 LOG_JSON_PB=1 LOG_JSON_PATH="${LOG_JSON_PATH:-/tmp/sentinel2-dev/backend.jsonl}" ./sentinel2-server serve --dev
-    desc: Run Vite + backend in a dev container.
 
   setup:
     deps: [ensure-deps:bun]
     cmds:
       - go version
-      - BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun --version
-      - cd frontend && BUN_TMPDIR="{{.BUN_TMPDIR_DEFAULT}}" BUN_INSTALL="{{.BUN_INSTALL_DEFAULT}}" bun install --frozen-lockfile
-      - cd backend && go mod download
-      - cd uploader && go mod download
-    desc: Verify Go/Bun and install frontend/backend/uploader dependencies.
+      - task: setup:version:bun
+      - task: setup:deps:frontend
+      - task: setup:deps:backend
+    desc: Verify Go/Bun and install frontend/backend dependencies.
 
   ensure-deps:
-    deps: [ensure-deps:bun, ensure-deps:zig]
-    desc: Ensure Bun and Zig build dependencies are available.
-
-  ensure-deps:zig:
-    cmds:
-      - |
-        set -euo pipefail
-        if ! command -v zig >/dev/null 2>&1; then
-          echo "zig is required for uploader cross-build tasks." >&2
-          echo "Install zig from https://ziglang.org/download/" >&2
-          exit 1
-        fi
-        zig version
-    desc: Ensure zig is installed.
+    deps: [ensure-deps:bun]
+    desc: Ensure Bun build dependency is available.
 
   completion:install:
+    platforms: [linux, darwin]
     cmds:
       - |
         set -euo pipefail
@@ -735,54 +452,89 @@ tasks:
         esac
         echo "Installed task completion for $SHELL_NAME at $TARGET"
         echo "Restart your shell to load it."
-    desc: Install task shell completion for the current shell.
+    desc: "Unix-only: install task shell completion for the current shell."
 
   ensure-deps:bun:
     cmds:
       - mkdir -p "{{.BUN_TMPDIR_DEFAULT}}" "{{.BUN_INSTALL_DEFAULT}}"
     desc: Ensure Bun temp/cache directories exist.
 
-  migrate:create:
+  setup:version:bun:
+    deps: [ensure-deps:bun]
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
-      - |
-        set -euo pipefail
-        NAME="{{.NAME}}"
-        if [ -z "$NAME" ]; then
-          echo "Usage: task migrate:create NAME=your_migration_name" >&2
-          exit 1
-        fi
-        if ! printf "%s" "$NAME" | grep -Eq '^[a-z0-9_]+$'; then
-          echo "Migration name must be snake_case (lowercase letters, numbers, underscores)." >&2
-          exit 1
-        fi
-        cd backend
-        go run . migrate create "$NAME" --dir ../backend/pb_migrations
+      - bun --version
+    desc: Print Bun version using project-local Bun cache dirs.
+
+  setup:deps:frontend:
+    deps: [ensure-deps:bun]
+    dir: frontend
+    method: checksum
+    env:
+      BUN_TMPDIR: "{{.BUN_TMPDIR_DEFAULT}}"
+      BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
+    cmds:
+      - bun install --frozen-lockfile
+      - mkdir -p "{{.TASKFILE_DIR}}/.tmp/stamps"
+      - cp bun.lock "{{.TASKFILE_DIR}}/.tmp/stamps/frontend-bun.lock"
+    sources:
+      - "{{.TASKFILE_DIR}}/frontend/package.json"
+      - "{{.TASKFILE_DIR}}/frontend/bun.lock"
+    generates:
+      - "{{.TASKFILE_DIR}}/.tmp/stamps/frontend-bun.lock"
+    desc: Install frontend dependencies.
+
+  setup:deps:backend:
+    dir: backend
+    env:
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
+    cmds:
+      - go mod download
+    desc: Download backend Go module dependencies.
+
+  setup:taskutil:
+    cmds:
+      - mkdir -p "{{.TASKFILE_DIR}}/.tmp/bin" "{{.GO_BUILD_CACHE_DEFAULT}}"
+      - cd taskutil && GOCACHE="{{.GO_BUILD_CACHE_DEFAULT}}" go build -o "{{.TASKUTIL_BIN}}" .
+    sources:
+      - taskutil/*.go
+      - taskutil/go.mod
+      - taskutil/go.sum
+    generates:
+      - "{{.TASKUTIL_BIN}}"
+    desc: Build taskutil helper binary.
+
+  migrate:create:
+    deps: [build:backend:skip-embed]
+    requires:
+      vars: [NAME]
+    dir: backend
+    cmds:
+      - "{{.BACKEND_BIN}} migrate create {{.NAME}}"
     desc: Create a new PocketBase migration (NAME required).
 
   go:toolchain:update:
+    dir: backend
     cmds:
-      - cd backend && go get go@latest
-      - cd backend && go version
+      - go get go@latest
+      - go version
     desc: Update module toolchain to latest Go (requires Go 1.21+).
 
   release:assets:
     cmds:
-      - echo "[release:assets] building uploader/frontend/backend release artifacts"
-      - task: build:uploader
+      - echo "[release:assets] building frontend/backend release artifacts"
       - task: build:frontend
       - echo "[release:assets] preparing dist directory"
       - rm -rf dist
       - mkdir -p dist
       - echo "[release:assets] building backend binaries for linux, macOS, and windows"
-      - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" GOOS=linux GOARCH=amd64 task build:backend
-      - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" GOOS=darwin GOARCH=arm64 task build:backend
-      - OUTPUT_NAME="sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" GOOS=windows GOARCH=amd64 task build:backend
-      - echo "[release:assets] copying backend binaries and versioned uploader archives"
-      - cp "bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" dist/
-      - cp "bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" dist/
-      - cp "bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" dist/
-      # Copy stable uploader archives into release artifacts with versioned filenames.
-      - cp frontend/public/downloads/sentinel2-uploader-linux.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-linux-amd64.zip
-      - cp frontend/public/downloads/sentinel2-uploader-windows.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-windows-amd64.zip
-      - cp frontend/public/downloads/sentinel2-uploader-macos.zip dist/sentinel2-uploader-{{.BUILD_VERSION}}-darwin-arm64.zip
-    desc: Build release assets (backend binaries + uploader zips).
+      - task: build:backend:linux
+      - task: build:backend:darwin
+      - task: build:backend:windows
+      - echo "[release:assets] copying backend binaries"
+      - cp "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" "{{.TASKFILE_DIR}}/dist/"
+      - cp "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" "{{.TASKFILE_DIR}}/dist/"
+      - cp "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" "{{.TASKFILE_DIR}}/dist/"
+    desc: Build release assets (backend binaries).

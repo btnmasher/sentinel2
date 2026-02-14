@@ -17,12 +17,14 @@ import (
 	"sentinel2/internal/logging"
 	"sentinel2/internal/oidc"
 	"sentinel2/internal/realtime"
+	"sentinel2/internal/uploaderrelease"
 
 	adminapi "sentinel2/internal/api/admin"
 	authapi "sentinel2/internal/api/auth"
 	intelapi "sentinel2/internal/api/intel"
 	mapapi "sentinel2/internal/api/maps"
 	staffapi "sentinel2/internal/api/staff"
+	uploaderapi "sentinel2/internal/api/uploader"
 )
 
 type dependencies struct {
@@ -41,6 +43,8 @@ type dependencies struct {
 	adminMapDataUpdate *adminapi.MapUpdateHandler
 	characterRefresher *auth.CharacterRefresher
 	admin              *adminapi.Handler
+	uploaderReleases   *uploaderrelease.Service
+	uploaderHandler    *uploaderapi.Handler
 }
 
 func Run(cfg config.Config) error {
@@ -86,6 +90,8 @@ func Run(cfg config.Config) error {
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService)
 	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanup, intelService)
+	uploaderReleases := uploaderrelease.New(app, cfg)
+	uploaderHandler := uploaderapi.NewHandler(uploaderReleases)
 
 	deps := dependencies{
 		provider:           provider,
@@ -103,6 +109,8 @@ func Run(cfg config.Config) error {
 		adminMapDataUpdate: adminMapDataUpdate,
 		characterRefresher: characterRefresher,
 		admin:              admin,
+		uploaderReleases:   uploaderReleases,
+		uploaderHandler:    uploaderHandler,
 	}
 
 	registerRoutes(app, cfg, deps)
