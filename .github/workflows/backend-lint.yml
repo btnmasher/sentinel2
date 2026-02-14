@@ -1,0 +1,58 @@
+name: Backend Lint
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "Taskfile.yml"
+      - ".golangci.yml"
+      - ".golangci-lint-version"
+      - ".github/workflows/backend-lint.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "Taskfile.yml"
+      - ".golangci.yml"
+      - ".golangci-lint-version"
+      - ".github/workflows/backend-lint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Task
+        uses: go-task/setup-task@v1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Restore Go and lint caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp/go-build-cache
+            ${{ github.workspace }}/.tmp/golangci-lint-cache
+          key: ${{ runner.os }}-go-backend-lint-${{ hashFiles('backend/go.sum', '.golangci-lint-version') }}
+          restore-keys: |
+            ${{ runner.os }}-go-backend-lint-
+
+      - name: Install golangci-lint
+        run: |
+          VERSION="$(cat .golangci-lint-version)"
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b /usr/local/bin "$VERSION"
+
+      - name: Lint backend
+        run: task lint:backend
