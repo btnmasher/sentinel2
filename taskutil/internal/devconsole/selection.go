@@ -91,7 +91,7 @@ func (m viewState) selectedText() string {
 
 	out := make([]string, 0, sourceEnd-sourceStart+1)
 	for i := sourceStart; i <= sourceEnd; i++ {
-		line := ansi.Strip(rawLines[i])
+		line := plainLineForCopy(rawLines[i])
 		width := ansi.StringWidth(line)
 		switch {
 		case sourceStart == sourceEnd:
@@ -174,7 +174,7 @@ func wrappedSegments(raw []string, width int) []wrappedSegment {
 		width = minViewportWidth
 	}
 	for i, line := range raw {
-		plain := ansi.Strip(line)
+		plain := ansi.Strip(renderDisplayLineForWidth(line, width))
 		lineWidth := ansi.StringWidth(plain)
 		if lineWidth == 0 {
 			out = append(out, wrappedSegment{source: i, startCol: 0, endCol: 0})

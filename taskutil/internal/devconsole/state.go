@@ -2,6 +2,7 @@ package devconsole
 
 import (
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,6 +15,7 @@ const (
 	defaultMaxLogLines = 2000
 	minViewportWidth   = 1
 	minViewportHeight  = 1
+	minMarkerWidth     = 24
 )
 
 type viewState struct {
@@ -253,6 +255,11 @@ func (m *viewState) appendLine(proc, line string) {
 			m.backend.GotoBottom()
 		}
 	}
+}
+
+func (m *viewState) appendSessionMarker(proc, message, color string) {
+	ts := time.Now().Format("15:04:05")
+	m.appendLine(proc, markerToken(ts, color, message))
 }
 
 func (m *viewState) refreshViewportContent() {

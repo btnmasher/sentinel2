@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
 
 func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -248,6 +247,7 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.pid = msg.pid
 		p.lastExit = ""
 		m.procs[msg.proc] = p
+		m.appendSessionMarker(msg.proc, fmt.Sprintf("%s started (pid=%d)", msg.proc, msg.pid), "10")
 		return m, tea.Batch(cmds...)
 
 	case procExitMsg:
@@ -256,6 +256,11 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.pid = 0
 		p.lastExit = exitSummary(msg.err, msg.code)
 		m.procs[msg.proc] = p
+		markerColor := "9"
+		if msg.code == 0 && msg.err == nil {
+			markerColor = "10"
+		}
+		m.appendSessionMarker(msg.proc, fmt.Sprintf("%s stopped (%s)", msg.proc, p.lastExit), markerColor)
 		m.status = fmt.Sprintf("%s %s", msg.proc, p.lastExit)
 		m.resize(m.width, m.height)
 		return m, tea.Batch(cmds...)
@@ -306,7 +311,7 @@ func (m *viewState) copyLineMode() {
 		m.resize(m.width, m.height)
 		return
 	}
-	line := ansi.Strip(raw[m.lineModeSource])
+	line := plainLineForCopy(raw[m.lineModeSource])
 	if strings.TrimSpace(line) == "" {
 		m.status = "selected line is empty in " + m.lineModeProc
 		m.resize(m.width, m.height)

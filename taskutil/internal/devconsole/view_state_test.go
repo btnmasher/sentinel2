@@ -8,6 +8,7 @@ import (
 	"sentinel2-taskutil/internal/project"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestAppendWithCap(t *testing.T) {
@@ -214,6 +215,16 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	if !m.procs["frontend"].running || m.procs["frontend"].pid != 77 {
 		t.Fatalf("frontend proc state = %#v", m.procs["frontend"])
 	}
+	if len(m.frontendLines) == 0 {
+		t.Fatalf("expected session marker line after proc start")
+	}
+	_, startColor, startMsg, ok := parseMarkerToken(m.frontendLines[len(m.frontendLines)-1])
+	if !ok {
+		t.Fatalf("expected marker token in frontend log after start")
+	}
+	if startColor != "10" || !strings.Contains(startMsg, "started") {
+		t.Fatalf("unexpected start marker color/message: color=%q msg=%q", startColor, startMsg)
+	}
 
 	model, _ = m.Update(procExitMsg{proc: "frontend", code: 2, err: context.DeadlineExceeded})
 	m = model.(viewState)
@@ -225,6 +236,16 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	}
 	if !strings.Contains(m.status, "frontend exit=2") {
 		t.Fatalf("status = %q", m.status)
+	}
+	if len(m.frontendLines) < 2 {
+		t.Fatalf("expected stop marker line after proc exit")
+	}
+	_, stopColor, stopMsg, ok := parseMarkerToken(m.frontendLines[len(m.frontendLines)-1])
+	if !ok {
+		t.Fatalf("expected marker token in frontend log after exit")
+	}
+	if stopColor != "9" || !strings.Contains(stopMsg, "stopped (exit=2)") {
+		t.Fatalf("unexpected stop marker color/message: color=%q msg=%q", stopColor, stopMsg)
 	}
 }
 
@@ -244,6 +265,52 @@ func TestUpdate_DownAtBottomResumesFollow(t *testing.T) {
 	m = model.(viewState)
 	if !m.followFrontend {
 		t.Fatalf("followFrontend should resume when scrolling down at bottom")
+	}
+}
+
+func TestSelectedText_MarkerCopiesPlainText(t *testing.T) {
+	m := newTestViewState(80, 14)
+	m.frontend.Width = 40
+	m.frontend.Height = 6
+	m.frontendLines = []string{
+		"alpha",
+		markerToken("12:34:56", "10", "backend started"),
+		"omega",
+	}
+	m.refreshViewportContent()
+
+	start := 1
+	end := 1
+	m.selection = dragSelection{
+		active:    true,
+		proc:      "frontend",
+		startLine: start,
+		startCol:  0,
+		endLine:   end,
+		endCol:    39,
+		moved:     true,
+	}
+	got := m.selectedText()
+	if !strings.Contains(got, "12:34:56 backend started") {
+		t.Fatalf("selectedText() = %q, want marker plain text", got)
+	}
+}
+
+func TestMarkerLine_ReflowsOnResize(t *testing.T) {
+	m := newTestViewState(110, 16)
+	m.frontendLines = []string{
+		markerToken("12:34:56", "10", "backend started"),
+	}
+	m.refreshViewportContent()
+	wide := m.frontend.View()
+
+	m.resize(70, 16)
+	narrow := m.frontend.View()
+	if wide == narrow {
+		t.Fatalf("expected marker rendering to change after resize")
+	}
+	if !strings.Contains(ansi.Strip(narrow), "12:34:56  backend started") {
+		t.Fatalf("narrow marker missing expected body: %q", ansi.Strip(narrow))
 	}
 }
 

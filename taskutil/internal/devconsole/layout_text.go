@@ -109,6 +109,7 @@ func wrapLineForWidth(line string, width int) []string {
 	if width <= 0 {
 		return []string{line}
 	}
+	line = renderDisplayLineForWidth(line, width)
 	if line == "" {
 		return []string{""}
 	}
