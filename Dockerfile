@@ -29,7 +29,8 @@ COPY --from=deps /root/.cache/go-build /root/.cache/go-build
 COPY --from=deps /app/frontend/node_modules /app/frontend/node_modules
 COPY --from=deps /app/.tmp /app/.tmp
 COPY . .
-RUN task build
+RUN rm -f /app/.tmp/bin/taskutil /app/.tmp/bin/taskutil.exe \
+  && task build
 
 FROM debian:bookworm-slim
 RUN apt-get update \
