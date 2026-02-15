@@ -10,7 +10,7 @@ function timeSuffix(minutes: number) {
   return `${minutes}m`;
 }
 
-export default function IntelPanelLog({
+export default function ReportItem({
   log,
   channelNames,
 }: {
@@ -121,7 +121,7 @@ export default function IntelPanelLog({
         <span style={{ color: timeColor.color }}>{timeSuffix(timePassed)}</span>
         <span>{timestamp}</span>
       </div>
-      <p className="text-sm text-slate-200 mt-1">
+      <p className="text-sm text-slate-200 mt-1 space-x-1">
         {splitText.map((chunk, idx) => {
           if (typeof chunk === "string") {
             return <span key={idx}>{chunk} </span>;
@@ -144,7 +144,7 @@ export default function IntelPanelLog({
             return (
               <button
                 key={idx}
-                className="text-fuchsia-300"
+                className="report-item-unloaded-region"
                 title={`Click to load ${regionName}`}
                 onClick={() =>
                   updateMapConfig({ mapRegions: [...mapRegions, regionId] })

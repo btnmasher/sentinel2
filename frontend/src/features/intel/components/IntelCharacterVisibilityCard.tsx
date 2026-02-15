@@ -97,7 +97,6 @@ export default function IntelCharacterVisibilityCard({
     <AccordionCard
       title="Character Visibility"
       subtitle="Which characters show on the map"
-      subtitleClassName="text-[11px] text-left"
       open={open}
       onToggle={onToggle}
     >

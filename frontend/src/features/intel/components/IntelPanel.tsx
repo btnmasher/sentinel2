@@ -138,15 +138,15 @@ export default function IntelPanel() {
   }
 
   return (
-    <div className="flex h-full min-h-0 max-h-full flex-col">
+    <div className="flex h-full min-h-0 max-h-screen flex-col overflow-hidden">
       <div className="shrink-0">
         <h2 className="text-lg font-display leading-none">Intel Console</h2>
         <p className="mt-1 text-xs text-slate-400">
           Filters and live report feed
         </p>
       </div>
-      <div className="mt-4 min-h-0 flex flex-1 flex-col gap-3">
-        <div className="shrink-0">
+      <div className="mt-4 min-h-0 flex-1 grid grid-rows-[auto_auto_minmax(0,1fr)] gap-3">
+        <div>
           <IntelFiltersCard
             logFilters={logFilters}
             setLogFilters={setLogFilters}
@@ -156,7 +156,7 @@ export default function IntelPanel() {
             onToggle={() => applySetting("intel", "filtersOpen", !filtersOpen)}
           />
         </div>
-        <div className="shrink-0">
+        <div>
           <IntelCharacterVisibilityCard
             open={charactersOpen}
             onToggle={() =>
@@ -164,14 +164,12 @@ export default function IntelPanel() {
             }
           />
         </div>
-        <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
-          <IntelFeedCard
-            logs={filteredLogs}
-            channelNames={channelNames}
-            open={feedOpen}
-            onToggle={() => applySetting("intel", "feedOpen", !feedOpen)}
-          />
-        </div>
+        <IntelFeedCard
+          logs={filteredLogs}
+          channelNames={channelNames}
+          open={feedOpen}
+          onToggle={() => applySetting("intel", "feedOpen", !feedOpen)}
+        />
       </div>
     </div>
   );

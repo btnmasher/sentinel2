@@ -280,39 +280,6 @@
   transform: translateY(-50%) rotate(225deg);
 }
 
-.intel-feed-card.collapse-arrow > .collapse-title::after {
-  top: 1.35rem;
-  transform: translateY(0) rotate(45deg);
-}
-
-.intel-feed-card.collapse-open.collapse-arrow > .collapse-title::after {
-  top: 1.35rem;
-  transform: translateY(0) rotate(225deg);
-}
-
-/* Force the feed accordion into a strict header + scroll-body layout. */
-.intel-feed-card {
-  display: flex !important;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.intel-feed-card > .collapse-title {
-  flex: 0 0 auto;
-}
-
-.intel-feed-card > .collapse-content {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.intel-feed-card > .collapse-content > * {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
 .btn-secondary:not(.btn-outline) {
   background-color: color-mix(
     in oklab,
@@ -682,6 +649,10 @@ html[data-theme="sentinel-light"] .map-gate.region {
   color: #7c3aed;
 }
 
+html[data-theme="sentinel-light"] .report-item-unloaded-region {
+  color: #7c3aed;
+}
+
 html[data-theme="sentinel-light"] .map-gate.route {
   stroke: #15803d;
   color: #15803d;
@@ -916,6 +887,10 @@ html[data-theme="sentinel-light"] .rdp {
 
 .map-gate.region {
   stroke: #9c27b0;
+  color: #9c27b0;
+}
+
+.report-item-unloaded-region {
   color: #9c27b0;
 }
 

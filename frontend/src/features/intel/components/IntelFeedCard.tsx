@@ -1,4 +1,4 @@
-import IntelPanelLog from "./IntelPanelLog";
+import ReportItem from "./ReportItem";
 import type { IntelReport } from "../types";
 import AccordionCard from "@/components/AccordionCard";
 
@@ -21,17 +21,15 @@ export default function IntelFeedCard({
       subtitle="Latest reports"
       open={open}
       onToggle={onToggle}
-      className="intel-feed-card min-h-0 flex flex-1 flex-col"
-      contentClassName="min-h-0 flex flex-1 flex-col overflow-hidden"
     >
       {logs.length === 0 ? (
         <div className="flex min-h-32 items-center justify-center text-xs text-slate-500">
           No reports yet.
         </div>
       ) : (
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
+        <div className="min-h-0 max-h-[50vh] space-y-3 overflow-y-auto pr-2">
           {logs.map((report) => (
-            <IntelPanelLog
+            <ReportItem
               key={report.id}
               log={report}
               channelNames={channelNames}

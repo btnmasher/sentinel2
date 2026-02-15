@@ -246,7 +246,7 @@ export default function MapShell({
         </section>
         {panel && (
           <section className="card bg-base-200/70 border border-slate-800 h-full min-h-0 overflow-hidden">
-            <div className="card-body h-full min-h-0 overflow-auto p-4">
+            <div className="card-body h-full min-h-0 overflow-hidden p-4">
               {panel}
             </div>
           </section>
