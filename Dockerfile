@@ -2,7 +2,7 @@ FROM golang:1.25-bookworm AS toolchain
 ARG BUN_VERSION=1.3.8
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git bash unzip \
+  && apt-get install -y --no-install-recommends ca-certificates curl git bash unzip libx11-dev \
   && curl -fsSL https://bun.sh/install | bash -s -- bun-v${BUN_VERSION} \
   && ln -s /root/.bun/bin/bun /usr/local/bin/bun \
   && go install github.com/go-task/task/v3/cmd/task@latest \
@@ -30,6 +30,7 @@ COPY --from=deps /app/frontend/node_modules /app/frontend/node_modules
 COPY --from=deps /app/.tmp /app/.tmp
 COPY . .
 RUN rm -f /app/.tmp/bin/taskutil /app/.tmp/bin/taskutil.exe \
+  && task setup:taskutil \
   && task build
 
 FROM debian:bookworm-slim

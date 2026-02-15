@@ -52,13 +52,12 @@ tasks:
     desc: Build frontend bundle without minification.
 
   prepare:embed:
-    deps: [setup:taskutil]
     cmds:
       - "{{.TASKUTIL_BIN}} prepare-embed"
     desc: Copy frontend dist to embed location.
 
   build:backend:
-    deps: [prepare:embed, setup:taskutil]
+    deps: [prepare:embed]
     vars:
       BUILD_VERSION:
         sh: "{{.TASKUTIL_BIN}} version"
@@ -72,7 +71,7 @@ tasks:
     desc: Build backend binary with embedded frontend.
 
   build:backend:linux:
-    deps: [prepare:embed, setup:taskutil]
+    deps: [prepare:embed]
     vars:
       BUILD_VERSION:
         sh: "{{.TASKUTIL_BIN}} version"
@@ -88,7 +87,7 @@ tasks:
     desc: Build backend binary for Linux (amd64).
 
   build:backend:darwin:
-    deps: [prepare:embed, setup:taskutil]
+    deps: [prepare:embed]
     vars:
       BUILD_VERSION:
         sh: "{{.TASKUTIL_BIN}} version"
@@ -104,7 +103,7 @@ tasks:
     desc: Build backend binary for macOS (arm64).
 
   build:backend:windows:
-    deps: [prepare:embed, setup:taskutil]
+    deps: [prepare:embed]
     vars:
       BUILD_VERSION:
         sh: "{{.TASKUTIL_BIN}} version"
@@ -120,7 +119,6 @@ tasks:
     desc: Build backend binary for Windows (amd64).
 
   build:backend:skip-embed:
-    deps: [setup:taskutil]
     vars:
       BUILD_VERSION:
         sh: "{{.TASKUTIL_BIN}} version"
@@ -563,24 +561,3 @@ tasks:
       - go get go@latest
       - go version
     desc: Update module toolchain to latest Go (requires Go 1.21+).
-
-  release:assets:
-    deps: [setup:taskutil]
-    vars:
-      BUILD_VERSION:
-        sh: "{{.TASKUTIL_BIN}} version"
-    cmds:
-      - echo "[release:assets] building frontend/backend release artifacts"
-      - task: build:frontend
-      - echo "[release:assets] preparing dist directory"
-      - rm -rf dist
-      - mkdir -p dist
-      - echo "[release:assets] building backend binaries for linux, macOS, and windows"
-      - task: build:backend:linux
-      - task: build:backend:darwin
-      - task: build:backend:windows
-      - echo "[release:assets] copying backend binaries"
-      - cp "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-linux-amd64" "{{.TASKFILE_DIR}}/dist/"
-      - cp "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-darwin-arm64" "{{.TASKFILE_DIR}}/dist/"
-      - cp "{{.TASKFILE_DIR}}/bin/sentinel2-server-{{.BUILD_VERSION}}-windows-amd64.exe" "{{.TASKFILE_DIR}}/dist/"
-    desc: Build release assets (backend binaries).
