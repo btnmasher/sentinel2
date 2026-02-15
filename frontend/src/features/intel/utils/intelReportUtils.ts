@@ -41,3 +41,11 @@ export const normalizeIntelReport = (input: unknown): IntelReport | null => {
     regions: decodeArray(source.regions),
   };
 };
+
+const CLEAR_REPORT_PATTERN = /\b(clr|clear)\b/i;
+
+export const isClearIntelReport = (
+  report: Pick<IntelReport, "text" | "systems">,
+) => {
+  return report.systems.length > 0 && CLEAR_REPORT_PATTERN.test(report.text);
+};

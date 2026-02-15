@@ -7,6 +7,7 @@ import {
 } from "@/features/map";
 import { useUIStore } from "@/features/ui";
 import { LOG_COLORS } from "@/utils/logColors";
+import { isClearIntelReport } from "../utils/intelReportUtils";
 
 function timeSuffix(minutes: number) {
   if (minutes <= 0) return "now";
@@ -83,6 +84,8 @@ export default function ReportItem({
     return `Channel ID: ${log.channel_id}`;
   }, [channelNames, log.channel_id]);
 
+  const isClearReport = useMemo(() => isClearIntelReport(log), [log]);
+
   const showMenu = (event: React.MouseEvent) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -124,7 +127,14 @@ export default function ReportItem({
     >
       <div className="flex items-center justify-between text-xs text-slate-400">
         <span style={{ color: timeColor.color }}>{timeSuffix(timePassed)}</span>
-        <span>{timestamp}</span>
+        <div className="flex items-center gap-2">
+          {isClearReport && (
+            <span className="rounded border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-300">
+              Cleared
+            </span>
+          )}
+          <span>{timestamp}</span>
+        </div>
       </div>
       <p className="text-sm text-slate-200 mt-1 space-x-1">
         {splitText.map((chunk, idx) => {

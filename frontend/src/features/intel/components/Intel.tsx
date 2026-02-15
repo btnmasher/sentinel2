@@ -45,11 +45,13 @@ export default function Intel() {
       includeAdjacent?: boolean;
       clearExisting?: boolean;
       resetFilters?: boolean;
+      clearRatio?: number;
     };
 
     type DebugAPI = {
       generateFakeIntelReports?: (options?: FakeIntelOptions) => {
         created: number;
+        cleared: number;
         regions: number[];
         adjacentRegion?: number;
       };
@@ -69,6 +71,7 @@ export default function Intel() {
       );
       const includeAdjacent = options?.includeAdjacent ?? false;
       const resetFilters = options?.resetFilters ?? true;
+      const clearRatio = Math.max(0, Math.min(0.6, options?.clearRatio ?? 0.2));
 
       const mapState = useMapStore.getState();
       const intelState = useIntelStore.getState();
@@ -79,7 +82,7 @@ export default function Intel() {
           .filter((value) => Number.isFinite(value)),
       );
       if (loadedRegions.size === 0) {
-        const result = { created: 0, regions: [] };
+        const result = { created: 0, cleared: 0, regions: [] };
         console.warn(
           "[sentinelDebug] no loaded regions; load at least one region first",
           result,
@@ -115,6 +118,7 @@ export default function Intel() {
       if (scopedSystems.length === 0) {
         const result = {
           created: 0,
+          cleared: 0,
           regions: Array.from(regionScope),
           adjacentRegion: chosenAdjacent,
         };
@@ -149,8 +153,43 @@ export default function Intel() {
         regions: number[];
         channel_id: string;
       }> = [];
+      const threatCandidates: Array<{
+        id: number;
+        time: number;
+        systems: Array<{
+          system: number;
+          name: string;
+          constellation: number;
+          region: number;
+        }>;
+      }> = [];
+      let cleared = 0;
 
       for (let i = 0; i < count; i++) {
+        const shouldGenerateClear =
+          threatCandidates.length > 0 && Math.random() < clearRatio;
+        if (shouldGenerateClear) {
+          const targetReport = pickRandom(threatCandidates);
+          const targetSystem = pickRandom(targetReport.systems);
+          const clearTime = Math.min(
+            nowSeconds,
+            targetReport.time + 30 + Math.floor(Math.random() * 240),
+          );
+
+          fakeReports.push({
+            id: batchID + i,
+            recordId: `debug-${batchID}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+            time: clearTime,
+            author: pickRandom(authors),
+            text: `${targetSystem.name} CLR`,
+            systems: [targetSystem],
+            regions: [targetSystem.region],
+            channel_id: "debug",
+          });
+          cleared++;
+          continue;
+        }
+
         const picks = new Map<number, (typeof scopedSystems)[number]>();
         while (picks.size < 1 && picks.size < scopedSystems.length) {
           const candidate = pickRandom(scopedSystems);
@@ -166,7 +205,7 @@ export default function Intel() {
         const suffix =
           pickedSystems.length > 1 ? ` +${pickedSystems.length - 1}` : "";
 
-        fakeReports.push({
+        const threatReport = {
           id: batchID + i,
           recordId: `debug-${batchID}-${i}-${Math.random().toString(36).slice(2, 8)}`,
           time: reportTime,
@@ -180,6 +219,12 @@ export default function Intel() {
           })),
           regions: pickedRegions,
           channel_id: "debug",
+        };
+        fakeReports.push(threatReport);
+        threatCandidates.push({
+          id: threatReport.id,
+          time: threatReport.time,
+          systems: threatReport.systems,
         });
       }
 
@@ -195,6 +240,7 @@ export default function Intel() {
 
       const result = {
         created: fakeReports.length,
+        cleared,
         regions: Array.from(regionScope),
         adjacentRegion: chosenAdjacent,
       };

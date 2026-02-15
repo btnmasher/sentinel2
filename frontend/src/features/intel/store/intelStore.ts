@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { ensurePersistReset } from "@/app/store/persistReset";
 import type { IntelReport } from "../types";
+import { isClearIntelReport } from "../utils/intelReportUtils";
 
 export const INTEL_STORE_VERSION = 1;
 
@@ -35,12 +36,19 @@ type IntelState = {
 
 const computeLastIntelSystems = (reports: IntelReport[]) => {
   const latestBySystem: Record<number, number> = {};
-  for (const log of reports) {
-    for (const system of log.systems) {
-      const current = latestBySystem[system.system];
-      if (!current || log.time > current) {
-        latestBySystem[system.system] = log.time;
+  const ordered = [...reports].sort((a, b) => {
+    if (a.time !== b.time) return a.time - b.time;
+    return a.id - b.id;
+  });
+  for (const log of ordered) {
+    if (isClearIntelReport(log)) {
+      for (const system of log.systems) {
+        delete latestBySystem[system.system];
       }
+      continue;
+    }
+    for (const system of log.systems) {
+      latestBySystem[system.system] = log.time;
     }
   }
   return latestBySystem;
