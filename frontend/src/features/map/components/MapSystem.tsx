@@ -3,7 +3,7 @@ import { useIntelStore } from "@/features/intel";
 import { useMapStore } from "../store/mapStore";
 import { colorForAge, colorToHex, transformComponent } from "../utils/mapUtils";
 import { useSettingsStore } from "@/app/store/settingsStore";
-import { useUIStore } from "@/app/store/uiStore";
+import { useOpenSystemContextMenu } from "../hooks/useOpenSystemContextMenu";
 
 export default function MapSystem({
   systemId,
@@ -29,7 +29,7 @@ export default function MapSystem({
 
   const logFilters = useIntelStore((s) => s.logFilters);
   const lastIntelSystems = useIntelStore((s) => s.lastIntelSystems);
-  const setContextMenu = useUIStore((s) => s.setContextMenu);
+  const openSystemContextMenu = useOpenSystemContextMenu();
 
   const [intelAgeSeconds, setIntelAgeSeconds] = useState<number | undefined>(
     undefined,
@@ -143,21 +143,7 @@ export default function MapSystem({
   };
 
   const handleContextMenu = (event: React.MouseEvent<SVGGElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const rect = event.currentTarget.getBoundingClientRect();
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      anchorRect: {
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-      },
-      type: "system",
-      systemId,
-    });
+    openSystemContextMenu(event, systemId);
   };
 
   return (

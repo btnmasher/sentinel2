@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { IntelReport } from "../types";
-import { REGION_MAP, useMapStore } from "@/features/map";
+import {
+  REGION_MAP,
+  useMapStore,
+  useOpenSystemContextMenu,
+} from "@/features/map";
 import { useUIStore } from "@/features/ui";
 import { LOG_COLORS } from "@/utils/logColors";
 
@@ -22,6 +26,7 @@ export default function ReportItem({
   const updateMapConfig = useMapStore((s) => s.updateMapConfig);
   const setSystemSearch = useMapStore((s) => s.setSystemSearch);
   const setContextMenu = useUIStore((s) => s.setContextMenu);
+  const openSystemContextMenu = useOpenSystemContextMenu();
 
   const [timePassed, setTimePassed] = useState(0);
 
@@ -149,6 +154,13 @@ export default function ReportItem({
                 onClick={() =>
                   updateMapConfig({ mapRegions: [...mapRegions, regionId] })
                 }
+                onContextMenu={(event) =>
+                  openSystemContextMenu(
+                    event,
+                    system.system,
+                    `Load ${regionName} to open system menu`,
+                  )
+                }
               >
                 {chunk.text}
               </button>
@@ -159,6 +171,13 @@ export default function ReportItem({
               key={idx}
               className="text-sky-300"
               onClick={() => setSystemSearch(system.system)}
+              onContextMenu={(event) =>
+                openSystemContextMenu(
+                  event,
+                  system.system,
+                  "System menu unavailable",
+                )
+              }
             >
               {chunk.text}
             </button>

@@ -12,6 +12,7 @@ export { default as MapCanvas } from "./components/MapCanvas";
 export { default as MapPageShell } from "./components/MapPageShell";
 export { default as MapShell } from "./components/MapShell";
 export { default as MapZoomControls } from "./components/MapZoomControls";
+export { useOpenSystemContextMenu } from "./hooks/useOpenSystemContextMenu";
 export {
   default as RegionSelect,
   MapLayoutSelect,
