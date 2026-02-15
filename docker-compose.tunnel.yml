@@ -5,7 +5,7 @@ services:
 
   cloudflare-tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: cloudflare-tunnel
+    container_name: cf-tun-sentinel2
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     env_file:
@@ -19,5 +19,5 @@ services:
 
 networks:
   tunnel:
-    name: cloudflare-tunnel-net
+    name: cf-net-sentinel2
     driver: bridge

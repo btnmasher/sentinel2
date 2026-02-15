@@ -342,26 +342,10 @@ func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 	return record, nil
 }
 
-func tokenExpiry(token *oauth2.Token) int64 {
-	if !token.Expiry.IsZero() {
-		return token.Expiry.Unix()
-	}
-	return time.Now().Add(time.Hour).Unix()
-}
-
 func refreshExpiry(token *oauth2.Token) int64 {
 	value := token.Extra("refresh_expires_in")
 	if v, ok := value.(float64); ok {
 		return time.Now().Add(time.Duration(v) * time.Second).Unix()
 	}
 	return time.Now().Add(30 * 24 * time.Hour).Unix()
-}
-
-func absoluteURL(c *core.RequestEvent, path string) string {
-	req := c.Request
-	scheme := "http"
-	if req.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + req.Host + path
 }

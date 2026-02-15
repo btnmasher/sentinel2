@@ -1,5 +1,6 @@
 services:
   sentinel2:
+    image: ${SENTINEL2_IMAGE:-sentinel2:local}
     build: .
     ports:
       - "8090:8090"

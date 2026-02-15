@@ -65,7 +65,7 @@ type Config struct {
 
 func Load() Config {
 	cfg := Config{}
-	parser := flags.NewParser(&cfg, flags.Default)
+	parser := flags.NewParser(&cfg, flags.Default|flags.IgnoreUnknown)
 	_, parseErr := parser.Parse()
 	if parseErr == nil {
 		cfg.AuthBackend = normalizeAuthBackend(cfg.AuthBackend)
