@@ -1,4 +1,4 @@
-FROM golang:1.25-bullseye AS toolchain
+FROM golang:1.25-bookworm AS toolchain
 ARG BUN_VERSION=1.3.8
 WORKDIR /app
 RUN apt-get update \
