@@ -2,7 +2,7 @@ FROM golang:1.25-bookworm AS toolchain
 ARG BUN_VERSION=1.3.8
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git bash \
+  && apt-get install -y --no-install-recommends ca-certificates curl git bash unzip \
   && curl -fsSL https://bun.sh/install | bash -s -- bun-v${BUN_VERSION} \
   && ln -s /root/.bun/bin/bun /usr/local/bin/bun \
   && go install github.com/go-task/task/v3/cmd/task@latest \
