@@ -1,0 +1,23 @@
+services:
+  sentinel2:
+    networks:
+      - tunnel
+
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    env_file:
+      - .env
+    networks:
+      - tunnel
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    depends_on:
+      - sentinel2
+
+networks:
+  tunnel:
+    name: cloudflare-tunnel-net
+    driver: bridge

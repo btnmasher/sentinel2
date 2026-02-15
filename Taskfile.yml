@@ -290,6 +290,31 @@ tasks:
       - docker compose up --build -d
     desc: Run migrations, then start production compose in detached mode.
 
+  docker:tunnel:up:
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build
+    desc: Start production compose with Cloudflare Tunnel sidecar.
+
+  docker:tunnel:up:detach:
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d
+    desc: Start production compose with Cloudflare Tunnel sidecar in detached mode.
+
+  docker:tunnel:logs:
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml logs -f
+    desc: Tail production+tunnel compose logs.
+
+  docker:tunnel:status:
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml ps
+    desc: Show production+tunnel compose status.
+
+  docker:tunnel:down:
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml down
+    desc: Stop production+tunnel compose.
+
   docker:dev:up:
     cmds:
       - docker compose -f docker-compose.dev.yml up --build

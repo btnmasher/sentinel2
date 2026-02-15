@@ -87,6 +87,12 @@ Or with compose:
 docker compose up --build
 ```
 
+Optional Cloudflare Tunnel sidecar (separate compose overlay):
+```
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build
+```
+Set `CF_TUNNEL_TOKEN` in `.env` before using tunnel mode.
+
 Useful commands:
 Task-wrapped commands (`task docker:*`) require local Task runner to be installed.
 - `task docker:build` build the image locally with version tagging.
@@ -99,9 +105,15 @@ Task-wrapped commands (`task docker:*`) require local Task runner to be installe
 - `task docker:down` stop production compose.
 - `task docker:restart` alias for `task docker:up:detach`.
 - `task docker:restart:migrate` alias for `task docker:up:migrate:detach`.
+- `task docker:tunnel:up` start production compose with Cloudflare Tunnel sidecar.
+- `task docker:tunnel:up:detach` start production+tunnel compose in detached mode.
+- `task docker:tunnel:logs` tail production+tunnel compose logs.
+- `task docker:tunnel:status` show production+tunnel compose status.
+- `task docker:tunnel:down` stop production+tunnel compose.
 Raw Docker/Compose fallback (no Task runner required):
 - `docker run -p 8090:8090 -v pb_data:/app/pb_data sentinel2` run with a named volume.
 - `docker compose up --build` build and run via compose.
+- `docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build` build and run with Cloudflare Tunnel sidecar.
 - `docker compose logs -f` tail compose logs.
 - `docker compose down` stop services (data remains in the volume).
 Set `DOCKER_IMAGE=sentinel2:dev` to control the tag used by Taskfile.

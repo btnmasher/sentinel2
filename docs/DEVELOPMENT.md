@@ -76,6 +76,13 @@ See `docs/WINDOWS_DEVELOPMENT.md` for the full Windows notes.
 ### `task docker:build`
 - `docker build --build-arg BUILD_VERSION=... -t sentinel2 .`
 
+### Optional: Cloudflare Tunnel Overlay
+- compose overlay file: `docker-compose.tunnel.yml`
+- requires `CF_TUNNEL_TOKEN` in `.env`
+- runs via:
+  - `task docker:tunnel:up`
+  - `task docker:tunnel:up:detach`
+
 ### Dockerfile stages
 - `toolchain`: installs Go/Bun/Task and base packages
 - `deps`: caches backend/frontend dependencies
@@ -223,6 +230,11 @@ Detached HEAD:
 | `task docker:restart` | Alias for docker:up:detach. |
 | `task docker:restart:migrate` | Alias for docker:up:migrate:detach. |
 | `task docker:status` | Show production compose status. |
+| `task docker:tunnel:down` | Stop production+tunnel compose. |
+| `task docker:tunnel:logs` | Tail production+tunnel compose logs. |
+| `task docker:tunnel:status` | Show production+tunnel compose status. |
+| `task docker:tunnel:up` | Start production compose with Cloudflare Tunnel sidecar. |
+| `task docker:tunnel:up:detach` | Start production+tunnel compose in detached mode. |
 | `task docker:up` | Start production compose. |
 | `task docker:up:detach` | Start production compose in detached mode. |
 | `task docker:up:migrate` | Run migrations, then start production compose. |
