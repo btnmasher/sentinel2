@@ -242,13 +242,21 @@ tasks:
     desc: Build Docker image with version tags.
 
   docker:up:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
-      - docker compose up --build
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose up --build
     desc: Start production compose.
 
   docker:up:detach:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
-      - docker compose up --build -d
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose up --build -d
     desc: Start production compose in detached mode.
 
   docker:logs:
@@ -277,25 +285,41 @@ tasks:
     desc: Alias for docker:up:migrate:detach.
 
   docker:up:migrate:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
-      - docker compose run --rm sentinel2 /app/sentinel2-server migrate
-      - docker compose up --build
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose run --rm sentinel2 /app/sentinel2-server migrate
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose up --build
     desc: Run migrations, then start production compose.
 
   docker:up:migrate:detach:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
-      - docker compose run --rm sentinel2 /app/sentinel2-server migrate
-      - docker compose up --build -d
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose run --rm sentinel2 /app/sentinel2-server migrate
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose up --build -d
     desc: Run migrations, then start production compose in detached mode.
 
   docker:tunnel:up:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
-      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build
     desc: Start production compose with Cloudflare Tunnel sidecar.
 
   docker:tunnel:up:detach:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
     cmds:
-      - docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d
     desc: Start production compose with Cloudflare Tunnel sidecar in detached mode.
 
   docker:tunnel:up:ghcr:

@@ -1,7 +1,10 @@
 services:
   sentinel2:
     image: ${SENTINEL2_IMAGE:-sentinel2:local}
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-}
     ports:
       - "8090:8090"
     env_file:
