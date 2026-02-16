@@ -3,6 +3,7 @@ import { useShallow } from "zustand/shallow";
 import useConfirm from "@/app/hooks/useConfirm";
 import PaginationControls from "@/components/PaginationControls";
 import Panel from "@/components/Panel";
+import ShadowedScrollArea from "@/components/ShadowedScrollArea";
 import { useAdminJobRunsStore } from "../store/adminJobRunsStore";
 import type { DateRange } from "react-day-picker";
 import DateRangePicker from "@/components/DateRangePicker";
@@ -164,20 +165,22 @@ export default function JobRunsSection() {
           <JobRunsEmptyState hasFilters={hasFilters} />
         ) : (
           jobRuns.length > 0 && (
-            <JobRunsList
-              jobRuns={jobRuns}
-              now={now}
-              onCancel={(jobId) =>
-                requestConfirm({
-                  title: "Cancel Job",
-                  body: `Cancel job ${jobId}?`,
-                  onConfirm: () => void cancelJob(jobId),
-                  confirmLabel: "Cancel job",
-                  cancelLabel: "Keep running",
-                  tone: "danger",
-                })
-              }
-            />
+            <ShadowedScrollArea>
+              <JobRunsList
+                jobRuns={jobRuns}
+                now={now}
+                onCancel={(jobId) =>
+                  requestConfirm({
+                    title: "Cancel Job",
+                    body: `Cancel job ${jobId}?`,
+                    onConfirm: () => void cancelJob(jobId),
+                    confirmLabel: "Cancel job",
+                    cancelLabel: "Keep running",
+                    tone: "danger",
+                  })
+                }
+              />
+            </ShadowedScrollArea>
           )
         )}
       </div>

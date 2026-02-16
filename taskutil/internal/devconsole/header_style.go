@@ -94,7 +94,8 @@ func (m viewState) headerLines(width int) []string {
 		lines = append(lines, renderHelpRows([]helpItem{
 			{keys: "r", desc: "restart focused"},
 			{keys: "f/b", desc: "restart fe/be"},
-			{keys: "ctrl+f/ctrl+r", desc: "rebuild+restart"},
+			{keys: "ctrl+r", desc: "rebuild+restart focused"},
+			{keys: "ctrl+f/ctrl+b", desc: "rebuild+restart fe/be"},
 			{keys: "ctrl+g", desc: "migrate+restart backend"},
 			{keys: "up/down + enter/y", desc: "copy selected line (line mode)"},
 		}, width)...)

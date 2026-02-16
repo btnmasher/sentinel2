@@ -1,5 +1,6 @@
 import CharacterCard from "@/components/CharacterCard";
 import Panel from "@/components/Panel";
+import ShadowedScrollArea from "@/components/ShadowedScrollArea";
 import { ArrowLeft } from "lucide-react";
 import { ADMIN_MODAL } from "../store/adminStore";
 import { useAdminStore } from "../store/adminStore";
@@ -92,19 +93,23 @@ export default function AccountActionsSection({
             </p>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
-            {user.characters.map((character) => (
-              <CharacterCard
-                key={character.id}
-                character={character}
-                onSetMain={() => handleSetMain(character)}
-                onRefresh={() => void handleRefreshCharacter(character)}
-                onRevoke={() => handleRevokeCharacter(character)}
-                onRemove={() => handleRemoveCharacter(character)}
-                disableRemove={character.is_main && user.characters.length > 1}
-              />
-            ))}
-          </div>
+          <ShadowedScrollArea className="flex-1" scrollClassName="pr-1">
+            <div className="space-y-3">
+              {user.characters.map((character) => (
+                <CharacterCard
+                  key={character.id}
+                  character={character}
+                  onSetMain={() => handleSetMain(character)}
+                  onRefresh={() => void handleRefreshCharacter(character)}
+                  onRevoke={() => handleRevokeCharacter(character)}
+                  onRemove={() => handleRemoveCharacter(character)}
+                  disableRemove={
+                    character.is_main && user.characters.length > 1
+                  }
+                />
+              ))}
+            </div>
+          </ShadowedScrollArea>
 
           <div className="mt-auto rounded-xl border border-slate-800/70 bg-base-300/60 px-3 py-3">
             <div className="flex flex-wrap items-center gap-2">

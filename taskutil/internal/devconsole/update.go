@@ -140,6 +140,23 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resize(m.width, m.height)
 			handled = true
 		case "ctrl+r":
+			name := m.focusedName()
+			label := "rebuild " + name + " + restart"
+			cmds = append(cmds, m.actionCmd(label+" in progress", label+" succeeded", label+" failed", func() error {
+				if name == "frontend" {
+					if err := m.pm.rebuildFrontend(); err != nil {
+						return err
+					}
+				} else {
+					if err := m.pm.rebuildBackend(); err != nil {
+						return err
+					}
+				}
+				return m.pm.restart(name)
+			}, []string{name}))
+			m.resize(m.width, m.height)
+			handled = true
+		case "ctrl+b":
 			cmds = append(cmds, m.actionCmd("rebuild backend + restart in progress", "rebuild backend + restart succeeded", "rebuild backend + restart failed", func() error {
 				if err := m.pm.rebuildBackend(); err != nil {
 					return err

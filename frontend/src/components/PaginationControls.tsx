@@ -30,7 +30,9 @@ export default function PaginationControls({
       >
         Prev
       </button>
-      <span className="text-slate-400">Page {page}</span>
+      <span className="inline-flex min-w-[8ch] justify-center text-slate-400 tabular-nums">
+        Page {page}
+      </span>
       <button
         className={buttonClass}
         disabled={!hasMore || loading}

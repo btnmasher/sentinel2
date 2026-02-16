@@ -118,6 +118,9 @@ func registerRoutes(app *pocketbase.PocketBase, cfg config.Config, deps dependen
 			adminGroup.POST("/map-data/region-layout", deps.adminMapDataUpdate.RunRegionLayout)
 			adminGroup.POST("/characters/refresh-all", deps.admin.RefreshAllCharacters)
 			adminGroup.POST("/jobs/cleanup", deps.admin.RunCleanupJob)
+			if cfg.DebugEnabled {
+				adminGroup.POST("/debug/seed-search-users", deps.admin.SeedSearchUsers)
+			}
 			adminGroup.POST("/characters/{id}/refresh", deps.admin.RefreshCharacter)
 			adminGroup.POST("/characters/{id}/revoke", deps.admin.RevokeCharacterTokens)
 			adminGroup.POST("/characters/{id}/move", deps.admin.MoveCharacter)

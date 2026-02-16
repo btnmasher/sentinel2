@@ -37,17 +37,38 @@ func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, 
 
 func (h *Handler) Search(c *core.RequestEvent) error {
 	query := strings.TrimSpace(c.Request.URL.Query().Get("q"))
-	if len(query) < 2 {
-		return c.JSON(http.StatusOK, map[string]any{"results": []searchItem{}})
+	startsWith := strings.ToUpper(strings.TrimSpace(c.Request.URL.Query().Get("startsWith")))
+	if len(startsWith) > 1 {
+		startsWith = ""
 	}
+	page := 1
+	limit := 25
+	if value := strings.TrimSpace(c.Request.URL.Query().Get("page")); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if value := strings.TrimSpace(c.Request.URL.Query().Get("limit")); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+	offset := (page - 1) * limit
 
-	filter := "eve_character_name ~ {:q}"
-	params := dbx.Params{"q": "%" + query + "%"}
-	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionCharacters, filter, "eve_character_name", 20, 0, params)
+	filter, params := buildCharacterSearchFilter(query, startsWith)
+	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionCharacters, filter, "eve_character_name", limit+1, offset, params)
 	if recordsErr != nil {
 		return router.NewInternalServerError("Failed to search characters.", logging.Fields{
-			"query": query,
+			"query":      query,
+			"startsWith": startsWith,
+			"page":       page,
+			"limit":      limit,
 		})
+	}
+	hasMore := false
+	if len(records) > limit {
+		hasMore = true
+		records = records[:limit]
 	}
 
 	mainNames := map[string]string{}
@@ -75,7 +96,159 @@ func (h *Handler) Search(c *core.RequestEvent) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"results": results})
+	return c.JSON(http.StatusOK, map[string]any{
+		"results":          results,
+		"page":             page,
+		"limit":            limit,
+		"hasMore":          hasMore,
+		"availableLetters": h.availableSearchLetters(),
+	})
+}
+
+func (h *Handler) SeedSearchUsers(c *core.RequestEvent) error {
+	payload := struct {
+		Count  int    `json:"count"`
+		Prefix string `json:"prefix"`
+	}{}
+	if c.Request.ContentLength > 0 {
+		if bindErr := c.BindBody(&payload); bindErr != nil {
+			return router.NewBadRequestError("Invalid payload.", logging.Fields{
+				"error": bindErr,
+			})
+		}
+	}
+	if payload.Count <= 0 {
+		payload.Count = 50
+	}
+	if payload.Count > 1000 {
+		payload.Count = 1000
+	}
+	payload.Prefix = strings.TrimSpace(payload.Prefix)
+	if payload.Prefix == "" {
+		payload.Prefix = "Debug"
+	}
+
+	userCollection, userCollectionErr := h.App.FindCollectionByNameOrId(store.CollectionUsers)
+	if userCollectionErr != nil {
+		return router.NewInternalServerError("Failed to load users collection.", logging.Fields{
+			"error": userCollectionErr.Error(),
+		})
+	}
+	charCollection, charCollectionErr := h.App.FindCollectionByNameOrId(store.CollectionCharacters)
+	if charCollectionErr != nil {
+		return router.NewInternalServerError("Failed to load characters collection.", logging.Fields{
+			"error": charCollectionErr.Error(),
+		})
+	}
+
+	created := 0
+	letters := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	baseCharacterID := int(time.Now().Unix())*10000 + 900000000
+	for i := 0; i < payload.Count; i++ {
+		letter := string(letters[i%len(letters)])
+		name := fmt.Sprintf("%s %s%03d", payload.Prefix, letter, i+1)
+		characterID := baseCharacterID + i
+
+		userRecord := core.NewRecord(userCollection)
+		userRecord.Set("sub", fmt.Sprintf("debug-%d", characterID))
+		userRecord.Set("auth_provider", "debug")
+		userRecord.Set("auth_provider_sub", fmt.Sprintf("%d", characterID))
+		userRecord.SetEmail(fmt.Sprintf("debug-%d@auth.invalid", characterID))
+		userRecord.SetRandomPassword()
+		userRecord.Set("created_at", time.Now())
+		userRecord.Set("access_level", "user")
+		userRecord.Set("eve_character_id", characterID)
+		userRecord.Set("eve_character_name", name)
+		if saveErr := h.App.Save(userRecord); saveErr != nil {
+			return router.NewInternalServerError("Failed to create debug user.", logging.Fields{
+				"error": saveErr.Error(),
+				"name":  name,
+			})
+		}
+
+		charRecord := core.NewRecord(charCollection)
+		charRecord.Set("user", userRecord.Id)
+		charRecord.Set("eve_character_id", characterID)
+		charRecord.Set("eve_character_name", name)
+		charRecord.Set("is_main", true)
+		charRecord.Set("esi_token_valid", true)
+		if saveErr := h.App.Save(charRecord); saveErr != nil {
+			return router.NewInternalServerError("Failed to create debug character.", logging.Fields{
+				"error":        saveErr.Error(),
+				"name":         name,
+				"character_id": characterID,
+			})
+		}
+
+		created++
+	}
+
+	h.logAction(
+		c,
+		"debug.search_seed",
+		fmt.Sprintf("Seeded %d debug search users", created),
+		"",
+		"",
+		nil,
+	)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"created": created,
+		"prefix":  payload.Prefix,
+	})
+}
+
+func buildCharacterSearchFilter(query string, startsWith string) (string, dbx.Params) {
+	filter := "user != \"\""
+	params := dbx.Params{}
+	if query != "" {
+		filter = appendFilter(filter, "eve_character_name ~ {:q}")
+		params["q"] = "%" + query + "%"
+	}
+	if isSearchPrefix(startsWith) {
+		filter = appendFilter(filter, "eve_character_name ~ {:startsWith}")
+		params["startsWith"] = startsWith + "%"
+	}
+	return filter, params
+}
+
+func (h *Handler) availableSearchLetters() []string {
+	letters := []string{}
+	for _, token := range searchPrefixTokens() {
+		letterString := token
+		filter, params := buildCharacterSearchFilter("", letterString)
+		records, recordsErr := h.App.FindRecordsByFilter(
+			store.CollectionCharacters,
+			filter,
+			"",
+			1,
+			0,
+			params,
+		)
+		if recordsErr == nil && len(records) > 0 {
+			letters = append(letters, letterString)
+		}
+	}
+	return letters
+}
+
+func searchPrefixTokens() []string {
+	tokens := make([]string, 0, 36)
+	for digit := '0'; digit <= '9'; digit++ {
+		tokens = append(tokens, string(digit))
+	}
+	for letter := 'A'; letter <= 'Z'; letter++ {
+		tokens = append(tokens, string(letter))
+	}
+	return tokens
+}
+
+func isSearchPrefix(value string) bool {
+	if len(value) != 1 {
+		return false
+	}
+	ch := value[0]
+	return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z')
 }
 
 func (h *Handler) AuditLogs(c *core.RequestEvent) error {

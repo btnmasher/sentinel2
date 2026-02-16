@@ -13,7 +13,7 @@ export default function JobRunsList({
   onCancel,
 }: JobRunsListProps) {
   return (
-    <ul className="h-full min-h-0 overflow-auto space-y-2 text-xs">
+    <ul className="space-y-2 text-xs">
       {jobRuns.map(({ parent, steps }) => (
         <JobRunCard
           key={parent.job_id || parent.id}

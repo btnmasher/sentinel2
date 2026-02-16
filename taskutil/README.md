@@ -48,8 +48,9 @@ Common env vars:
 - `tab`, `left/right`, `1`, `2`: pane focus
 - `r`: restart focused process
 - `f` / `b`: restart frontend/backend
+- `Ctrl+R`: rebuild and restart focused process
 - `Ctrl+F`: rebuild frontend and restart frontend
-- `Ctrl+R`: rebuild backend and restart backend
+- `Ctrl+B`: rebuild backend and restart backend
 - `Ctrl+G`: run migrate then restart backend
 - `up/down/pgup/pgdn`: scroll focused pane
 - `home` / `end`: jump to top / follow bottom

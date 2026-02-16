@@ -320,6 +320,24 @@
   box-shadow: 0 1px 0 0 color-mix(in oklab, currentColor 14%, transparent);
 }
 
+.starts-with-token-available {
+  color: #7dd3fc;
+  filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.3));
+}
+
+.starts-with-token-available-hover:hover {
+  color: #bae6fd;
+}
+
+[data-theme="sentinel-light"] .starts-with-token-available {
+  color: #0369a1;
+  filter: drop-shadow(0 0 4px rgba(3, 105, 161, 0.2));
+}
+
+[data-theme="sentinel-light"] .starts-with-token-available-hover:hover {
+  color: #075985;
+}
+
 .btn-outline:hover {
   background-color: color-mix(in oklab, currentColor 12%, transparent);
   box-shadow: 0 1px 0 0 color-mix(in oklab, currentColor 20%, transparent);
