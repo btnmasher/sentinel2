@@ -3,15 +3,26 @@ import { useShallow } from "zustand/react/shallow";
 import useModal from "@/app/hooks/useModal";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import SelectionDropdown from "@/components/SelectionDropdown";
+import { INTEL_THREAT_STAGE_COLORS } from "@/features/map";
 
 const ALARM_SOUNDS = ["woop", "school", "grocery", "blip", "progod"];
-const DEFAULT_FLASH_SECONDS = 15;
-const DEFAULT_FADE_SECONDS = 300;
 const SETTINGS_MODAL = {
   Reset: "reset",
   ClearData: "clearData",
 } as const;
 type SettingsModalKey = (typeof SETTINGS_MODAL)[keyof typeof SETTINGS_MODAL];
+const THREAT_STAGE_CONFIG = [
+  {
+    key: "flash",
+    label: "Flashing",
+    color: INTEL_THREAT_STAGE_COLORS.flash,
+    flashing: true,
+  },
+  { key: "red", label: "Red", color: INTEL_THREAT_STAGE_COLORS.red },
+  { key: "orange", label: "Orange", color: INTEL_THREAT_STAGE_COLORS.orange },
+  { key: "yellow", label: "Yellow", color: INTEL_THREAT_STAGE_COLORS.yellow },
+  { key: "green", label: "Green", color: INTEL_THREAT_STAGE_COLORS.green },
+] as const;
 
 export default function Settings() {
   const { settings, toggle, apply, setTheme, reset } = useSettingsStore(
@@ -128,6 +139,17 @@ export default function Settings() {
     void audio.play().catch(() => undefined);
   }, [settings.alarm.enabled, settings.alarm.sound, settings.alarm.volume]);
 
+  const setThreatTiming = (
+    stage: keyof typeof settings.intel.threatTimings,
+    value: number,
+  ) => {
+    const nextValue = Math.max(0, Math.min(900, Math.round(value / 5) * 5));
+    apply("intel", "threatTimings", {
+      ...settings.intel.threatTimings,
+      [stage]: nextValue,
+    });
+  };
+
   return (
     <div className="grid gap-6 lg:grid-cols-2 items-start">
       <div className="grid gap-6">
@@ -156,63 +178,66 @@ export default function Settings() {
                 />
               </label>
             </div>
-            <div className="rounded-md bg-base-300/30 px-3 py-2 space-y-2">
-              <label className="flex items-center justify-between">
-                <span>Intel highlight flash</span>
-                <input
-                  className="toggle toggle-primary"
-                  type="checkbox"
-                  checked={settings.intel.flashEnabled}
-                  onChange={() => toggle("intel", "flashEnabled")}
-                />
-              </label>
-              <div>
-                <label className="label text-xs mb-1 block">
-                  Flash duration: {settings.intel.flashSeconds}s (default{" "}
-                  {DEFAULT_FLASH_SECONDS}s)
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={300}
-                  step={5}
-                  value={settings.intel.flashSeconds}
-                  onChange={(e) =>
-                    apply("intel", "flashSeconds", Number(e.target.value))
-                  }
-                  className="range range-xs"
-                  disabled={!settings.intel.flashEnabled}
-                />
+            <div className="rounded-md bg-base-300/30 px-3 py-2 space-y-3">
+              <div className="text-xs text-slate-400">
+                Threat stage timings cascade in order: flashing -&gt; red -&gt;
+                orange -&gt; yellow -&gt; green.
               </div>
-            </div>
-            <div className="rounded-md bg-base-300/15 px-3 py-2 space-y-2">
-              <label className="flex items-center justify-between">
-                <span>Intel highlight fade</span>
-                <input
-                  className="toggle toggle-primary"
-                  type="checkbox"
-                  checked={settings.intel.fadeEnabled}
-                  onChange={() => toggle("intel", "fadeEnabled")}
-                />
-              </label>
-              <div>
-                <label className="label text-xs mb-1 block">
-                  Fade duration: {settings.intel.fadeSeconds}s (default{" "}
-                  {DEFAULT_FADE_SECONDS}s)
-                </label>
-                <input
-                  type="range"
-                  min={10}
-                  max={900}
-                  step={10}
-                  value={settings.intel.fadeSeconds}
-                  onChange={(e) =>
-                    apply("intel", "fadeSeconds", Number(e.target.value))
-                  }
-                  className="range range-xs"
-                  disabled={!settings.intel.fadeEnabled}
-                />
-              </div>
+              {THREAT_STAGE_CONFIG.map((stage) => (
+                <div key={stage.key} className="rounded-md bg-base-300/20 p-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 20 20"
+                        aria-hidden
+                      >
+                        <rect
+                          x="1"
+                          y="1"
+                          width="18"
+                          height="18"
+                          rx="4"
+                          ry="4"
+                          fill={stage.color}
+                          stroke={stage.color}
+                          strokeWidth="1.5"
+                          className={stage.flashing ? "map-system-alert" : ""}
+                        />
+                      </svg>
+                      <span className="text-sm">{stage.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={900}
+                        step={5}
+                        value={settings.intel.threatTimings[stage.key]}
+                        onChange={(e) =>
+                          setThreatTiming(stage.key, Number(e.target.value))
+                        }
+                        className="input input-xs w-20"
+                      />
+                      <span className="text-xs text-slate-400">sec</span>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={900}
+                      step={5}
+                      value={settings.intel.threatTimings[stage.key]}
+                      onChange={(e) =>
+                        setThreatTiming(stage.key, Number(e.target.value))
+                      }
+                      className="range range-xs"
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

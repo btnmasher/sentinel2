@@ -78,6 +78,7 @@ type DialogState = Record<DialogStateKey, boolean>;
 export type ModalConfig = {
   title?: string;
   body: ReactNode;
+  actions?: ReactNode;
   sizeClass?: string;
   dismissible?: boolean;
   closeOnOverlay?: boolean;
@@ -112,6 +113,7 @@ type UIState = {
     open: boolean;
     title?: string;
     body?: ReactNode;
+    actions?: ReactNode;
     sizeClass?: string;
     dismissible?: boolean;
     closeOnOverlay?: boolean;
@@ -206,6 +208,7 @@ export const useUIStore = create<UIState>((set) => ({
         open: true,
         title: config.title,
         body: config.body,
+        actions: config.actions,
         sizeClass: config.sizeClass,
         dismissible: config.dismissible ?? true,
         closeOnOverlay: config.closeOnOverlay ?? false,
@@ -219,6 +222,7 @@ export const useUIStore = create<UIState>((set) => ({
         open: false,
         title: undefined,
         body: undefined,
+        actions: undefined,
         sizeClass: undefined,
         dismissible: true,
         closeOnOverlay: false,

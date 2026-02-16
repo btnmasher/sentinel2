@@ -357,6 +357,9 @@ export const useMapStore = create<MapState>()(
               [character]: waypoints,
             },
           }));
+          // Immediately sync route head to the character's current location
+          // instead of waiting for the polling interval.
+          void get().updateRoute(character);
           routePolling = window.setInterval(() => {
             void get().updateRoute(character);
           }, 30000);
@@ -421,7 +424,7 @@ export const useMapStore = create<MapState>()(
           let route = get().route;
           const index = route.indexOf(location);
 
-          if (index >= 0 && index < route.length - 1) {
+          if (index >= 0) {
             route = route.slice(index);
             set({ route, lastRouteCharacter: character });
             return;

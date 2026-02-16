@@ -2,7 +2,15 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { ensurePersistReset } from "./persistReset";
 
-export const SETTINGS_STORE_VERSION = 1;
+export const SETTINGS_STORE_VERSION = 2;
+
+export type IntelThreatTimings = {
+  flash: number;
+  red: number;
+  orange: number;
+  yellow: number;
+  green: number;
+};
 
 export type Settings = {
   version: number;
@@ -13,10 +21,7 @@ export type Settings = {
     filtersOpen: boolean;
     charactersOpen: boolean;
     feedOpen: boolean;
-    flashEnabled: boolean;
-    flashSeconds: number;
-    fadeEnabled: boolean;
-    fadeSeconds: number;
+    threatTimings: IntelThreatTimings;
   };
   map: {
     invertZoom: boolean;
@@ -49,10 +54,13 @@ const defaultSettings: Settings = {
     filtersOpen: true,
     charactersOpen: true,
     feedOpen: true,
-    flashEnabled: true,
-    flashSeconds: 15,
-    fadeEnabled: true,
-    fadeSeconds: 300,
+    threatTimings: {
+      flash: 15,
+      red: 30,
+      orange: 60,
+      yellow: 300,
+      green: 300,
+    },
   },
   map: {
     invertZoom: false,
@@ -139,6 +147,61 @@ export const useSettingsStore = create<SettingsState>()(
             ...(persistedSettings?.alarm ?? {}),
           },
           version: SETTINGS_STORE_VERSION,
+        };
+        const legacyIntel = (persistedSettings?.intel ?? {}) as Partial<
+          Settings["intel"]
+        > & {
+          flashEnabled?: boolean;
+          flashSeconds?: number;
+          fadeEnabled?: boolean;
+          fadeSeconds?: number;
+        };
+        const legacyFlash = legacyIntel.flashEnabled
+          ? Number(
+              legacyIntel.flashSeconds ??
+                defaultSettings.intel.threatTimings.flash,
+            )
+          : 0;
+        const legacyFade = legacyIntel.fadeEnabled
+          ? Number(legacyIntel.fadeSeconds ?? 0)
+          : 0;
+        const quarterFade = Math.max(0, Math.floor(legacyFade / 4));
+        mergedSettings.intel.threatTimings = {
+          flash: Math.max(
+            0,
+            Number(
+              mergedSettings.intel.threatTimings?.flash ??
+                (legacyFlash || defaultSettings.intel.threatTimings.flash),
+            ),
+          ),
+          red: Math.max(
+            0,
+            Number(
+              mergedSettings.intel.threatTimings?.red ??
+                (quarterFade || defaultSettings.intel.threatTimings.red),
+            ),
+          ),
+          orange: Math.max(
+            0,
+            Number(
+              mergedSettings.intel.threatTimings?.orange ??
+                (quarterFade || defaultSettings.intel.threatTimings.orange),
+            ),
+          ),
+          yellow: Math.max(
+            0,
+            Number(
+              mergedSettings.intel.threatTimings?.yellow ??
+                (quarterFade || defaultSettings.intel.threatTimings.yellow),
+            ),
+          ),
+          green: Math.max(
+            0,
+            Number(
+              mergedSettings.intel.threatTimings?.green ??
+                (quarterFade || defaultSettings.intel.threatTimings.green),
+            ),
+          ),
         };
         return { settings: mergedSettings };
       },

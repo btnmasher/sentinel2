@@ -1,3 +1,5 @@
+import type { IntelThreatTimings } from "@/app/store/settingsStore";
+
 const COLOR_MAP: Record<string, string> = {
   "grey lighten-2": "#eeeeee",
   "yellow accent-1": "#fff9c4",
@@ -11,32 +13,36 @@ export function colorToHex(name: string) {
   return COLOR_MAP[name] || "#ffffff";
 }
 
+export const INTEL_THREAT_STAGE_COLORS = {
+  normal: "#0274b8",
+  flash: "#d32f2f",
+  red: "#d32f2f",
+  orange: "#f57c00",
+  yellow: "#ffeb3b",
+  green: "#66bb6a",
+} as const;
+
+export const INTEL_THREAT_STAGE_ORDER: Array<
+  keyof Omit<typeof INTEL_THREAT_STAGE_COLORS, "normal">
+> = ["flash", "red", "orange", "yellow", "green"];
+
 export function colorForAge(
   elapsedSeconds: number | undefined,
-  flashSeconds: number,
-  fadeSeconds: number,
+  threatTimings: IntelThreatTimings,
 ) {
   if (elapsedSeconds === undefined) {
-    return "#0274b8";
+    return INTEL_THREAT_STAGE_COLORS.normal;
   }
-  const flash = Math.max(0, Math.floor(flashSeconds));
-  const fade = Math.max(0, Math.floor(fadeSeconds));
-  if (elapsedSeconds < flash) {
-    return "#d32f2f";
+  let elapsed = Math.max(0, Math.floor(elapsedSeconds));
+  for (const stage of INTEL_THREAT_STAGE_ORDER) {
+    const duration = Math.max(0, Math.floor(threatTimings[stage]));
+    if (duration <= 0) continue;
+    if (elapsed < duration) {
+      return INTEL_THREAT_STAGE_COLORS[stage];
+    }
+    elapsed -= duration;
   }
-  if (fade <= 0) {
-    return "#0274b8";
-  }
-  const phaseSeconds = elapsedSeconds - flash;
-  if (phaseSeconds >= fade) {
-    return "#0274b8";
-  }
-  const bucket = Math.max(1, fade / 4);
-
-  if (phaseSeconds < bucket) return "#d32f2f"; // red
-  if (phaseSeconds < bucket * 2) return "#f57c00"; // orange
-  if (phaseSeconds < bucket * 3) return "#ffeb3b"; // yellow
-  return "#66bb6a"; // green
+  return INTEL_THREAT_STAGE_COLORS.normal;
 }
 
 export function hashString(str: string) {

@@ -24,16 +24,19 @@ export default function GlobalModalHost() {
   };
 
   return (
-    <Modal
-      open={modal.open}
-      title={modal.title}
-      onClose={handleClose}
-      className={modal.sizeClass}
-      dismissible={modal.dismissible}
-      closeOnOverlay={modal.closeOnOverlay}
-      closeDisabled={modal.closeDisabled}
-    >
-      <ModalBodyProvider close={handleClose}>{modal.body}</ModalBodyProvider>
-    </Modal>
+    <ModalBodyProvider close={handleClose}>
+      <Modal
+        open={modal.open}
+        title={modal.title}
+        onClose={handleClose}
+        actions={modal.actions}
+        className={modal.sizeClass}
+        dismissible={modal.dismissible}
+        closeOnOverlay={modal.closeOnOverlay}
+        closeDisabled={modal.closeDisabled}
+      >
+        {modal.body}
+      </Modal>
+    </ModalBodyProvider>
   );
 }

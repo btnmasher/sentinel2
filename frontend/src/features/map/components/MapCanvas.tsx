@@ -5,6 +5,7 @@ import MapRegionGateUnloaded from "./MapRegionGateUnloaded";
 import { regionMap as buildRegionMap, useMapStore } from "../store/mapStore";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import { useUIStore } from "@/app/store/uiStore";
+import { useIsCharacterVisible } from "../hooks/useCharacterVisibility";
 const ZOOM_FACTOR = 1.25;
 const ZOOM_BOUNDS = 8;
 
@@ -17,6 +18,8 @@ export default function MapCanvas() {
   const gates = useMapStore((s) => s.gates);
   const jumpbridges = useMapStore((s) => s.jumpbridges);
   const route = useMapStore((s) => s.route);
+  const lastRouteCharacter = useMapStore((s) => s.lastRouteCharacter);
+  const isRouteCharacterVisible = useIsCharacterVisible(lastRouteCharacter);
   const mapLayout = useMapStore((s) => s.mapLayout);
   const mapRegions = useMapStore((s) => s.mapRegions);
   const displayJumpbridges = useMapStore((s) => s.displayJumpbridges);
@@ -104,6 +107,9 @@ export default function MapCanvas() {
   }, [jumpbridges]);
 
   const routeSegments = useMemo(() => {
+    if (!isRouteCharacterVisible) {
+      return [];
+    }
     const pairs = route
       .map((value, idx) => [value, route[idx + 1]] as const)
       .filter((pair) => pair[1]);
@@ -140,7 +146,7 @@ export default function MapCanvas() {
               b: { x: number; y: number };
             } => Boolean(segment),
       );
-  }, [jumpbridgeEdges, regions, route, systems]);
+  }, [jumpbridgeEdges, regions, route, systems, isRouteCharacterVisible]);
 
   const mapTransform = `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`;
 

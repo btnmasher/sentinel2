@@ -953,18 +953,6 @@ html[data-theme="sentinel-light"] .rdp {
     opacity 200ms ease;
 }
 
-.map-system-waypoint .map-system-core {
-  stroke: #22c55e;
-  stroke-width: 2.5;
-  filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.6));
-}
-
-.map-system-route-origin .map-system-core {
-  stroke: #e2e8f0;
-  stroke-width: 2.5;
-  filter: drop-shadow(0 0 4px rgba(226, 232, 240, 0.6));
-}
-
 .map-system:hover .map-system-core {
   filter: brightness(1.25);
 }
@@ -973,6 +961,27 @@ html[data-theme="sentinel-light"] .rdp {
   filter: brightness(1.25);
   text-decoration: underline;
   font-weight: 600;
+}
+
+.map-system-character-tooltip {
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+
+.map-system:hover .map-system-character-tooltip {
+  opacity: 1;
+}
+
+.map-system-character-tooltip-bg {
+  fill: rgba(2, 6, 23, 0.9);
+  stroke: rgba(148, 163, 184, 0.7);
+  stroke-width: 0.9;
+}
+
+.map-system-character-tooltip text {
+  fill: rgba(241, 245, 249, 0.95);
+  font-size: 7px;
+  font-weight: 500;
 }
 
 .map-system-name {
@@ -1219,6 +1228,16 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
 }
 
 .map-system-alert {
+  animation: intel-blink 1s ease-in-out infinite;
+}
+
+.map-system-border {
+  transition:
+    opacity 200ms ease,
+    filter 200ms ease;
+}
+
+.map-system-border-pulse {
   animation: intel-blink 1s ease-in-out infinite;
 }
 

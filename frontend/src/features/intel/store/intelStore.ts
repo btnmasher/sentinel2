@@ -4,9 +4,11 @@ import { ensurePersistReset } from "@/app/store/persistReset";
 import type { IntelReport } from "../types";
 import { isClearIntelReport } from "../utils/intelReportUtils";
 
-export const INTEL_STORE_VERSION = 1;
+export const INTEL_STORE_VERSION = 2;
 
 type IntelFilters = {
+  includeSystemLogs: boolean;
+  includeSystemAlarm: boolean;
   includeUnknownLogs: boolean;
   includeUnknownAlarm: boolean;
   includeUnloadedRegionsLogs: boolean;
@@ -85,6 +87,8 @@ export const useIntelStore = create<IntelState>()(
       version: "",
       intelStatus: "connecting",
       logFilters: {
+        includeSystemLogs: true,
+        includeSystemAlarm: true,
         includeUnknownLogs: true,
         includeUnknownAlarm: true,
         includeUnloadedRegionsLogs: true,
@@ -132,6 +136,8 @@ export const useIntelStore = create<IntelState>()(
       clearFilters: () =>
         set({
           logFilters: {
+            includeSystemLogs: true,
+            includeSystemAlarm: true,
             includeUnknownLogs: true,
             includeUnknownAlarm: true,
             includeUnloadedRegionsLogs: true,
@@ -143,6 +149,24 @@ export const useIntelStore = create<IntelState>()(
     {
       name: "intel-map-config/intel",
       version: INTEL_STORE_VERSION,
+      migrate: (persistedState) => {
+        const state = (persistedState ?? {}) as Partial<IntelState>;
+        const persistedFilters =
+          state.logFilters ?? ({} as Partial<IntelFilters>);
+        return {
+          ...state,
+          logFilters: {
+            includeSystemLogs: true,
+            includeSystemAlarm: true,
+            includeUnknownLogs: true,
+            includeUnknownAlarm: true,
+            includeUnloadedRegionsLogs: true,
+            includeUnloadedRegionsAlarm: true,
+            system: [],
+            ...persistedFilters,
+          },
+        } as IntelState;
+      },
       partialize: (state) => ({ logFilters: state.logFilters }),
     },
   ),

@@ -68,7 +68,7 @@ export default function IntelAlarm() {
       logFilters.system.includes(system.system),
     );
 
-    if (logFilters.system.length > 0) {
+    if (logFilters.system.length > 0 && logFilters.includeSystemAlarm) {
       if (hasSystemFiltered) play();
       return;
     }

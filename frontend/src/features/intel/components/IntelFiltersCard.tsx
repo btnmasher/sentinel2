@@ -1,4 +1,10 @@
+import { useState } from "react";
+import AccordionCard from "@/components/AccordionCard";
+import { useIntelSystemFilterOptions } from "../hooks/useIntelSystemFilterOptions";
+
 type IntelFilters = {
+  includeSystemLogs: boolean;
+  includeSystemAlarm: boolean;
   includeUnknownLogs: boolean;
   includeUnknownAlarm: boolean;
   includeUnloadedRegionsLogs: boolean;
@@ -15,19 +21,106 @@ type IntelFiltersCardProps = {
   onToggle: () => void;
 };
 
-const filterConfig: Array<{
+const FILTER_CONFIG: Array<{
   key: "includeUnknown" | "includeUnloadedRegions";
   label: string;
 }> = [
-  {
-    key: "includeUnknown",
-    label: "Show intel from unknown locations",
-  },
+  { key: "includeUnknown", label: "Show intel from unknown locations" },
   {
     key: "includeUnloadedRegions",
     label: "Show intel from regions not visible",
   },
 ];
+
+function FilterToggleRows({
+  logFilters,
+  onToggleFilter,
+}: {
+  logFilters: IntelFilters;
+  onToggleFilter: (
+    key: "includeUnknown" | "includeUnloadedRegions",
+    target: "Logs" | "Alarm",
+  ) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {FILTER_CONFIG.map((filter) => (
+        <div
+          key={filter.key}
+          className="flex items-center justify-between text-xs"
+        >
+          <span>{filter.label}</span>
+          <div className="flex items-center gap-2">
+            {(["Logs", "Alarm"] as const).map((target) => {
+              const filterKey = `${filter.key}${target}` as keyof IntelFilters;
+              return (
+                <button
+                  key={target}
+                  className={`btn btn-xs ${
+                    logFilters[filterKey] ? "btn-info" : "btn-ghost"
+                  }`}
+                  onClick={() => onToggleFilter(filter.key, target)}
+                  disabled={logFilters.system.length > 0}
+                >
+                  {target}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SystemSelectionChips({
+  logFilters,
+  systemNames,
+  toggleSystemFilter,
+  setLogFilters,
+  coalescedSystemChips,
+}: {
+  logFilters: IntelFilters;
+  systemNames: Record<number, string>;
+  toggleSystemFilter: (systemId: number) => void;
+  setLogFilters: (filters: Partial<IntelFilters>) => void;
+  coalescedSystemChips: ReturnType<
+    typeof useIntelSystemFilterOptions
+  >["coalescedSystemChips"];
+}) {
+  if (logFilters.system.length === 0) {
+    return <span className="text-slate-500">No systems selected</span>;
+  }
+
+  return (
+    <>
+      {coalescedSystemChips.regionChips.map((region) => (
+        <button
+          key={`region-${region.regionId}`}
+          className="badge badge-info badge-sm"
+          onClick={() =>
+            setLogFilters({
+              system: logFilters.system.filter(
+                (id) => !region.systemIds.includes(id),
+              ),
+            })
+          }
+        >
+          {region.name} ({region.count})
+        </button>
+      ))}
+      {coalescedSystemChips.systemChips.map((id) => (
+        <button
+          key={id}
+          className="badge badge-success badge-sm"
+          onClick={() => toggleSystemFilter(id)}
+        >
+          {systemNames[id] || id}
+        </button>
+      ))}
+    </>
+  );
+}
 
 export default function IntelFiltersCard({
   logFilters,
@@ -37,12 +130,17 @@ export default function IntelFiltersCard({
   open,
   onToggle,
 }: IntelFiltersCardProps) {
-  const systems = useMapStore((s) => s.systems);
-  const gates = useMapStore((s) => s.gates);
-  const characters = useMapStore((s) => s.characters);
-  const visibleCharacterIds = useMapStore((s) => s.visibleCharacterIds);
-  const characterLocations = useMapStore((s) => s.characterLocations);
   const [jumpRange, setJumpRange] = useState(3);
+  const {
+    activeLocations,
+    applyJumpFilter,
+    applyRegionFilter,
+    coalescedSystemChips,
+  } = useIntelSystemFilterOptions({
+    selectedSystemIds: logFilters.system,
+    jumpRange,
+    setSystemFilters: (systemIds) => setLogFilters({ system: systemIds }),
+  });
 
   const toggleFilter = (
     key: "includeUnknown" | "includeUnloadedRegions",
@@ -50,71 +148,6 @@ export default function IntelFiltersCard({
   ) => {
     const filterKey = `${key}${target}` as keyof IntelFilters;
     setLogFilters({ [filterKey]: !logFilters[filterKey] });
-  };
-
-  const activeCharacterIds =
-    visibleCharacterIds.length > 0
-      ? visibleCharacterIds
-      : characters.map((char) => char.id);
-
-  const activeLocations = activeCharacterIds
-    .map((id) => characterLocations[id])
-    .filter((location): location is number => typeof location === "number");
-
-  const adjacency = useMemo(() => {
-    const map = new Map<number, number[]>();
-    gates
-      .filter((gate) => gate.type === "solarsystem")
-      .forEach((gate) => {
-        if (!map.has(gate.from)) {
-          map.set(gate.from, []);
-        }
-        if (!map.has(gate.to)) {
-          map.set(gate.to, []);
-        }
-        map.get(gate.from)?.push(gate.to);
-        map.get(gate.to)?.push(gate.from);
-      });
-    return map;
-  }, [gates]);
-
-  const applyRegionFilter = () => {
-    if (activeLocations.length === 0) return;
-    const regionIds = new Set(
-      activeLocations
-        .map((systemId) => systems[systemId]?.region)
-        .filter((regionId): regionId is number => typeof regionId === "number"),
-    );
-    if (regionIds.size === 0) return;
-    const systemIds = Object.values(systems)
-      .filter((system) => regionIds.has(system.region))
-      .map((system) => system.system);
-    setLogFilters({ system: systemIds });
-  };
-
-  const applyJumpFilter = () => {
-    if (activeLocations.length === 0) return;
-    const maxJumps = Math.max(1, Math.min(20, Number(jumpRange) || 1));
-    const visited = new Set<number>();
-    const queue: Array<{ id: number; depth: number }> = [];
-    activeLocations.forEach((id) => {
-      visited.add(id);
-      queue.push({ id, depth: 0 });
-    });
-
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) break;
-      if (current.depth >= maxJumps) continue;
-      const neighbors = adjacency.get(current.id) ?? [];
-      neighbors.forEach((next) => {
-        if (visited.has(next)) return;
-        visited.add(next);
-        queue.push({ id: next, depth: current.depth + 1 });
-      });
-    }
-
-    setLogFilters({ system: Array.from(visited) });
   };
 
   return (
@@ -125,38 +158,43 @@ export default function IntelFiltersCard({
       onToggle={onToggle}
     >
       <div className="space-y-4">
-        <div className="space-y-2">
-          {filterConfig.map((filter) => (
-            <div
-              key={filter.key}
-              className="flex items-center justify-between text-xs"
-            >
-              <span>{filter.label}</span>
-              <div className="flex items-center gap-2">
-                {(["Logs", "Alarm"] as const).map((target) => {
-                  const filterKey =
-                    `${filter.key}${target}` as keyof IntelFilters;
-                  return (
-                    <button
-                      key={target}
-                      className={`btn btn-xs ${
-                        logFilters[filterKey] ? "btn-info" : "btn-ghost"
-                      }`}
-                      onClick={() => toggleFilter(filter.key, target)}
-                      disabled={logFilters.system.length > 0}
-                    >
-                      {target}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        <FilterToggleRows
+          logFilters={logFilters}
+          onToggleFilter={toggleFilter}
+        />
         <div className="divider">System Filters</div>
         <div className="space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">Apply system filters to:</span>
+            <div className="flex items-center gap-2">
+              {(["Logs", "Alarm"] as const).map((target) => {
+                const filterKey =
+                  `includeSystem${target}` as keyof IntelFilters;
+                return (
+                  <button
+                    key={target}
+                    className={`btn btn-xs ${
+                      logFilters[filterKey] ? "btn-info" : "btn-ghost"
+                    }`}
+                    onClick={() =>
+                      setLogFilters({ [filterKey]: !logFilters[filterKey] })
+                    }
+                  >
+                    {target}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-slate-400">From character locations:</span>
+            <button
+              className="btn btn-xs btn-ghost"
+              onClick={() => setLogFilters({ system: [] })}
+              disabled={logFilters.system.length === 0}
+            >
+              Clear systems
+            </button>
             <button
               className="btn btn-xs btn-outline"
               onClick={applyRegionFilter}
@@ -194,24 +232,15 @@ export default function IntelFiltersCard({
           )}
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          {logFilters.system.length > 0 ? (
-            logFilters.system.map((id) => (
-              <button
-                key={id}
-                className="badge badge-success badge-sm"
-                onClick={() => toggleSystemFilter(id)}
-              >
-                {systemNames[id] || id}
-              </button>
-            ))
-          ) : (
-            <span className="text-slate-500">No systems selected</span>
-          )}
+          <SystemSelectionChips
+            logFilters={logFilters}
+            systemNames={systemNames}
+            toggleSystemFilter={toggleSystemFilter}
+            setLogFilters={setLogFilters}
+            coalescedSystemChips={coalescedSystemChips}
+          />
         </div>
       </div>
     </AccordionCard>
   );
 }
-import AccordionCard from "@/components/AccordionCard";
-import { useMapStore } from "@/features/map";
-import { useMemo, useState } from "react";

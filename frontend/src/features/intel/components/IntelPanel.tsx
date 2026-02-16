@@ -115,7 +115,7 @@ export default function IntelPanel() {
         systemSet.has(system.system),
       );
 
-      if (logFilters.system.length) {
+      if (logFilters.system.length && logFilters.includeSystemLogs) {
         return hasSystemFiltered;
       }
       if (!logFilters.includeUnknownLogs && unknownLocation) {

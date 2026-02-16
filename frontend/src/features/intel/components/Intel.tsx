@@ -22,6 +22,8 @@ import {
   ChevronUp,
   ScrollText,
   Upload,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 export default function Intel() {
@@ -32,6 +34,7 @@ export default function Intel() {
   const { open: openShareLinkModal } = useAppModal(UI_DIALOG.ShareLink);
   const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
   const intelPanelOpen = useSettingsStore((s) => s.settings.intel.panelOpen);
+  const alarmEnabled = useSettingsStore((s) => s.settings.alarm.enabled);
   const applySetting = useSettingsStore((s) => s.apply);
 
   useEffect(() => {
@@ -232,6 +235,8 @@ export default function Intel() {
       intelState.setReports([...fakeReports, ...existingReports]);
       if (resetFilters) {
         intelState.setLogFilters({
+          includeSystemLogs: true,
+          includeSystemAlarm: true,
           includeUnknownLogs: true,
           includeUnloadedRegionsLogs: true,
           system: [],
@@ -284,18 +289,40 @@ export default function Intel() {
   const rightControls = (
     <>
       <IntelServerStatus version={version} />
-      <span className="flex items-center gap-2 rounded-full bg-base-300/70 px-2 py-1 text-base-content">
+      <span
+        className="flex items-center gap-2 rounded-full bg-base-300/70 px-2 py-1 text-base-content"
+        title="Active intel uploaders currently connected"
+        aria-label="Active intel uploaders currently connected"
+      >
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-base-100/80 text-base-content">
           <Upload className="h-3.5 w-3.5" />
         </span>
         <span>{uploaders}</span>
       </span>
-      <span className="flex items-center gap-2 rounded-full bg-base-300/70 px-2 py-1 text-base-content">
+      <span
+        className="flex items-center gap-2 rounded-full bg-base-300/70 px-2 py-1 text-base-content"
+        title="Total reports currently loaded in the feed"
+        aria-label="Total reports currently loaded in the feed"
+      >
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-base-100/80 text-base-content">
           <ScrollText className="h-3.5 w-3.5" />
         </span>
         <span>{reports.length}</span>
       </span>
+      <button
+        className={`btn btn-xs btn-square ${
+          alarmEnabled ? "btn-ghost" : "btn-error btn-outline"
+        }`}
+        onClick={() => applySetting("alarm", "enabled", !alarmEnabled)}
+        aria-label={alarmEnabled ? "Mute intel alarm" : "Unmute intel alarm"}
+        title={alarmEnabled ? "Mute intel alarm" : "Unmute intel alarm"}
+      >
+        {alarmEnabled ? (
+          <Volume2 className="h-4 w-4" />
+        ) : (
+          <VolumeX className="h-4 w-4" />
+        )}
+      </button>
       {mapViewMode === "full" && (
         <button
           className="btn btn-xs btn-ghost"
