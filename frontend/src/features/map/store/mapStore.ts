@@ -423,7 +423,30 @@ export const useMapStore = create<MapState>()(
 
           if (index >= 0) {
             route = route.slice(index);
-            set({ route, lastRouteCharacter: character });
+            if (route.length <= 1) {
+              await get().clearRoute(character);
+              return;
+            }
+            set((state) => {
+              const currentWaypoints =
+                state.routeWaypointsByCharacter[character] ?? [];
+              const nextWaypoints = currentWaypoints.filter((waypoint) => {
+                const waypointIndex = route.indexOf(waypoint);
+                return waypointIndex > 0;
+              });
+              const waypointsChanged =
+                nextWaypoints.length !== currentWaypoints.length;
+              return {
+                route,
+                lastRouteCharacter: character,
+                routeWaypointsByCharacter: waypointsChanged
+                  ? {
+                      ...state.routeWaypointsByCharacter,
+                      [character]: nextWaypoints,
+                    }
+                  : state.routeWaypointsByCharacter,
+              };
+            });
             return;
           }
 
