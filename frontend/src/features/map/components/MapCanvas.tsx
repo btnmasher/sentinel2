@@ -48,11 +48,26 @@ export default function MapCanvas() {
   const hasPointerCapture = useRef(false);
   const [searchClearable, setSearchClearable] = useState(true);
   const hasCentered = useRef(false);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   const regionMap = useMemo(
     () => buildRegionMap(regions, systems),
     [regions, systems],
   );
+  const regionEntries = useMemo(() => Object.values(regionMap), [regionMap]);
+
+  useEffect(() => {
+    const element = svgRef.current;
+    if (!element) return;
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      setViewportSize({ width: rect.width, height: rect.height });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -149,6 +164,53 @@ export default function MapCanvas() {
   }, [jumpbridgeEdges, regions, route, systems, isRouteCharacterVisible]);
 
   const mapTransform = `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},${matrix.e},${matrix.f})`;
+
+  const visibleWorldBounds = useMemo(() => {
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+      return undefined;
+    }
+    const scale = matrix.a || 1;
+    const left = (0 - matrix.e) / scale;
+    const top = (0 - matrix.f) / scale;
+    const right = (viewportSize.width - matrix.e) / scale;
+    const bottom = (viewportSize.height - matrix.f) / scale;
+    const PAD = 240;
+    return {
+      left: Math.min(left, right) - PAD,
+      right: Math.max(left, right) + PAD,
+      top: Math.min(top, bottom) - PAD,
+      bottom: Math.max(top, bottom) + PAD,
+    };
+  }, [matrix.a, matrix.e, matrix.f, viewportSize.height, viewportSize.width]);
+
+  const visibleSystemRegions = useMemo(() => {
+    if (!hasCentered.current || !visibleWorldBounds) {
+      return regionEntries;
+    }
+    return regionEntries.filter((regionEntry) => {
+      if (regionEntry.systems.length === 0) return false;
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+
+      for (const system of regionEntry.systems) {
+        const x = regionEntry.region.position.x + system.position.x;
+        const y = regionEntry.region.position.y + system.position.y;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+
+      return !(
+        maxX < visibleWorldBounds.left ||
+        minX > visibleWorldBounds.right ||
+        maxY < visibleWorldBounds.top ||
+        minY > visibleWorldBounds.bottom
+      );
+    });
+  }, [regionEntries, visibleWorldBounds]);
 
   const systemSearchPosition = useMemo(() => {
     if (!systemSearch) return undefined;
@@ -460,7 +522,7 @@ export default function MapCanvas() {
       >
         <g ref={groupRef} transform={mapTransform}>
           <g id="map-region-group">
-            {Object.values(regionMap).map((region) => (
+            {regionEntries.map((region) => (
               <RegionRenderer
                 key={`region-base-${region.region.region}`}
                 region={region.region}
@@ -538,7 +600,7 @@ export default function MapCanvas() {
           )}
 
           <g id="map-system-group">
-            {Object.values(regionMap).map((region) => (
+            {visibleSystemRegions.map((region) => (
               <RegionRenderer
                 key={`region-systems-${region.region.region}`}
                 region={region.region}
