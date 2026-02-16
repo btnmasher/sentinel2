@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Github } from "lucide-react";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import useConfirm from "@/app/hooks/useConfirm";
@@ -162,36 +163,49 @@ export default function Uploader() {
             <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
               Uploader Downloads
             </div>
-            <div className="flex flex-wrap gap-2">
-              {DOWNLOADS.map((item) => (
-                <a
-                  key={item.label}
-                  className="btn btn-sm btn-outline gap-2"
-                  href={
-                    downloadLinks[item.key] ||
-                    releasePageUrl ||
-                    defaultReleasePageUrl
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  download={downloadLinks[item.key] ? "" : undefined}
-                >
-                  <img
-                    src={item.icon}
-                    alt={`${item.label} logo`}
-                    className={item.iconClassName}
-                    loading="lazy"
-                  />
-                  {item.label}
-                </a>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex flex-wrap gap-2">
+                {DOWNLOADS.map((item) => (
+                  <a
+                    key={item.label}
+                    className="btn btn-sm btn-outline gap-2"
+                    href={
+                      downloadLinks[item.key] ||
+                      releasePageUrl ||
+                      defaultReleasePageUrl
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    download={downloadLinks[item.key] ? "" : undefined}
+                  >
+                    <img
+                      src={item.icon}
+                      alt={`${item.label} logo`}
+                      className={item.iconClassName}
+                      loading="lazy"
+                    />
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+              <a
+                href={defaultReleasePageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-sm btn-outline ml-auto gap-1.5"
+                aria-label="Open uploader latest releases page"
+                title="Open uploader latest releases page"
+              >
+                <Github className="h-4 w-4" />
+                GitHub
+              </a>
             </div>
             <p className="text-xs text-slate-500">
               Download the uploader for your platform.
             </p>
           </div>
 
-          <div className="grid gap-2">
+          <div className="grid gap-2 mt-2">
             <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
               Uploader Base URL
             </div>
@@ -206,7 +220,7 @@ export default function Uploader() {
             </button>
           </div>
 
-          <div className="grid gap-2">
+          <div className="grid gap-2 mt-2">
             <div className="text-sm uppercase tracking-[0.2em] text-slate-500">
               Uploader Token
             </div>
@@ -221,56 +235,76 @@ export default function Uploader() {
               >
                 Copy token
               </button>
+              <span className="ml-auto text-xs text-slate-500">
+                Regenerating invalidates previous tokens.
+              </span>
               <button
-                className="btn btn-sm btn-error btn-outline ml-auto"
+                className="btn btn-sm btn-error btn-outline"
                 onClick={confirmRegenerate}
                 disabled={regenerating || !token}
               >
                 {regenerating ? "Regenerating..." : "Regenerate token"}
               </button>
             </div>
-            <p className="text-xs text-slate-500">
-              Regenerating invalidates previous tokens.
-            </p>
           </div>
 
-          <div className="grid gap-2">
+          <div className="grid gap-2 mt-2">
             <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-              Example Usage
+              Usage & Behavior
+            </div>
+            <div className="text-xs text-slate-300 space-y-3">
+              <p>
+                The uploader saves settings automatically to your platform
+                config directory:
+              </p>
+              <div className="rounded-lg border border-slate-700 bg-base-300/45 px-3 py-2 font-mono text-[11px] space-y-1.5">
+                <div className="grid grid-cols-[70px_1fr] gap-x-2">
+                  <span className="text-sky-300">Windows</span>
+                  <span className="text-emerald-300">
+                    %APPDATA%\sentinel2\uploader-settings.json
+                  </span>
+                </div>
+                <div className="grid grid-cols-[70px_1fr] gap-x-2">
+                  <span className="text-sky-300">macOS</span>
+                  <span className="text-emerald-300">
+                    ~/Library/Application
+                    Support/sentinel2/uploader-settings.json
+                  </span>
+                </div>
+                <div className="grid grid-cols-[70px_1fr] gap-x-2">
+                  <span className="text-sky-300">Linux</span>
+                  <span className="text-emerald-300">
+                    $XDG_CONFIG_HOME/sentinel2/uploader-settings.json
+                  </span>
+                </div>
+                <div className="grid grid-cols-[70px_1fr] gap-x-2">
+                  <span />
+                  <span className="text-amber-300/90">
+                    ~/.config/sentinel2/uploader-settings.json{" "}
+                    <span className="ml-1.5 text-slate-400">(fallback)</span>
+                  </span>
+                </div>
+              </div>
+              <p>
+                Default mode is GUI with tray icon support. Use{" "}
+                <code>--headless</code> for terminal-only mode (no GUI/tray),
+                which is useful for remote hosts and minimal environments.
+              </p>
+              <p>
+                In headless mode, status/errors are printed to terminal output.
+                Base URL and token still work via flags or environment
+                variables.
+              </p>
             </div>
             <pre className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
-              {`# Flags
-sentinel2-uploader --base-url ${exampleBase} --token ${exampleToken}
+              {`# Command line flags
+sentinel2-uploader --base-url ${exampleBase} --token ${exampleToken} --headless
 
-# Env vars
+# Environment variables
 SENTINEL_BASE_URL=${exampleBase}
 SENTINEL_TOKEN=${exampleToken}
 sentinel2-uploader`}
             </pre>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="btn btn-sm btn-info btn-outline"
-                onClick={() =>
-                  copyText(
-                    "Flags example",
-                    `--base-url ${exampleBase} --token ${exampleToken}`,
-                  )
-                }
-              >
-                Copy flags
-              </button>
-              <button
-                className="btn btn-sm btn-info btn-outline"
-                onClick={() =>
-                  copyText(
-                    "Env example",
-                    `SENTINEL_BASE_URL=${exampleBase}\nSENTINEL_TOKEN=${exampleToken}\nsentinel2-uploader`,
-                  )
-                }
-              >
-                Copy env
-              </button>
-            </div>
           </div>
         </div>
       </Panel>
