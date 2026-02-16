@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { IntelReport } from "../types";
 import {
   REGION_MAP,
+  colorForAge,
   useMapStore,
   useOpenSystemContextMenu,
 } from "@/features/map";
 import { useUIStore } from "@/features/ui";
-import { LOG_COLORS } from "@/utils/logColors";
 import { isClearIntelReport } from "../utils/intelReportUtils";
+import { useSettingsStore } from "@/app/store/settingsStore";
 
 function timeSuffix(minutes: number) {
   if (minutes <= 0) return "now";
@@ -28,6 +29,7 @@ export default function ReportItem({
   const setSystemSearch = useMapStore((s) => s.setSystemSearch);
   const setContextMenu = useUIStore((s) => s.setContextMenu);
   const openSystemContextMenu = useOpenSystemContextMenu();
+  const threatTimings = useSettingsStore((s) => s.settings.intel.threatTimings);
 
   const [timePassed, setTimePassed] = useState(0);
 
@@ -43,11 +45,10 @@ export default function ReportItem({
     return () => clearInterval(timer);
   }, [log.time]);
 
-  const timeColor = useMemo(() => {
-    return (
-      LOG_COLORS.find((color) => timePassed >= color.minutes) ?? LOG_COLORS[0]
-    );
-  }, [timePassed]);
+  const timeColor = useMemo(
+    () => colorForAge(timePassed * 60, threatTimings),
+    [threatTimings, timePassed],
+  );
 
   const splitText = useMemo(() => {
     const words = log.text.split(" ");
@@ -126,7 +127,7 @@ export default function ReportItem({
       title={channelTooltip}
     >
       <div className="flex items-center justify-between text-xs text-slate-400">
-        <span style={{ color: timeColor.color }}>{timeSuffix(timePassed)}</span>
+        <span style={{ color: timeColor }}>{timeSuffix(timePassed)}</span>
         <div className="flex items-center gap-2">
           {isClearReport && (
             <span className="rounded border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-300">

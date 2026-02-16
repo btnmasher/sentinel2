@@ -34,6 +34,7 @@ export { METERS_PER_LIGHTYEAR } from "./types/constants";
 export {
   INTEL_THREAT_STAGE_COLORS,
   INTEL_THREAT_STAGE_ORDER,
+  colorForAge,
 } from "./utils/mapUtils";
 export type {
   Character,

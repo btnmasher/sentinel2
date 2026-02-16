@@ -916,12 +916,12 @@ html[data-theme="sentinel-light"] .rdp {
 }
 
 .map-gate.region {
-  stroke: #9c27b0;
-  color: #9c27b0;
+  stroke: var(--map-unloaded-region-color, #9c27b0);
+  color: var(--map-unloaded-region-color, #9c27b0);
 }
 
 .report-item-unloaded-region {
-  color: #9c27b0;
+  color: var(--map-unloaded-region-color, #9c27b0);
 }
 
 .map-gate.route {
