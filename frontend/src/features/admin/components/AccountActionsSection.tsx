@@ -1,4 +1,5 @@
 import CharacterCard from "@/components/CharacterCard";
+import Panel from "@/components/Panel";
 import { ArrowLeft } from "lucide-react";
 import { ADMIN_MODAL } from "../store/adminStore";
 import { useAdminStore } from "../store/adminStore";
@@ -49,6 +50,13 @@ export default function AccountActionsSection({
   const accessLevel = getAccessLevel(user?.access_level);
   const changeAccessDisabled = accessLevel === "admin";
   const uploaderTokenValid = user?.uploader_token_valid ?? false;
+  const panelActions =
+    user && onBack ? (
+      <button className="btn btn-xs btn-ghost gap-1" onClick={onBack}>
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back to search
+      </button>
+    ) : null;
 
   const handleSetMain = (character: Character) => setMain(character);
   const handleRefreshCharacter = (character: Character) =>
@@ -59,122 +67,114 @@ export default function AccountActionsSection({
     removeCharacter(character);
 
   return (
-    <section className="card bg-base-200/70 border border-slate-800 h-full min-h-0">
-      <div className="card-body flex flex-col gap-4 h-full min-h-0 overflow-hidden">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-display text-2xl">Account Actions</h2>
-          {user && onBack && (
-            <button className="btn btn-xs btn-ghost gap-1" onClick={onBack}>
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to search
-            </button>
-          )}
-        </div>
-        {!user ? (
-          <p className="text-sm text-slate-400">Select a user to inspect.</p>
-        ) : (
-          <>
-            <div className="rounded-xl border border-slate-800/70 bg-base-300/50 px-3 py-2">
-              <p className="text-xs text-slate-400">User</p>
-              <p className="text-sm font-semibold">{user.user_id}</p>
-              <p className="text-xs text-slate-400">
-                Characters: {user.characters.length} · Session:{" "}
-                {formatSessionStatus(user.session_revoked_at)}
-              </p>
-              <p className="text-xs text-slate-400">
-                Access:{" "}
-                <span className={getAccessLevelClass(accessLevel)}>
-                  {accessLevel}
-                </span>
-              </p>
-            </div>
+    <Panel
+      title="Account Actions"
+      actions={panelActions}
+      className="h-full min-h-0"
+      bodyClassName="flex flex-col gap-4 h-full min-h-0 overflow-hidden"
+    >
+      {!user ? (
+        <p className="text-sm text-slate-400">Select a user to inspect.</p>
+      ) : (
+        <>
+          <div className="rounded-xl border border-slate-800/70 bg-base-300/50 px-3 py-2">
+            <p className="text-xs text-slate-400">User</p>
+            <p className="text-sm font-semibold">{user.user_id}</p>
+            <p className="text-xs text-slate-400">
+              Characters: {user.characters.length} · Session:{" "}
+              {formatSessionStatus(user.session_revoked_at)}
+            </p>
+            <p className="text-xs text-slate-400">
+              Access:{" "}
+              <span className={getAccessLevelClass(accessLevel)}>
+                {accessLevel}
+              </span>
+            </p>
+          </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
-              {user.characters.map((character) => (
-                <CharacterCard
-                  key={character.id}
-                  character={character}
-                  onSetMain={() => handleSetMain(character)}
-                  onRefresh={() => void handleRefreshCharacter(character)}
-                  onRevoke={() => handleRevokeCharacter(character)}
-                  onRemove={() => handleRemoveCharacter(character)}
-                  disableRemove={
-                    character.is_main && user.characters.length > 1
-                  }
-                />
-              ))}
-            </div>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3">
+            {user.characters.map((character) => (
+              <CharacterCard
+                key={character.id}
+                character={character}
+                onSetMain={() => handleSetMain(character)}
+                onRefresh={() => void handleRefreshCharacter(character)}
+                onRevoke={() => handleRevokeCharacter(character)}
+                onRemove={() => handleRemoveCharacter(character)}
+                disableRemove={character.is_main && user.characters.length > 1}
+              />
+            ))}
+          </div>
 
-            <div className="mt-auto rounded-xl border border-slate-800/70 bg-base-300/60 px-3 py-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  className="btn btn-xs btn-success btn-outline"
-                  onClick={() => void refreshAll()}
-                  title="Auto refresh runs every 15 minutes."
-                >
-                  Refresh all characters
-                </button>
-                <button
-                  className="btn btn-xs btn-warning btn-outline"
-                  onClick={revokeSessions}
-                >
-                  Revoke sessions
-                </button>
-                <button
-                  className="btn btn-xs btn-warning btn-outline"
-                  onClick={revokeUploadTokens}
-                  disabled={!uploaderTokenValid}
-                  title={
-                    uploaderTokenValid
-                      ? "Revoke uploader tokens"
-                      : "No active uploader token to revoke"
-                  }
-                >
-                  Revoke uploader tokens
-                </button>
-                <button
-                  className="btn btn-xs btn-info btn-outline"
-                  onClick={regenerateUploadToken}
-                >
-                  Regenerate uploader token
-                </button>
-                <span
-                  className="inline-flex"
-                  title={
-                    changeAccessDisabled ? "Admins cannot be demoted here." : ""
-                  }
-                >
-                  <button
-                    className="btn btn-xs btn-outline"
-                    onClick={openAccessModal}
-                    disabled={changeAccessDisabled}
-                  >
-                    Change access
-                  </button>
-                </span>
-                <button
-                  className="btn btn-xs btn-warning btn-outline"
-                  onClick={openMoveModal}
-                >
-                  Move character
-                </button>
-                <button
-                  className="btn btn-xs btn-warning btn-outline"
-                  onClick={openMergeModal}
-                >
-                  Merge account
-                </button>
+          <div className="mt-auto rounded-xl border border-slate-800/70 bg-base-300/60 px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className="btn btn-xs btn-success btn-outline"
+                onClick={() => void refreshAll()}
+                title="Auto refresh runs every 15 minutes."
+              >
+                Refresh all characters
+              </button>
+              <button
+                className="btn btn-xs btn-warning btn-outline"
+                onClick={revokeSessions}
+              >
+                Revoke sessions
+              </button>
+              <button
+                className="btn btn-xs btn-warning btn-outline"
+                onClick={revokeUploadTokens}
+                disabled={!uploaderTokenValid}
+                title={
+                  uploaderTokenValid
+                    ? "Revoke uploader tokens"
+                    : "No active uploader token to revoke"
+                }
+              >
+                Revoke uploader tokens
+              </button>
+              <button
+                className="btn btn-xs btn-info btn-outline"
+                onClick={regenerateUploadToken}
+              >
+                Regenerate uploader token
+              </button>
+              <span
+                className="inline-flex"
+                title={
+                  changeAccessDisabled ? "Admins cannot be demoted here." : ""
+                }
+              >
                 <button
                   className="btn btn-xs btn-outline"
-                  onClick={openAuditModal}
+                  onClick={openAccessModal}
+                  disabled={changeAccessDisabled}
                 >
-                  Activity log
+                  Change access
                 </button>
-              </div>
+              </span>
+              <button
+                className="btn btn-xs btn-warning btn-outline"
+                onClick={openMoveModal}
+              >
+                Move character
+              </button>
+              <button
+                className="btn btn-xs btn-warning btn-outline"
+                onClick={openMergeModal}
+              >
+                Merge account
+              </button>
+              <button
+                className="btn btn-xs btn-outline"
+                onClick={openAuditModal}
+              >
+                Activity log
+              </button>
             </div>
-          </>
-        )}
-      </div>
-    </section>
+          </div>
+        </>
+      )}
+    </Panel>
   );
 }

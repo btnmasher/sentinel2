@@ -13,6 +13,7 @@ import { useNavigationStore } from "../store/navigationStore";
 import { UI_DIALOG } from "@/app/store/uiStore";
 import { useAppModal } from "@/components/dialogs/AppModals";
 import { useSettingsStore } from "@/app/store/settingsStore";
+import AlarmMuteToggleButton from "@/components/AlarmMuteToggleButton";
 import { ChevronDown, ChevronUp, Route } from "lucide-react";
 
 export default function Navigation() {
@@ -22,6 +23,10 @@ export default function Navigation() {
 
   const { open: openHelpModal } = useAppModal(UI_DIALOG.Help);
   const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
+  const alarmEnabled = useSettingsStore((s) => s.settings.alarm.enabled);
+  const alarmVolume = useSettingsStore((s) => s.settings.alarm.volume);
+  const applySetting = useSettingsStore((s) => s.apply);
+  const alarmMuted = !alarmEnabled || alarmVolume <= 0;
 
   const leftControls = (
     <>
@@ -45,6 +50,10 @@ export default function Navigation() {
           Route: {route.length}
         </span>
       )}
+      <AlarmMuteToggleButton
+        muted={alarmMuted}
+        onToggle={() => applySetting("alarm", "enabled", !alarmEnabled)}
+      />
       {mapViewMode === "full" && (
         <button
           className="btn btn-xs btn-ghost"

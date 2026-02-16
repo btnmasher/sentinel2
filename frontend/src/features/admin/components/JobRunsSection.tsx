@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import useConfirm from "@/app/hooks/useConfirm";
 import PaginationControls from "@/components/PaginationControls";
+import Panel from "@/components/Panel";
 import { useAdminJobRunsStore } from "../store/adminJobRunsStore";
 import type { DateRange } from "react-day-picker";
 import DateRangePicker from "@/components/DateRangePicker";
@@ -107,61 +108,58 @@ export default function JobRunsSection() {
   }, []);
 
   return (
-    <section className="card bg-base-200/70 border border-slate-800 h-full min-h-0">
-      <div className="card-body h-full min-h-0 grid grid-rows-[auto_auto_auto_1fr_auto] gap-4">
-        <div>
-          <h2 className="font-display text-2xl">Job Runs</h2>
-          <p className="text-xs text-slate-400">Latest cron and admin jobs.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
-          <DateRangePicker
-            value={rangeValue}
-            startHour={startHour}
-            endHour={endHour}
-            showTimeSelect
-            onClear={() => {
-              setDateRange({
-                startDate: undefined,
-                endDate: undefined,
-                startHour: undefined,
-                endHour: undefined,
-              });
-              void loadJobs(1, { silent: false });
-            }}
-            onApply={(range, nextStartHour, nextEndHour) => {
-              const nextStart = formatDate(range?.from);
-              const nextEnd = formatDate(range?.to);
-              setDateRange({
-                startDate: nextStart,
-                endDate: nextEnd,
-                startHour: nextStartHour,
-                endHour: nextEndHour,
-              });
-              void loadJobs(1, { silent: false });
-            }}
-          />
-          <SelectionDropdown
-            items={jobKindOptions}
-            selected={selectedJobKinds}
-            onChange={(next) => {
-              const excluded = jobKindOptions
-                .map((option) => option.id)
-                .filter((id) => !next.includes(id));
-              setJobKinds(excluded);
-              void loadJobs(1, { silent: false });
-            }}
-            multi
-            showTags
-            coalesceAllTags
-            label="Job types"
-            buttonClassName="min-w-[160px]"
-          />
-        </div>
-        <div>
-          {jobLoading && (
-            <p className="text-xs text-slate-400">Loading jobs…</p>
-          )}
-        </div>
+    <Panel
+      title="Job Runs"
+      hint="Latest cron and admin jobs."
+      className="h-full min-h-0"
+      bodyClassName="h-full min-h-0 flex flex-col gap-1.5"
+    >
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+        <DateRangePicker
+          value={rangeValue}
+          startHour={startHour}
+          endHour={endHour}
+          showTimeSelect
+          onClear={() => {
+            setDateRange({
+              startDate: undefined,
+              endDate: undefined,
+              startHour: undefined,
+              endHour: undefined,
+            });
+            void loadJobs(1, { silent: false });
+          }}
+          onApply={(range, nextStartHour, nextEndHour) => {
+            const nextStart = formatDate(range?.from);
+            const nextEnd = formatDate(range?.to);
+            setDateRange({
+              startDate: nextStart,
+              endDate: nextEnd,
+              startHour: nextStartHour,
+              endHour: nextEndHour,
+            });
+            void loadJobs(1, { silent: false });
+          }}
+        />
+        <SelectionDropdown
+          items={jobKindOptions}
+          selected={selectedJobKinds}
+          onChange={(next) => {
+            const excluded = jobKindOptions
+              .map((option) => option.id)
+              .filter((id) => !next.includes(id));
+            setJobKinds(excluded);
+            void loadJobs(1, { silent: false });
+          }}
+          multi
+          showTags
+          coalesceAllTags
+          label="Job types"
+          buttonClassName="min-w-[160px]"
+        />
+      </div>
+      {jobLoading && <p className="text-xs text-slate-400">Loading jobs…</p>}
+      <div className="flex-1 min-h-0 overflow-hidden">
         {!jobLoading && jobRuns.length === 0 ? (
           <JobRunsEmptyState hasFilters={hasFilters} />
         ) : (
@@ -182,20 +180,18 @@ export default function JobRunsSection() {
             />
           )
         )}
-        <div>
-          {(jobPage > 1 || jobHasMore) && (
-            <PaginationControls
-              page={jobPage}
-              hasMore={jobHasMore}
-              loading={jobLoading}
-              onPrev={() =>
-                void loadJobs(Math.max(1, jobPage - 1), { silent: false })
-              }
-              onNext={() => void loadJobs(jobPage + 1, { silent: false })}
-            />
-          )}
-        </div>
       </div>
-    </section>
+      {(jobPage > 1 || jobHasMore) && (
+        <PaginationControls
+          page={jobPage}
+          hasMore={jobHasMore}
+          loading={jobLoading}
+          onPrev={() =>
+            void loadJobs(Math.max(1, jobPage - 1), { silent: false })
+          }
+          onNext={() => void loadJobs(jobPage + 1, { silent: false })}
+        />
+      )}
+    </Panel>
   );
 }

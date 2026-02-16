@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { ensurePersistReset } from "@/app/store/persistReset";
 import type { IntelReport } from "../types";
 import { isClearIntelReport } from "../utils/intelReportUtils";
 
 export const INTEL_STORE_VERSION = 2;
+const MAX_REPORT_AGE_SECONDS = 30 * 60;
 
 type IntelFilters = {
   includeSystemLogs: boolean;
@@ -57,10 +57,15 @@ const computeLastIntelSystems = (reports: IntelReport[]) => {
 };
 
 const normalizeReports = (reports: IntelReport[], max = 100) => {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const oldestAllowed = nowSeconds - MAX_REPORT_AGE_SECONDS;
   const byId = new Map<string, IntelReport>();
   for (const report of reports) {
     const reportId = report?.id;
     if (!reportId) continue;
+    if (!Number.isFinite(report.time) || report.time < oldestAllowed) {
+      continue;
+    }
     const key = report.recordId ?? String(reportId);
     const existing = byId.get(key);
     if (!existing || report.time > existing.time) {
@@ -74,8 +79,6 @@ const normalizeReports = (reports: IntelReport[], max = 100) => {
     })
     .slice(0, max);
 };
-
-ensurePersistReset();
 
 export const useIntelStore = create<IntelState>()(
   persist(
@@ -155,6 +158,13 @@ export const useIntelStore = create<IntelState>()(
           state.logFilters ?? ({} as Partial<IntelFilters>);
         return {
           ...state,
+          reports: Array.isArray(state.reports)
+            ? normalizeReports(state.reports)
+            : [],
+          lastIntelSystems:
+            state.lastIntelSystems && typeof state.lastIntelSystems === "object"
+              ? state.lastIntelSystems
+              : {},
           logFilters: {
             includeSystemLogs: true,
             includeSystemAlarm: true,
@@ -167,7 +177,11 @@ export const useIntelStore = create<IntelState>()(
           },
         } as IntelState;
       },
-      partialize: (state) => ({ logFilters: state.logFilters }),
+      partialize: (state) => ({
+        logFilters: state.logFilters,
+        reports: normalizeReports(state.reports),
+        lastIntelSystems: state.lastIntelSystems,
+      }),
     },
   ),
 );

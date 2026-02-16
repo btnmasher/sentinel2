@@ -22,9 +22,8 @@ import {
   ChevronUp,
   ScrollText,
   Upload,
-  Volume2,
-  VolumeX,
 } from "lucide-react";
+import AlarmMuteToggleButton from "@/components/AlarmMuteToggleButton";
 
 export default function Intel() {
   const reports = useIntelStore((state) => state.reports);
@@ -35,7 +34,9 @@ export default function Intel() {
   const mapViewMode = useSettingsStore((s) => s.settings.map.viewMode);
   const intelPanelOpen = useSettingsStore((s) => s.settings.intel.panelOpen);
   const alarmEnabled = useSettingsStore((s) => s.settings.alarm.enabled);
+  const alarmVolume = useSettingsStore((s) => s.settings.alarm.volume);
   const applySetting = useSettingsStore((s) => s.apply);
+  const alarmMuted = !alarmEnabled || alarmVolume <= 0;
 
   useEffect(() => {
     if (!import.meta.env.DEV) {
@@ -309,20 +310,10 @@ export default function Intel() {
         </span>
         <span>{reports.length}</span>
       </span>
-      <button
-        className={`btn btn-xs btn-square ${
-          alarmEnabled ? "btn-ghost" : "btn-error btn-outline"
-        }`}
-        onClick={() => applySetting("alarm", "enabled", !alarmEnabled)}
-        aria-label={alarmEnabled ? "Mute intel alarm" : "Unmute intel alarm"}
-        title={alarmEnabled ? "Mute intel alarm" : "Unmute intel alarm"}
-      >
-        {alarmEnabled ? (
-          <Volume2 className="h-4 w-4" />
-        ) : (
-          <VolumeX className="h-4 w-4" />
-        )}
-      </button>
+      <AlarmMuteToggleButton
+        muted={alarmMuted}
+        onToggle={() => applySetting("alarm", "enabled", !alarmEnabled)}
+      />
       {mapViewMode === "full" && (
         <button
           className="btn btn-xs btn-ghost"

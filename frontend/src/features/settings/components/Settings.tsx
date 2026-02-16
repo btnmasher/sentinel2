@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import useModal from "@/app/hooks/useModal";
 import { useSettingsStore } from "@/app/store/settingsStore";
+import AlarmMuteToggleButton from "@/components/AlarmMuteToggleButton";
+import Panel from "@/components/Panel";
 import SelectionDropdown from "@/components/SelectionDropdown";
 import { INTEL_THREAT_STAGE_COLORS } from "@/features/map";
 
@@ -68,7 +70,9 @@ export default function Settings() {
   };
 
   const clearSavedData = () => {
-    localStorage.clear();
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("intel-map-config/"))
+      .forEach((key) => localStorage.removeItem(key));
     window.location.reload();
   };
 
@@ -77,19 +81,25 @@ export default function Settings() {
     modalKey: SETTINGS_MODAL.Reset,
     setOpenByKey: setSettingsModal,
     build: (close) => ({
-      title: "Are you sure?",
+      title: "Reset settings to defaults?",
       body: (
-        <div className="modal-action">
+        <p className="text-sm text-slate-400">
+          This keeps your saved map data and intel history, but restores all
+          settings to their default values.
+        </p>
+      ),
+      actions: (
+        <>
           <button
-            className="btn btn-error btn-outline btn-sm"
+            className="btn btn-warning btn-outline btn-sm"
             onClick={resetSettings}
           >
-            Yes
+            Reset settings
           </button>
           <button className="btn btn-sm btn-outline" onClick={() => close()}>
-            No
+            Cancel
           </button>
-        </div>
+        </>
       ),
     }),
   });
@@ -99,23 +109,24 @@ export default function Settings() {
     modalKey: SETTINGS_MODAL.ClearData,
     setOpenByKey: setSettingsModal,
     build: (close) => ({
-      title: "Clear saved data?",
+      title: "Clear all browser saved data?",
       body: (
+        <p className="text-sm text-slate-400">
+          This removes all Sentinel data stored in this browser, including
+          settings, map configuration, and persisted intel.
+        </p>
+      ),
+      actions: (
         <>
-          <p className="text-sm text-slate-400">
-            This clears all stored data in your browser for Sentinel.
-          </p>
-          <div className="modal-action">
-            <button
-              className="btn btn-error btn-outline btn-sm"
-              onClick={clearSavedData}
-            >
-              Yes
-            </button>
-            <button className="btn btn-sm btn-outline" onClick={() => close()}>
-              No
-            </button>
-          </div>
+          <button
+            className="btn btn-error btn-outline btn-sm"
+            onClick={clearSavedData}
+          >
+            Clear all data
+          </button>
+          <button className="btn btn-sm btn-outline" onClick={() => close()}>
+            Cancel
+          </button>
         </>
       ),
     }),
@@ -149,115 +160,114 @@ export default function Settings() {
       [stage]: nextValue,
     });
   };
+  const alarmMuted = !settings.alarm.enabled || settings.alarm.volume <= 0;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2 items-start">
       <div className="grid gap-6">
-        <div className="card bg-base-200/70 border border-slate-800">
-          <div className="card-body space-y-4">
-            <h3 className="font-display text-lg">Map & Intel</h3>
-            <div className="rounded-md bg-base-300/30 px-3 py-2">
-              <label className="flex items-center justify-between">
-                <span>Invert Zoom</span>
-                <input
-                  className="toggle toggle-primary"
-                  type="checkbox"
-                  checked={settings.map.invertZoom}
-                  onChange={() => toggle("map", "invertZoom")}
-                />
-              </label>
-            </div>
-            <div className="rounded-md bg-base-300/15 px-3 py-2">
-              <label className="flex items-center justify-between">
-                <span>Always Show System Icons</span>
-                <input
-                  className="toggle toggle-primary"
-                  type="checkbox"
-                  checked={settings.map.alwaysShowSystems}
-                  onChange={() => toggle("map", "alwaysShowSystems")}
-                />
-              </label>
-            </div>
-            <div className="rounded-md bg-base-300/30 px-3 py-2 space-y-3">
-              <div className="text-xs text-slate-400">
-                Threat stage timings cascade in order: flashing -&gt; red -&gt;
-                orange -&gt; yellow -&gt; green.
-              </div>
-              {THREAT_STAGE_CONFIG.map((stage) => (
-                <div key={stage.key} className="rounded-md bg-base-300/20 p-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 20 20"
-                        aria-hidden
-                      >
-                        <rect
-                          x="1"
-                          y="1"
-                          width="18"
-                          height="18"
-                          rx="4"
-                          ry="4"
-                          fill={stage.color}
-                          stroke={stage.color}
-                          strokeWidth="1.5"
-                          className={stage.flashing ? "map-system-alert" : ""}
-                        />
-                      </svg>
-                      <span className="text-sm">{stage.label}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={900}
-                        step={5}
-                        value={settings.intel.threatTimings[stage.key]}
-                        onChange={(e) =>
-                          setThreatTiming(stage.key, Number(e.target.value))
-                        }
-                        className="input input-xs w-20"
-                      />
-                      <span className="text-xs text-slate-400">sec</span>
-                    </div>
-                  </div>
-                  <div className="mt-2">
-                    <input
-                      type="range"
-                      min={0}
-                      max={900}
-                      step={5}
-                      value={settings.intel.threatTimings[stage.key]}
-                      onChange={(e) =>
-                        setThreatTiming(stage.key, Number(e.target.value))
-                      }
-                      className="range range-xs"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+        <Panel title="Map & Intel">
+          <div className="rounded-md bg-base-300/30 px-3 py-2">
+            <label className="flex items-center justify-between">
+              <span>Invert Zoom</span>
+              <input
+                className="toggle toggle-primary"
+                type="checkbox"
+                checked={settings.map.invertZoom}
+                onChange={() => toggle("map", "invertZoom")}
+              />
+            </label>
           </div>
-        </div>
-
-        <div className="card bg-base-200/70 border border-slate-800">
-          <div className="card-body space-y-4">
-            <h3 className="font-display text-lg">Alarm</h3>
-            <div className="rounded-md bg-base-300/30 px-3 py-2">
-              <label className="flex items-center justify-between">
-                <span>Enable Alarm</span>
-                <input
-                  className="toggle toggle-primary"
-                  type="checkbox"
-                  checked={settings.alarm.enabled}
-                  onChange={() => toggle("alarm", "enabled")}
-                />
-              </label>
+          <div className="rounded-md bg-base-300/15 px-3 py-2">
+            <label className="flex items-center justify-between">
+              <span>Always Show System Icons</span>
+              <input
+                className="toggle toggle-primary"
+                type="checkbox"
+                checked={settings.map.alwaysShowSystems}
+                onChange={() => toggle("map", "alwaysShowSystems")}
+              />
+            </label>
+          </div>
+          <div className="rounded-md bg-base-300/30 px-3 py-2 space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+              Threat State Timings
             </div>
-            <div className="rounded-md bg-base-300/15 px-3 py-2">
-              <label className="label text-xs mb-1 block">Volume</label>
+            <div className="text-xs text-slate-400">
+              Threat stage timings cascade in order: flashing -&gt; red -&gt;
+              orange -&gt; yellow -&gt; green.
+            </div>
+            {THREAT_STAGE_CONFIG.map((stage) => (
+              <div key={stage.key} className="rounded-md bg-base-300/20 p-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden>
+                    <rect
+                      x="1"
+                      y="1"
+                      width="18"
+                      height="18"
+                      rx="4"
+                      ry="4"
+                      fill={stage.color}
+                      stroke={stage.color}
+                      strokeWidth="1.5"
+                      className={stage.flashing ? "map-system-alert" : ""}
+                    />
+                  </svg>
+                  <span className="text-sm">{stage.label}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={900}
+                    step={5}
+                    value={settings.intel.threatTimings[stage.key]}
+                    onChange={(e) =>
+                      setThreatTiming(stage.key, Number(e.target.value))
+                    }
+                    className="range range-xs flex-1"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={900}
+                    step={5}
+                    value={settings.intel.threatTimings[stage.key]}
+                    onChange={(e) =>
+                      setThreatTiming(stage.key, Number(e.target.value))
+                    }
+                    className="input input-xs w-20"
+                  />
+                  <span className="text-xs text-slate-400">sec</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6">
+        <Panel title="Appearance">
+          <div className="rounded-md bg-base-300/30 px-3 py-2">
+            <label className="flex items-center justify-between">
+              <span>Theme</span>
+              <SelectionDropdown
+                items={themeOptions}
+                selected={[settings.theme]}
+                onChange={(next) =>
+                  setTheme((next[0] ?? "sentinel") as typeof settings.theme)
+                }
+                label="Theme"
+                buttonClassName="min-w-[160px]"
+              />
+            </label>
+          </div>
+        </Panel>
+
+        <Panel title="Alarm">
+          <div className="rounded-md bg-base-300/15 px-3 py-2">
+            <label className="label text-xs mb-1 block">Volume</label>
+            <div className="flex items-center gap-2">
               <input
                 type="range"
                 min={0}
@@ -266,65 +276,49 @@ export default function Settings() {
                 onChange={(e) =>
                   apply("alarm", "volume", Number(e.target.value))
                 }
-                className="range range-xs"
+                className="range range-xs flex-1"
                 disabled={!settings.alarm.enabled}
               />
-            </div>
-            <div className="rounded-md bg-base-300/30 px-3 py-2">
-              <label className="label text-xs">Alarm tone</label>
-              <SelectionDropdown
-                items={soundOptions}
-                selected={[settings.alarm.sound]}
-                onChange={(next) => apply("alarm", "sound", next[0] ?? "")}
-                label="Alarm tone"
-                disabled={!settings.alarm.enabled}
-                buttonClassName="min-w-[160px]"
+              <AlarmMuteToggleButton
+                muted={alarmMuted}
+                onToggle={() =>
+                  apply("alarm", "enabled", !settings.alarm.enabled)
+                }
               />
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="grid gap-6">
-        <div className="card bg-base-200/70 border border-slate-800">
-          <div className="card-body space-y-4">
-            <h3 className="font-display text-lg">Appearance</h3>
-            <div className="rounded-md bg-base-300/30 px-3 py-2">
-              <label className="flex items-center justify-between">
-                <span>Theme</span>
-                <SelectionDropdown
-                  items={themeOptions}
-                  selected={[settings.theme]}
-                  onChange={(next) =>
-                    setTheme((next[0] ?? "sentinel") as typeof settings.theme)
-                  }
-                  label="Theme"
-                  buttonClassName="min-w-[160px]"
-                />
-              </label>
-            </div>
+          <div className="rounded-md bg-base-300/30 px-3 py-2">
+            <label className="label text-xs">Alarm tone</label>
+            <SelectionDropdown
+              items={soundOptions}
+              selected={[settings.alarm.sound]}
+              onChange={(next) => apply("alarm", "sound", next[0] ?? "")}
+              label="Alarm tone"
+              disabled={!settings.alarm.enabled}
+              buttonClassName="min-w-[160px]"
+            />
           </div>
-        </div>
+        </Panel>
 
-        <div className="card bg-base-200/70 border border-slate-800">
-          <div className="card-body space-y-4">
-            <h3 className="font-display text-lg">Reset</h3>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="btn btn-error btn-outline btn-sm"
-                onClick={() => setSettingsModal(SETTINGS_MODAL.Reset, true)}
-              >
-                Reset all saved settings
-              </button>
-              <button
-                className="btn btn-outline btn-sm"
-                onClick={() => setSettingsModal(SETTINGS_MODAL.ClearData, true)}
-              >
-                Clear browser saved data
-              </button>
-            </div>
+        <Panel
+          title="Reset"
+          hint="Reset settings restores defaults only. Clear browser data removes all locally stored Sentinel data."
+        >
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn btn-warning btn-outline btn-sm"
+              onClick={() => setSettingsModal(SETTINGS_MODAL.Reset, true)}
+            >
+              Reset settings to defaults
+            </button>
+            <button
+              className="btn btn-error btn-outline btn-sm"
+              onClick={() => setSettingsModal(SETTINGS_MODAL.ClearData, true)}
+            >
+              Clear all browser saved data
+            </button>
           </div>
-        </div>
+        </Panel>
       </div>
 
       <audio ref={previewRef} src={`/audio/${settings.alarm.sound}.mp3`} />

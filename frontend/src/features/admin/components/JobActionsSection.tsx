@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import useConfirm from "@/app/hooks/useConfirm";
+import Panel from "@/components/Panel";
 import { useAdminMapDataStore } from "../store/adminMapDataStore";
 
 type ActionGroup = "map_data" | "characters" | "maintenance";
@@ -58,59 +59,55 @@ export default function JobActionsSection() {
         ];
     }
   }, [group]);
+  const panelActions = (
+    <select
+      className="select select-xs bg-base-300/70"
+      value={group}
+      onChange={(event) => setGroup(event.target.value as ActionGroup)}
+    >
+      {Object.entries(GROUP_LABELS).map(([key, label]) => (
+        <option key={key} value={key}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
-    <section className="card bg-base-200/70 border border-slate-800">
-      <div className="card-body space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="font-display text-2xl">Job Actions</h2>
-            <p className="text-xs text-slate-400">
-              Trigger background jobs and updates.
-            </p>
-          </div>
-          <select
-            className="select select-xs bg-base-300/70"
-            value={group}
-            onChange={(event) => setGroup(event.target.value as ActionGroup)}
+    <Panel
+      title="Job Actions"
+      hint="Trigger background jobs and updates."
+      actions={panelActions}
+      bodyClassName="space-y-4"
+    >
+      <div className="flex flex-wrap gap-2">
+        {actions.map((action) => (
+          <button
+            key={action.path}
+            className="btn btn-xs btn-info btn-outline"
+            onClick={() => {
+              if (action.confirm) {
+                requestConfirm({
+                  title: action.label,
+                  body: action.confirm,
+                  onConfirm: () => runAction(action.label, action.path),
+                  confirmLabel: "Run",
+                  cancelLabel: "Cancel",
+                  tone: "default",
+                });
+                return;
+              }
+              void runAction(action.label, action.path);
+            }}
+            disabled={loadingLabel !== null}
           >
-            {Object.entries(GROUP_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action) => (
-            <button
-              key={action.path}
-              className="btn btn-xs btn-info btn-outline"
-              onClick={() => {
-                if (action.confirm) {
-                  requestConfirm({
-                    title: action.label,
-                    body: action.confirm,
-                    onConfirm: () => runAction(action.label, action.path),
-                    confirmLabel: "Run",
-                    cancelLabel: "Cancel",
-                    tone: "default",
-                  });
-                  return;
-                }
-                void runAction(action.label, action.path);
-              }}
-              disabled={loadingLabel !== null}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-        {loadingLabel && (
-          <p className="text-xs text-slate-400">Running: {loadingLabel}…</p>
-        )}
+            {action.label}
+          </button>
+        ))}
       </div>
-    </section>
+      {loadingLabel && (
+        <p className="text-xs text-slate-400">Running: {loadingLabel}…</p>
+      )}
+    </Panel>
   );
 }

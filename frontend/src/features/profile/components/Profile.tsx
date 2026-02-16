@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import CharacterList from "@/components/CharacterList";
+import Panel from "@/components/Panel";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useUIStore } from "@/app/store/uiStore";
 import { getErrorMessage, getHttpData, getHttpStatus } from "@/utils/httpError";
@@ -90,36 +91,29 @@ export default function Profile() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <section className="card bg-base-200/70 border border-slate-800">
-        <div className="card-body">
-          <h2 className="font-display text-2xl">Linked Characters</h2>
-          <p className="text-sm text-slate-400">
-            Manage the characters tied to your Sentinel account.
-          </p>
-          {loading ? (
-            <p className="text-sm text-slate-400">Loading characters…</p>
-          ) : (
-            <CharacterList characters={characters} />
-          )}
-        </div>
-      </section>
+      <Panel
+        title="Linked Characters"
+        hint="Manage the characters tied to your Sentinel account."
+      >
+        {loading ? (
+          <p className="text-sm text-slate-400">Loading characters…</p>
+        ) : (
+          <CharacterList characters={characters} />
+        )}
+      </Panel>
 
-      <section className="card bg-base-200/70 border border-slate-800">
-        <div className="card-body">
-          <h2 className="font-display text-2xl">Add Character</h2>
-          <p className="text-sm text-slate-400">
-            Link another character via EVE SSO. Each character keeps its own
-            scopes and tokens.
-          </p>
-          <button
-            className="btn btn-sm btn-success btn-outline mt-3"
-            onClick={linkCharacter}
-            disabled={!standaloneAuth}
-          >
-            Link another character
-          </button>
-        </div>
-      </section>
+      <Panel
+        title="Add Character"
+        hint="Link another character via EVE SSO. Each character keeps its own scopes and tokens."
+      >
+        <button
+          className="btn btn-sm btn-success btn-outline"
+          onClick={linkCharacter}
+          disabled={!standaloneAuth}
+        >
+          Link another character
+        </button>
+      </Panel>
     </div>
   );
 }

@@ -7,9 +7,13 @@ type JobRunsListProps = {
   onCancel: (jobId: string) => void;
 };
 
-export default function JobRunsList({ jobRuns, now, onCancel }: JobRunsListProps) {
+export default function JobRunsList({
+  jobRuns,
+  now,
+  onCancel,
+}: JobRunsListProps) {
   return (
-    <ul className="space-y-2 text-xs min-h-0 overflow-auto">
+    <ul className="h-full min-h-0 overflow-auto space-y-2 text-xs">
       {jobRuns.map(({ parent, steps }) => (
         <JobRunCard
           key={parent.job_id || parent.id}

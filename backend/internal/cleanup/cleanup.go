@@ -14,6 +14,8 @@ type Service struct {
 	App *pocketbase.PocketBase
 }
 
+const IntelReportRetention = 30 * time.Minute
+
 func New(app *pocketbase.PocketBase) *Service {
 	return &Service{App: app}
 }

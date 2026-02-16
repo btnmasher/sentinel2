@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
-	"time"
 
 	"github.com/pocketbase/pocketbase"
 
+	"sentinel2/internal/cleanup"
 	"sentinel2/internal/jobs"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/store"
@@ -62,7 +62,7 @@ func runCleanupJob(app *pocketbase.PocketBase, deps dependencies) {
 		}
 
 		if err := stepper.Run("cleanup_intel_reports", false, func(ctx context.Context) error {
-			count, err := deps.cleanup.RemoveOldIntelReports(15 * time.Minute)
+			count, err := deps.cleanup.RemoveOldIntelReports(cleanup.IntelReportRetention)
 			intelReportCount = count
 			return err
 		}); err != nil {

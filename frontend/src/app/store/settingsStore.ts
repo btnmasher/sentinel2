@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { ensurePersistReset } from "./persistReset";
 
 export const SETTINGS_STORE_VERSION = 2;
 
@@ -74,8 +73,6 @@ const defaultSettings: Settings = {
     sound: "woop",
   },
 };
-
-ensurePersistReset();
 
 export const useSettingsStore = create<SettingsState>()(
   persist(

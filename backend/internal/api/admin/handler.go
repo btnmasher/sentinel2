@@ -879,7 +879,7 @@ func (h *Handler) RunCleanupJob(c *core.RequestEvent) error {
 			}
 
 			if err := stepper.Run("cleanup_intel_reports", false, func(ctx context.Context) error {
-				count, err := h.Cleanup.RemoveOldIntelReports(15 * time.Minute)
+				count, err := h.Cleanup.RemoveOldIntelReports(cleanup.IntelReportRetention)
 				intelReportCount = count
 				return err
 			}); err != nil {

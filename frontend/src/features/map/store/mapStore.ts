@@ -6,7 +6,6 @@ import { ESI_BASE, ESI_PERMISSION_REQUIRED } from "@/config/esi";
 import { useAuthStore } from "@/app/store/authStore";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { UI_DIALOG, useUIStore } from "@/app/store/uiStore";
-import { ensurePersistReset } from "@/app/store/persistReset";
 import { getHttpData, getHttpStatus } from "@/utils/httpError";
 import type {
   Character,
@@ -146,8 +145,6 @@ const handleRouteError = (error: unknown, context: RouteErrorContext) => {
   }
   showRouteError(data || "Error finding route, try again", context, error);
 };
-
-ensurePersistReset();
 
 export const useMapStore = create<MapState>()(
   persist(

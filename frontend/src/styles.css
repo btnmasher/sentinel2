@@ -459,9 +459,21 @@
 }
 
 .map-region-label {
-  fill: color-mix(in oklch, var(--color-base-content) 65%, transparent);
-  opacity: 0.55;
+  fill: color-mix(in oklch, var(--color-base-content) 78%, transparent);
+  opacity: 0.72;
   letter-spacing: 0.02em;
+  font-weight: 600;
+  paint-order: stroke fill;
+  stroke: color-mix(in oklch, var(--color-base-300) 70%, transparent);
+  stroke-width: 1.2;
+  text-shadow: 0 0 8px rgba(15, 23, 42, 0.35);
+}
+
+html[data-theme="sentinel-light"] .map-region-label {
+  fill: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+  opacity: 0.78;
+  stroke: color-mix(in oklch, #e2e8f0 85%, transparent);
+  text-shadow: 0 0 6px rgba(15, 23, 42, 0.12);
 }
 
 .os-icon {

@@ -3,6 +3,7 @@ import { api } from "@/config/api";
 import { pb } from "@/config/pb";
 import useConfirm from "@/app/hooks/useConfirm";
 import { useUIStore } from "@/app/store/uiStore";
+import Panel from "@/components/Panel";
 import { getErrorMessage } from "@/utils/httpError";
 import { useShallow } from "zustand/shallow";
 
@@ -152,152 +153,146 @@ export default function Uploader() {
 
   return (
     <div className="grid lg:grid-cols-[2fr_1fr] gap-6">
-      <section className="card bg-base-200/70 border border-slate-800">
-        <div className="card-body">
-          <h2 className="font-display text-2xl">Intel Uploader</h2>
-          <p className="text-sm text-slate-300">
-            Download the uploader tool, then point it at this server. The tool
-            will pull the intel channel configuration directly from the app.
-          </p>
-          <div className="grid gap-3 mt-4">
-            <div className="grid gap-2">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                Uploader Downloads
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {DOWNLOADS.map((item) => (
-                  <a
-                    key={item.label}
-                    className="btn btn-sm btn-outline gap-2"
-                    href={
-                      downloadLinks[item.key] ||
-                      releasePageUrl ||
-                      defaultReleasePageUrl
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    download={downloadLinks[item.key] ? "" : undefined}
-                  >
-                    <img
-                      src={item.icon}
-                      alt={`${item.label} logo`}
-                      className={item.iconClassName}
-                      loading="lazy"
-                    />
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500">
-                Download the uploader for your platform.
-              </p>
+      <Panel
+        title="Intel Uploader"
+        hint="Download the uploader tool, then point it at this server. The tool will pull the intel channel configuration directly from the app."
+      >
+        <div className="grid gap-3 mt-4">
+          <div className="grid gap-2">
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+              Uploader Downloads
             </div>
+            <div className="flex flex-wrap gap-2">
+              {DOWNLOADS.map((item) => (
+                <a
+                  key={item.label}
+                  className="btn btn-sm btn-outline gap-2"
+                  href={
+                    downloadLinks[item.key] ||
+                    releasePageUrl ||
+                    defaultReleasePageUrl
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  download={downloadLinks[item.key] ? "" : undefined}
+                >
+                  <img
+                    src={item.icon}
+                    alt={`${item.label} logo`}
+                    className={item.iconClassName}
+                    loading="lazy"
+                  />
+                  {item.label}
+                </a>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500">
+              Download the uploader for your platform.
+            </p>
+          </div>
 
-            <div className="grid gap-2">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                Uploader Base URL
-              </div>
-              <div className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs break-all">
-                {baseUrl}
-              </div>
+          <div className="grid gap-2">
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+              Uploader Base URL
+            </div>
+            <div className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs break-all">
+              {baseUrl}
+            </div>
+            <button
+              className="btn btn-sm btn-info btn-outline justify-self-start"
+              onClick={() => copyText("Base URL", baseUrl)}
+            >
+              Copy base URL
+            </button>
+          </div>
+
+          <div className="grid gap-2">
+            <div className="text-sm uppercase tracking-[0.2em] text-slate-500">
+              Uploader Token
+            </div>
+            <div className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs break-all">
+              {token || "Loading token..."}
+            </div>
+            <div className="flex w-full items-center gap-2">
               <button
-                className="btn btn-sm btn-info btn-outline justify-self-start"
-                onClick={() => copyText("Base URL", baseUrl)}
+                className="btn btn-sm btn-info btn-outline"
+                onClick={() => copyText("Token", token)}
+                disabled={!token}
               >
-                Copy base URL
+                Copy token
+              </button>
+              <button
+                className="btn btn-sm btn-error btn-outline ml-auto"
+                onClick={confirmRegenerate}
+                disabled={regenerating || !token}
+              >
+                {regenerating ? "Regenerating..." : "Regenerate token"}
               </button>
             </div>
+            <p className="text-xs text-slate-500">
+              Regenerating invalidates previous tokens.
+            </p>
+          </div>
 
-            <div className="grid gap-2">
-              <div className="text-sm uppercase tracking-[0.2em] text-slate-500">
-                Uploader Token
-              </div>
-              <div className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs break-all">
-                {token || "Loading token..."}
-              </div>
-              <div className="flex w-full items-center gap-2">
-                <button
-                  className="btn btn-sm btn-info btn-outline"
-                  onClick={() => copyText("Token", token)}
-                  disabled={!token}
-                >
-                  Copy token
-                </button>
-                <button
-                  className="btn btn-sm btn-error btn-outline ml-auto"
-                  onClick={confirmRegenerate}
-                  disabled={regenerating || !token}
-                >
-                  {regenerating ? "Regenerating..." : "Regenerate token"}
-                </button>
-              </div>
-              <p className="text-xs text-slate-500">
-                Regenerating invalidates previous tokens.
-              </p>
+          <div className="grid gap-2">
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+              Example Usage
             </div>
-
-            <div className="grid gap-2">
-              <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                Example Usage
-              </div>
-              <pre className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
-                {`# Flags
+            <pre className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs whitespace-pre-wrap">
+              {`# Flags
 sentinel2-uploader --base-url ${exampleBase} --token ${exampleToken}
 
 # Env vars
 SENTINEL_BASE_URL=${exampleBase}
 SENTINEL_TOKEN=${exampleToken}
 sentinel2-uploader`}
-              </pre>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className="btn btn-sm btn-info btn-outline"
-                  onClick={() =>
-                    copyText(
-                      "Flags example",
-                      `--base-url ${exampleBase} --token ${exampleToken}`,
-                    )
-                  }
-                >
-                  Copy flags
-                </button>
-                <button
-                  className="btn btn-sm btn-info btn-outline"
-                  onClick={() =>
-                    copyText(
-                      "Env example",
-                      `SENTINEL_BASE_URL=${exampleBase}\nSENTINEL_TOKEN=${exampleToken}\nsentinel2-uploader`,
-                    )
-                  }
-                >
-                  Copy env
-                </button>
-              </div>
+            </pre>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn btn-sm btn-info btn-outline"
+                onClick={() =>
+                  copyText(
+                    "Flags example",
+                    `--base-url ${exampleBase} --token ${exampleToken}`,
+                  )
+                }
+              >
+                Copy flags
+              </button>
+              <button
+                className="btn btn-sm btn-info btn-outline"
+                onClick={() =>
+                  copyText(
+                    "Env example",
+                    `SENTINEL_BASE_URL=${exampleBase}\nSENTINEL_TOKEN=${exampleToken}\nsentinel2-uploader`,
+                  )
+                }
+              >
+                Copy env
+              </button>
             </div>
           </div>
         </div>
-      </section>
-      <aside className="card bg-base-200/70 border border-slate-800">
-        <div className="card-body">
-          <h3 className="font-display text-lg">Active Channels</h3>
-          <div className="text-xs text-slate-500">
-            Channel configuration updates automatically.
-          </div>
-          <ul className="space-y-2 text-sm">
-            {channels.length === 0 && (
-              <li className="text-slate-500">No channels configured.</li>
-            )}
-            {channels.map((channel) => (
-              <li
-                key={channel}
-                className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-base-300/40 px-3 py-2"
-              >
-                <span className="font-medium text-slate-100">{channel}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </aside>
+      </Panel>
+      <Panel
+        title="Active Channels"
+        hint="Channel configuration updates automatically."
+        className="h-fit"
+      >
+        <ul className="space-y-2 text-sm">
+          {channels.length === 0 && (
+            <li className="text-slate-500">No channels configured.</li>
+          )}
+          {channels.map((channel) => (
+            <li
+              key={channel}
+              className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-base-300/40 px-3 py-2"
+            >
+              <span className="font-medium text-slate-100">{channel}</span>
+            </li>
+          ))}
+        </ul>
+      </Panel>
     </div>
   );
 }
