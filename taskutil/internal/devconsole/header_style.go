@@ -96,7 +96,7 @@ func (m viewState) headerLines(width int) []string {
 			{keys: "f/b", desc: "restart fe/be"},
 			{keys: "ctrl+r", desc: "rebuild+restart focused"},
 			{keys: "ctrl+f/ctrl+b", desc: "rebuild+restart fe/be"},
-			{keys: "ctrl+g", desc: "migrate+restart backend"},
+			{keys: "ctrl+g", desc: "rebuild+migrate+restart"},
 			{keys: "up/down + enter/y", desc: "copy selected line (line mode)"},
 		}, width)...)
 	} else {

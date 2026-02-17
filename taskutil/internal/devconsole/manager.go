@@ -25,8 +25,15 @@ type processManager struct {
 	cfg           project.Config
 	ctx           context.Context
 	events        chan tea.Msg
+	lineIn        chan logLine
 	processes     map[string]*managedProcess
 	runMigrations bool
+}
+
+type logLine struct {
+	proc    string
+	line    string
+	logFile *os.File
 }
 
 type processSpec struct {
@@ -58,6 +65,9 @@ type execCmd interface {
 const (
 	rebuildBackendTask  = "build:backend:skip-embed"
 	rebuildFrontendTask = "build:frontend:dev"
+	logFlushInterval    = 75 * time.Millisecond
+	logBatchMaxLines    = 200
+	logIngressBuffer    = 4096
 )
 
 var startPTYFn = startPTY
@@ -113,10 +123,11 @@ func newProcessManager(cfg project.Config, runMigrations bool, events chan tea.M
 	}
 
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	return &processManager{
+	pm := &processManager{
 		cfg:           cfg,
 		ctx:           ctx,
 		events:        events,
+		lineIn:        make(chan logLine, logIngressBuffer),
 		runMigrations: runMigrations,
 		processes: map[string]*managedProcess{
 			"frontend": {
@@ -150,6 +161,8 @@ func newProcessManager(cfg project.Config, runMigrations bool, events chan tea.M
 			},
 		},
 	}
+	go pm.runLinePump()
+	return pm
 }
 
 func (pm *processManager) startAll() error {
@@ -267,9 +280,7 @@ func (pm *processManager) stream(name string, reader io.Reader, logFile *os.File
 	buf := make([]byte, 0, 1024*64)
 	scanner.Buffer(buf, 1024*1024)
 	for scanner.Scan() {
-		line := scanner.Text()
-		fmt.Fprintln(logFile, line)
-		pm.events <- lineMsg{proc: name, line: normalizeLineForViewport(line)}
+		pm.enqueueLine(name, scanner.Text(), logFile)
 	}
 }
 
@@ -382,6 +393,70 @@ func (pm *processManager) streamAux(proc string, reader io.Reader) {
 	buf := make([]byte, 0, 1024*64)
 	scanner.Buffer(buf, 1024*1024)
 	for scanner.Scan() {
-		pm.events <- lineMsg{proc: proc, line: normalizeLineForViewport(scanner.Text())}
+		pm.enqueueLine(proc, scanner.Text(), nil)
+	}
+}
+
+func (pm *processManager) enqueueLine(proc, line string, logFile *os.File) {
+	pm.lineIn <- logLine{proc: proc, line: line, logFile: logFile}
+}
+
+func (pm *processManager) runLinePump() {
+	ticker := time.NewTicker(logFlushInterval)
+	defer ticker.Stop()
+
+	uiPending := map[string][]string{}
+	logPending := map[*os.File][]string{}
+
+	flush := func() {
+		for file, lines := range logPending {
+			if file == nil || len(lines) == 0 {
+				delete(logPending, file)
+				continue
+			}
+			var b strings.Builder
+			for _, line := range lines {
+				b.WriteString(line)
+				b.WriteByte('\n')
+			}
+			_, _ = io.WriteString(file, b.String())
+			delete(logPending, file)
+		}
+
+		for proc, lines := range uiPending {
+			if len(lines) == 0 {
+				delete(uiPending, proc)
+				continue
+			}
+			pm.events <- lineBatchMsg{
+				proc:  proc,
+				lines: append([]string(nil), lines...),
+			}
+			delete(uiPending, proc)
+		}
+	}
+
+	for {
+		select {
+		case <-pm.ctx.Done():
+			for {
+				select {
+				case item := <-pm.lineIn:
+					logPending[item.logFile] = append(logPending[item.logFile], item.line)
+					uiPending[item.proc] = append(uiPending[item.proc], normalizeLineForViewport(item.line))
+				default:
+					flush()
+					return
+				}
+			}
+		case item := <-pm.lineIn:
+			logPending[item.logFile] = append(logPending[item.logFile], item.line)
+			uiPending[item.proc] = append(uiPending[item.proc], normalizeLineForViewport(item.line))
+			if len(uiPending[item.proc]) >= logBatchMaxLines {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
 	}
 }

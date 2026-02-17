@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/pocketbase/pocketbase"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/auth"
 	"sentinel2/internal/cleanup"
 	"sentinel2/internal/intel"
@@ -14,6 +15,7 @@ type Handler struct {
 	Provider  *auth.EVEProvider
 	Cleanup   *cleanup.Service
 	Intel     *intel.IntelService
+	Audit     *audit.Service
 }
 
 type searchItem struct {
@@ -50,6 +52,10 @@ type auditLogEntry struct {
 	TargetUserName      string `json:"target_user_name"`
 	TargetCharacterID   int    `json:"target_character_id"`
 	TargetCharacterName string `json:"target_character_name"`
+	TargetType          string `json:"target_type"`
+	TargetID            string `json:"target_id"`
+	TargetLabel         string `json:"target_label"`
+	TargetMeta          any    `json:"target_meta"`
 	Created             string `json:"created"`
 }
 
@@ -86,6 +92,12 @@ type mapDataResponse struct {
 	Step  string `json:"step"`
 }
 
+type siteAnnouncementPayload struct {
+	Variant string `json:"variant"`
+	Message string `json:"message"`
+}
+
 type MapUpdateHandler struct {
-	App *pocketbase.PocketBase
+	App   *pocketbase.PocketBase
+	Audit *audit.Service
 }

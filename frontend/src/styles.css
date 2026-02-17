@@ -1373,3 +1373,44 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
     opacity: 1;
   }
 }
+
+.announcement-markdown {
+  line-height: 1.5;
+}
+
+.announcement-markdown h1,
+.announcement-markdown h2,
+.announcement-markdown h3 {
+  margin: 0.5rem 0;
+  font-weight: 600;
+}
+
+.announcement-markdown p {
+  margin: 0.5rem 0;
+}
+
+.announcement-markdown ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+.announcement-markdown li {
+  margin: 0.25rem 0;
+}
+
+.announcement-markdown code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 0.875em;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.25rem;
+}
+
+.announcement-markdown a {
+  color: rgb(125 211 252);
+  text-decoration: underline;
+}

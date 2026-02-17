@@ -4,6 +4,7 @@ import { api } from "@/config/api";
 import LoadingCard from "@/components/LoadingCard";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import IntelAlarm from "@/components/IntelAlarm";
+import useVersionWatcher from "@/app/hooks/useVersionWatcher";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useAuthStore } from "@/app/store/authStore";
 import { useIntelStore, useIntelRealtime } from "@/features/intel";
@@ -45,6 +46,7 @@ export default function App() {
   );
   const theme = useSettingsStore((s) => s.settings.theme);
   useIntelRealtime();
+  useVersionWatcher();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

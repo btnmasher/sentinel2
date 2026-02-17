@@ -7,6 +7,7 @@ import GlobalModalHost from "@/components/GlobalModalHost";
 import Toast from "@/components/Toast";
 import ThemeToggle from "@/components/ThemeToggle";
 import ResponsiveNavMenu from "@/components/ResponsiveNavMenu";
+import { SiteAnnouncementHost } from "@/features/announcements";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useAuthStore } from "@/app/store/authStore";
 import { useSettingsStore } from "@/app/store/settingsStore";
@@ -119,6 +120,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           />
         </header>
       )}
+      <SiteAnnouncementHost />
       <main
         className={
           fullPageMapMode

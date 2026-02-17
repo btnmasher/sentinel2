@@ -10,7 +10,17 @@ import {
   defineAdminModal,
   useAdminStore,
 } from "../store/adminStore";
+import type { AuditEntry } from "../types";
 import { formatDateTime } from "../utils/formatters";
+
+function formatAuditTarget(entry: AuditEntry): string {
+  if (entry.target_label?.trim()) return entry.target_label.trim();
+  if (entry.target_character_name?.trim())
+    return entry.target_character_name.trim();
+  if (entry.target_user_name?.trim()) return entry.target_user_name.trim();
+  if (entry.target_id?.trim()) return entry.target_id.trim();
+  return "n/a";
+}
 
 function AuditLogModalBody() {
   const { close } = useModalBody();
@@ -50,6 +60,7 @@ function AuditLogModalBody() {
   const actionOptions = [
     { id: "all", label: "All actions" },
     { id: "user.", label: "User actions" },
+    { id: "user.auth.", label: "User auth actions" },
     { id: "user.access", label: "Access changes" },
     { id: "user.sessions", label: "Session revokes" },
     { id: "user.uploaders", label: "Uploader revokes" },
@@ -59,6 +70,11 @@ function AuditLogModalBody() {
     { id: "character.merge", label: "Account merges" },
     { id: "character.revoke", label: "Character revokes" },
     { id: "character.refresh", label: "Character refresh" },
+    { id: "job.", label: "Job actions" },
+    { id: "admin.map_data.", label: "Map data actions" },
+    { id: "announcement.", label: "Announcement actions" },
+    { id: "staff.channel.", label: "Staff channel actions" },
+    { id: "staff.jumpbridge.", label: "Staff jumpbridge actions" },
   ];
 
   useEffect(() => {
@@ -83,19 +99,21 @@ function AuditLogModalBody() {
           label="Action filter"
           buttonClassName="w-full"
         />
-        <input
-          className="input input-xs input-bordered bg-base-300"
-          placeholder="Filter actor"
-          value={actor}
-          onChange={(e) => setActor(e.target.value)}
-        />
-        <input
-          className="input input-xs input-bordered bg-base-300"
-          placeholder="Filter summary"
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-        />
-        <div className="flex gap-2">
+        <div className="grid gap-2 md:grid-cols-2">
+          <input
+            className="input input-xs input-bordered bg-base-300"
+            placeholder="Filter actor"
+            value={actor}
+            onChange={(e) => setActor(e.target.value)}
+          />
+          <input
+            className="input input-xs input-bordered bg-base-300"
+            placeholder="Filter summary"
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+          />
+        </div>
+        <div className="flex justify-end gap-2">
           <button
             className="btn btn-xs btn-outline"
             onClick={() => {
@@ -141,8 +159,15 @@ function AuditLogModalBody() {
                 </span>
               </div>
               <p className="text-slate-300">{entry.summary}</p>
-              <div className="text-slate-500 mt-1">
-                {entry.actor_display_name || entry.actor_id}
+              <div className="mt-1 grid gap-1 text-slate-500">
+                <div>
+                  <span className="text-slate-400">Actor:</span>{" "}
+                  {entry.actor_display_name || entry.actor_id || "n/a"}
+                </div>
+                <div>
+                  <span className="text-slate-400">Target:</span>{" "}
+                  {entry.target_type || "n/a"} / {formatAuditTarget(entry)}
+                </div>
               </div>
             </li>
           ))}

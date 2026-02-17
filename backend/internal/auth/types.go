@@ -11,7 +11,9 @@ type AuthTokens struct {
 }
 
 type AuthResult struct {
-	Provider string
-	UserID   string
-	Tokens   AuthTokens
+	Provider      string
+	UserID        string
+	CharacterID   int
+	CharacterName string
+	Tokens        AuthTokens
 }

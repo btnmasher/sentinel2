@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/auth"
 	"sentinel2/internal/cleanup"
 	"sentinel2/internal/format"
@@ -25,13 +27,14 @@ import (
 	"sentinel2/internal/store"
 )
 
-func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService) *Handler {
+func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, auditSvc *audit.Service) *Handler {
 	return &Handler{
 		App:       app,
 		Refresher: refresher,
 		Provider:  provider,
 		Cleanup:   cleanupSvc,
 		Intel:     intelSvc,
+		Audit:     auditSvc,
 	}
 }
 
@@ -185,11 +188,10 @@ func (h *Handler) SeedSearchUsers(c *core.RequestEvent) error {
 
 	h.logAction(
 		c,
-		"debug.search_seed",
-		fmt.Sprintf("Seeded %d debug search users", created),
-		"",
-		"",
-		nil,
+		audit.Event{
+			Action:  audit.ActionDebugSearchSeed,
+			Summary: fmt.Sprintf("Seeded %d debug search users", created),
+		},
 	)
 
 	return c.JSON(http.StatusOK, map[string]any{
@@ -275,8 +277,38 @@ func (h *Handler) AuditLogs(c *core.RequestEvent) error {
 	filter := ""
 	params := dbx.Params{}
 	if userID != "" {
-		filter = "target_user_id = {:user}"
+		clauses := []string{
+			"target_user_id = {:user}",
+			"actor_id = {:user}",
+			"(target_type = {:target_user_type} && target_id = {:user})",
+		}
 		params["user"] = userID
+		params["target_user_type"] = audit.TargetTypeUser
+		params["target_character_type"] = audit.TargetTypeCharacter
+
+		characters, charactersErr := h.App.FindRecordsByFilter(
+			store.CollectionCharacters,
+			"user = {:user}",
+			"",
+			0,
+			0,
+			dbx.Params{"user": userID},
+		)
+		if charactersErr != nil {
+			return router.NewInternalServerError("Failed to load audit logs.", logging.Fields{
+				"user_id": userID,
+				"error":   charactersErr.Error(),
+			})
+		}
+		for i, character := range characters {
+			characterIDParam := fmt.Sprintf("character_id_%d", i)
+			characterRecordIDParam := fmt.Sprintf("character_record_id_%d", i)
+			params[characterIDParam] = character.GetInt("eve_character_id")
+			params[characterRecordIDParam] = character.Id
+			clauses = append(clauses, "target_character_id = {:"+characterIDParam+"}")
+			clauses = append(clauses, "(target_type = {:target_character_type} && target_id = {:"+characterRecordIDParam+"})")
+		}
+		filter = "(" + strings.Join(clauses, " || ") + ")"
 	}
 	if action != "" {
 		filter = appendFilter(filter, "action ~ {:action}")
@@ -330,6 +362,10 @@ func (h *Handler) AuditLogs(c *core.RequestEvent) error {
 			TargetUserName:      record.GetString("target_user_name"),
 			TargetCharacterID:   record.GetInt("target_character_id"),
 			TargetCharacterName: record.GetString("target_character_name"),
+			TargetType:          record.GetString("target_type"),
+			TargetID:            record.GetString("target_id"),
+			TargetLabel:         record.GetString("target_label"),
+			TargetMeta:          record.Get("target_meta"),
 			Created:             created,
 		})
 	}
@@ -377,11 +413,14 @@ func (h *Handler) CancelJob(c *core.RequestEvent) error {
 
 	h.logAction(
 		c,
-		"job.cancel",
-		fmt.Sprintf("Canceled job %s", jobID),
-		"",
-		"",
-		nil,
+		audit.Event{
+			Action:      audit.ActionJobCancel,
+			Summary:     fmt.Sprintf("Canceled job %s", jobID),
+			TargetType:  audit.TargetTypeJob,
+			TargetID:    jobID,
+			TargetLabel: "manual_cancel",
+			TargetMeta:  map[string]any{"job_id": jobID},
+		},
 	)
 
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
@@ -450,7 +489,7 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 		}
 	}
 	hiddenFilter := `(hidden = false || hidden = null)`
-	parentFilter := `(step = "" || step = null || kind = "map_data_step")`
+	parentFilter := `(step = "" || step = null || kind = "map_data_step" || (kind = "character_refresh" && step ~ "user:%"))`
 	parentOnlyFilter := ""
 	if dateFilter != "" {
 		parentOnlyFilter = appendFilter(parentFilter, dateFilter)
@@ -595,6 +634,145 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 	})
 }
 
+func (h *Handler) CreateSiteAnnouncement(c *core.RequestEvent) error {
+	payload := siteAnnouncementPayload{}
+	if bindErr := c.BindBody(&payload); bindErr != nil {
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{
+			"error": bindErr.Error(),
+		})
+	}
+
+	variant, message, payloadErr := normalizeAnnouncementPayload(payload)
+	if errors.Is(payloadErr, errInvalidAnnouncementVariant) {
+		return router.NewBadRequestError("Invalid announcement variant.", logging.Fields{
+			"variant": payload.Variant,
+		})
+	}
+	if errors.Is(payloadErr, errAnnouncementMessageRequired) {
+		return router.NewBadRequestError("Announcement message is required.", nil)
+	}
+	if payloadErr != nil {
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": payloadErr.Error()})
+	}
+
+	collection, collectionErr := h.App.FindCollectionByNameOrId(store.CollectionSiteAnnouncements)
+	if collectionErr != nil {
+		return router.NewInternalServerError("Failed to load announcement collection.", logging.Fields{
+			"error": collectionErr.Error(),
+		})
+	}
+
+	if archiveErr := h.archiveActiveAnnouncements(); archiveErr != nil {
+		return router.NewInternalServerError("Failed to archive previous announcements.", logging.Fields{
+			"error": archiveErr.Error(),
+		})
+	}
+
+	record := core.NewRecord(collection)
+	record.Set("variant", variant)
+	record.Set("message", message)
+	record.Set("archived", false)
+	record.Set("published_at", types.NowDateTime())
+	if saveErr := h.App.Save(record); saveErr != nil {
+		return router.NewInternalServerError("Failed to save announcement.", logging.Fields{
+			"error": saveErr.Error(),
+		})
+	}
+
+	h.logAction(
+		c,
+		audit.Event{
+			Action:      audit.ActionAnnouncementCreate,
+			Summary:     fmt.Sprintf("Published %s announcement", variant),
+			TargetType:  audit.TargetTypeAnnouncement,
+			TargetID:    record.Id,
+			TargetLabel: variant,
+			TargetMeta: map[string]any{
+				"variant": variant,
+			},
+		},
+	)
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"id":      record.Id,
+		"variant": variant,
+	})
+}
+
+func (h *Handler) ArchiveLatestSiteAnnouncement(c *core.RequestEvent) error {
+	latest, err := h.findLatestActiveAnnouncement()
+	if err != nil {
+		return router.NewInternalServerError("Failed to load latest announcement.", logging.Fields{
+			"error": err.Error(),
+		})
+	}
+	if latest == nil {
+		return c.JSON(http.StatusOK, map[string]any{"archived": false})
+	}
+	latest.Set("archived", true)
+	if saveErr := h.App.Save(latest); saveErr != nil {
+		return router.NewInternalServerError("Failed to archive announcement.", logging.Fields{
+			"error": saveErr.Error(),
+		})
+	}
+	h.logAction(
+		c,
+		audit.Event{
+			Action:      audit.ActionAnnouncementArchiveLatest,
+			Summary:     "Archived latest announcement",
+			TargetType:  audit.TargetTypeAnnouncement,
+			TargetID:    latest.Id,
+			TargetLabel: latest.GetString("variant"),
+			TargetMeta: map[string]any{
+				"variant": latest.GetString("variant"),
+			},
+		},
+	)
+	return c.JSON(http.StatusOK, map[string]any{
+		"archived": true,
+		"id":       latest.Id,
+	})
+}
+
+func (h *Handler) archiveActiveAnnouncements() error {
+	records, err := h.App.FindRecordsByFilter(
+		store.CollectionSiteAnnouncements,
+		"(archived = false || archived = null)",
+		"",
+		0,
+		0,
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		record.Set("archived", true)
+		if saveErr := h.App.Save(record); saveErr != nil {
+			return saveErr
+		}
+	}
+	return nil
+}
+
+func (h *Handler) findLatestActiveAnnouncement() (*core.Record, error) {
+	records, err := h.App.FindRecordsByFilter(
+		store.CollectionSiteAnnouncements,
+		"(archived = false || archived = null)",
+		"-created",
+		1,
+		0,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	return records[0], nil
+}
+
 func appendFilter(filter, clause string) string {
 	if filter == "" {
 		return clause
@@ -710,46 +888,46 @@ func toJobRunEntry(record *core.Record) jobRunEntry {
 	}
 }
 
-func (h *Handler) logAction(c *core.RequestEvent, action, summary, userID, targetUserName string, character *core.Record) {
-	collection, collectionErr := h.App.FindCollectionByNameOrId(store.CollectionAuditLogs)
-	if collectionErr != nil {
+func (h *Handler) logAction(c *core.RequestEvent, event audit.Event) {
+	explicitTarget := strings.TrimSpace(event.TargetType) != "" ||
+		strings.TrimSpace(event.TargetID) != "" ||
+		strings.TrimSpace(event.TargetLabel) != ""
+	event.ResolveTargetCharacter = event.ResolveTargetCharacter || (event.TargetUserID != "" && event.TargetCharacter == nil && !explicitTarget)
+	if h.Audit == nil {
 		return
 	}
-	record := core.NewRecord(collection)
-	record.Set("action", action)
-	record.Set("summary", summary)
-	record.Set("target_user_id", userID)
-	if character != nil {
-		record.Set("target_character_id", character.GetInt("eve_character_id"))
-		record.Set("target_character_name", character.GetString("eve_character_name"))
+	h.Audit.LogRequest(c, event)
+}
+
+func (h *Handler) applyAccountTarget(event *audit.Event, userID string, fallbackMainName string) {
+	if event == nil {
+		return
 	}
-	value := c.Get("admin_record")
-	admin, ok := value.(*core.Record)
-	if ok {
-		record.Set("actor_id", admin.Id)
-		display := admin.GetString("eve_character_name")
-		if display == "" {
-			display = admin.Id
-		}
-		record.Set("actor_display_name", display)
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return
 	}
-	if targetUserName != "" {
-		record.Set("target_user_name", targetUserName)
-	} else if userID != "" {
-		user, userErr := h.App.FindRecordById(store.CollectionUsers, userID)
-		if userErr == nil {
-			record.Set("target_user_name", user.GetString("eve_character_name"))
+	mainName := strings.TrimSpace(fallbackMainName)
+	if mainName == "" {
+		if main, err := h.findMainCharacter(userID); err == nil && main != nil {
+			mainName = strings.TrimSpace(main.GetString("eve_character_name"))
 		}
 	}
-	if saveErr := h.App.Save(record); saveErr != nil {
-		logging.New(h.App).
-			WithFields(logging.Fields{
-				"action": action,
-				"user":   userID,
-			}).
-			WithErr(saveErr).
-			Warn("admin audit log save failed")
+	if mainName == "" {
+		if user, err := h.App.FindRecordById(store.CollectionUsers, userID); err == nil {
+			mainName = strings.TrimSpace(user.GetString("eve_character_name"))
+		}
 	}
+	if mainName == "" {
+		mainName = "Unknown"
+	}
+	event.TargetUserID = userID
+	if strings.TrimSpace(event.TargetUserName) == "" {
+		event.TargetUserName = mainName
+	}
+	event.TargetType = audit.TargetTypeUser
+	event.TargetID = userID
+	event.TargetLabel = fmt.Sprintf("%s (Main: %s)", userID, mainName)
 }
 
 func (h *Handler) UserDetails(c *core.RequestEvent) error {
@@ -820,11 +998,12 @@ func (h *Handler) RefreshCharacter(c *core.RequestEvent) error {
 
 	h.logAction(
 		c,
-		"character.refresh",
-		"Refreshed character "+record.GetString("eve_character_name"),
-		record.GetString("user"),
-		"",
-		record,
+		audit.Event{
+			Action:          audit.ActionCharacterRefresh,
+			Summary:         "Refreshed character " + record.GetString("eve_character_name"),
+			TargetUserID:    record.GetString("user"),
+			TargetCharacter: record,
+		},
 	)
 
 	return c.JSON(http.StatusOK, newCharacter(record, nil, nil))
@@ -928,7 +1107,6 @@ func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
 			}
 		}
 	}
-
 	actorID := ""
 	if c.Auth != nil {
 		actorID = c.Auth.Id
@@ -959,14 +1137,24 @@ func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
 	if payload.UserID != "" && targetName != "" {
 		summary = fmt.Sprintf("Queued refresh for %s (%d character%s, job %s)", targetName, len(records), suffix, jobID)
 	}
-	h.logAction(
-		c,
-		"character.refresh_all",
-		summary,
-		payload.UserID,
-		targetName,
-		nil,
-	)
+	if payload.UserID != "" {
+		event := audit.Event{
+			Action:         audit.ActionCharacterRefreshAll,
+			Summary:        summary,
+			TargetUserID:   payload.UserID,
+			TargetUserName: targetName,
+		}
+		h.applyAccountTarget(&event, payload.UserID, targetName)
+		h.logAction(c, event)
+	} else {
+		h.logAction(
+			c,
+			audit.Event{
+				Action:  audit.ActionCharacterRefreshAll,
+				Summary: summary,
+			},
+		)
+	}
 
 	go func(records []*core.Record, jobID string, userID string, scope string, runner *jobs.Runner) {
 		start := time.Now()
@@ -1069,6 +1257,25 @@ func (h *Handler) RunCleanupJob(c *core.RequestEvent) error {
 			return nil
 		})
 	}()
+	targetUserName := ""
+	if c.Auth != nil {
+		targetUserName = c.Auth.GetString("eve_character_name")
+	}
+	h.logAction(
+		c,
+		audit.Event{
+			Action:         audit.ActionJobCleanupRun,
+			Summary:        fmt.Sprintf("Triggered cleanup job %s", jobID),
+			TargetUserID:   actorID,
+			TargetUserName: targetUserName,
+			TargetType:     audit.TargetTypeJob,
+			TargetID:       jobID,
+			TargetLabel:    "cleanup",
+			TargetMeta: map[string]any{
+				"job_id": jobID,
+			},
+		},
+	)
 
 	return c.JSON(http.StatusAccepted, map[string]any{
 		"job_id": jobID,
@@ -1117,11 +1324,13 @@ func (h *Handler) SetMainCharacter(c *core.RequestEvent) error {
 	}
 	h.logAction(
 		c,
-		"character.set_main",
-		"Set main to "+character.GetString("eve_character_name"),
-		userID,
-		user.GetString("eve_character_name"),
-		character,
+		audit.Event{
+			Action:          audit.ActionCharacterSetMain,
+			Summary:         "Set main to " + character.GetString("eve_character_name"),
+			TargetUserID:    userID,
+			TargetUserName:  user.GetString("eve_character_name"),
+			TargetCharacter: character,
+		},
 	)
 
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
@@ -1163,13 +1372,20 @@ func (h *Handler) SetAccessLevel(c *core.RequestEvent) error {
 			"access_level": payload.AccessLevel,
 		})
 	}
-	action := "user.access_level_cleared"
+	action := audit.ActionUserAccessLevelCleared
 	summary := "Cleared access level"
 	if payload.AccessLevel != "" {
-		action = "user.access_level_set"
+		action = audit.ActionUserAccessLevelSet
 		summary = "Set access level to " + payload.AccessLevel
 	}
-	h.logAction(c, action, summary, userID, user.GetString("eve_character_name"), nil)
+	event := audit.Event{
+		Action:         action,
+		Summary:        summary,
+		TargetUserID:   userID,
+		TargetUserName: user.GetString("eve_character_name"),
+	}
+	h.applyAccountTarget(&event, userID, user.GetString("eve_character_name"))
+	h.logAction(c, event)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1196,7 +1412,14 @@ func (h *Handler) RevokeSessions(c *core.RequestEvent) error {
 			})
 		}
 	}
-	h.logAction(c, "user.revoke_sessions", "Revoked sessions", userID, user.GetString("eve_character_name"), nil)
+	event := audit.Event{
+		Action:         audit.ActionUserRevokeSessions,
+		Summary:        "Revoked sessions",
+		TargetUserID:   userID,
+		TargetUserName: user.GetString("eve_character_name"),
+	}
+	h.applyAccountTarget(&event, userID, user.GetString("eve_character_name"))
+	h.logAction(c, event)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1209,7 +1432,13 @@ func (h *Handler) RevokeUploaderTokens(c *core.RequestEvent) error {
 			})
 		}
 	}
-	h.logAction(c, "user.revoke_upload_tokens", "Revoked uploader tokens", userID, "", nil)
+	event := audit.Event{
+		Action:       audit.ActionUserRevokeUploadTokens,
+		Summary:      "Revoked uploader tokens",
+		TargetUserID: userID,
+	}
+	h.applyAccountTarget(&event, userID, "")
+	h.logAction(c, event)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1232,7 +1461,13 @@ func (h *Handler) RegenerateUploaderToken(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
-	h.logAction(c, "user.regenerate_upload_token", "Regenerated uploader token", userID, "", nil)
+	event := audit.Event{
+		Action:       audit.ActionUserRegenerateUploadToken,
+		Summary:      "Regenerated uploader token",
+		TargetUserID: userID,
+	}
+	h.applyAccountTarget(&event, userID, "")
+	h.logAction(c, event)
 	return c.JSON(http.StatusOK, map[string]any{"token": record.Id})
 }
 
@@ -1252,11 +1487,12 @@ func (h *Handler) RevokeCharacterTokens(c *core.RequestEvent) error {
 	}
 	h.logAction(
 		c,
-		"character.revoke_tokens",
-		"Revoked character tokens for "+record.GetString("eve_character_name"),
-		record.GetString("user"),
-		"",
-		record,
+		audit.Event{
+			Action:          audit.ActionCharacterRevokeTokens,
+			Summary:         "Revoked character tokens for " + record.GetString("eve_character_name"),
+			TargetUserID:    record.GetString("user"),
+			TargetCharacter: record,
+		},
 	)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
@@ -1304,11 +1540,13 @@ func (h *Handler) RemoveCharacter(c *core.RequestEvent) error {
 	}
 	h.logAction(
 		c,
-		"character.remove",
-		"Removed character "+record.GetString("eve_character_name"),
-		userID,
-		targetUserName,
-		record,
+		audit.Event{
+			Action:          audit.ActionCharacterRemove,
+			Summary:         "Removed character " + record.GetString("eve_character_name"),
+			TargetUserID:    userID,
+			TargetUserName:  targetUserName,
+			TargetCharacter: record,
+		},
 	)
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
@@ -1362,20 +1600,23 @@ func (h *Handler) MoveCharacter(c *core.RequestEvent) error {
 	if sourceUserID != "" {
 		h.logAction(
 			c,
-			"character.move_out",
-			"Moved character "+record.GetString("eve_character_name")+" to "+targetUser.Id,
-			sourceUserID,
-			"",
-			record,
+			audit.Event{
+				Action:          audit.ActionCharacterMoveOut,
+				Summary:         "Moved character " + record.GetString("eve_character_name") + " to " + targetUser.Id,
+				TargetUserID:    sourceUserID,
+				TargetCharacter: record,
+			},
 		)
 	}
 	h.logAction(
 		c,
-		"character.move_in",
-		"Received character "+record.GetString("eve_character_name")+" from "+sourceUserID,
-		targetUser.Id,
-		targetUser.GetString("eve_character_name"),
-		record,
+		audit.Event{
+			Action:          audit.ActionCharacterMoveIn,
+			Summary:         "Received character " + record.GetString("eve_character_name") + " from " + sourceUserID,
+			TargetUserID:    targetUser.Id,
+			TargetUserName:  targetUser.GetString("eve_character_name"),
+			TargetCharacter: record,
+		},
 	)
 
 	return c.JSON(http.StatusOK, map[string]any{"ok": true})
@@ -1447,19 +1688,23 @@ func (h *Handler) MergeUsers(c *core.RequestEvent) error {
 	sourceUserName := sourceUser.GetString("eve_character_name")
 	h.logAction(
 		c,
-		"user.merge_out",
-		"Merged account into "+targetUser.Id,
-		sourceUser.Id,
-		sourceUserName,
-		nil,
+		audit.Event{
+			Action:                 audit.ActionUserMergeOut,
+			Summary:                "Merged account into " + targetUser.Id,
+			TargetUserID:           sourceUser.Id,
+			TargetUserName:         sourceUserName,
+			ResolveTargetCharacter: true,
+		},
 	)
 	h.logAction(
 		c,
-		"user.merge_in",
-		"Merged account from "+sourceUser.Id,
-		targetUser.Id,
-		targetUserName,
-		nil,
+		audit.Event{
+			Action:                 audit.ActionUserMergeIn,
+			Summary:                "Merged account from " + sourceUser.Id,
+			TargetUserID:           targetUser.Id,
+			TargetUserName:         targetUserName,
+			ResolveTargetCharacter: true,
+		},
 	)
 	// Post-merge cleanup: delete the source account only if it's now empty.
 	_ = h.deleteUserIfNoCharacters(sourceUser.Id)

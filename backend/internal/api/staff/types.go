@@ -3,6 +3,7 @@ package staff
 import (
 	"github.com/pocketbase/pocketbase"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/jumpbridges"
 )
 
@@ -20,7 +21,8 @@ type channelCreateResponse struct {
 }
 
 type ChannelsHandler struct {
-	App *pocketbase.PocketBase
+	App   *pocketbase.PocketBase
+	Audit *audit.Service
 }
 
 type jumpbridgeImportResponse struct {
@@ -35,4 +37,5 @@ type jumpbridgeMutationResponse struct {
 type JumpbridgeHandler struct {
 	App     *pocketbase.PocketBase
 	Service *jumpbridges.JumpbridgeService
+	Audit   *audit.Service
 }

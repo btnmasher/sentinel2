@@ -40,11 +40,10 @@ func runCharacterRefreshJob(app *pocketbase.PocketBase, deps dependencies) {
 		"success": success,
 		"failed":  failed,
 	})
-	audit.New(app).Log(
-		"character.refresh_all",
-		fmt.Sprintf("Scheduled refresh (%d ok, %d failed)", success, failed),
-		"",
-		"",
-		nil,
-	)
+	if deps.audit != nil {
+		deps.audit.LogEvent(audit.Event{
+			Action:  audit.ActionCharacterRefreshAll,
+			Summary: fmt.Sprintf("Scheduled refresh (%d ok, %d failed)", success, failed),
+		})
+	}
 }

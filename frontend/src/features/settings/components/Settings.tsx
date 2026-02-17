@@ -70,8 +70,17 @@ export default function Settings() {
   };
 
   const clearSavedData = () => {
+    const sentinelPrefixes = [
+      "intel-map-config/",
+      "site-announcement:dismissed:",
+    ];
+    const sentinelExactKeys = ["sentinel_autoplay_checked"];
     Object.keys(localStorage)
-      .filter((key) => key.startsWith("intel-map-config/"))
+      .filter(
+        (key) =>
+          sentinelPrefixes.some((prefix) => key.startsWith(prefix)) ||
+          sentinelExactKeys.includes(key),
+      )
       .forEach((key) => localStorage.removeItem(key));
     window.location.reload();
   };

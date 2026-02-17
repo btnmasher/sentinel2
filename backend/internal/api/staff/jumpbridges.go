@@ -8,14 +8,15 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/jobs"
 	"sentinel2/internal/jumpbridges"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/mapdata"
 )
 
-func NewJumpbridgeHandler(app *pocketbase.PocketBase, service *jumpbridges.JumpbridgeService) *JumpbridgeHandler {
-	return &JumpbridgeHandler{App: app, Service: service}
+func NewJumpbridgeHandler(app *pocketbase.PocketBase, service *jumpbridges.JumpbridgeService, auditSvc *audit.Service) *JumpbridgeHandler {
+	return &JumpbridgeHandler{App: app, Service: service, Audit: auditSvc}
 }
 
 func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
@@ -57,6 +58,18 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 	logging.WithRequest(h.App, c).
 		WithFields(logFields).
 		Info("jumpbridge import completed")
+	if h.Audit != nil {
+		h.Audit.LogRequest(c, audit.Event{
+			Action:      audit.ActionStaffJumpbridgeImport,
+			Summary:     "Imported jumpbridges",
+			TargetType:  audit.TargetTypeJumpbridgeSet,
+			TargetLabel: "Import",
+			TargetMeta: map[string]any{
+				"line_count": len(lines),
+				"count":      count,
+			},
+		})
+	}
 
 	actorID := ""
 	if c.Auth != nil {
@@ -97,6 +110,14 @@ func (h *JumpbridgeHandler) Clear(c *core.RequestEvent) error {
 		JobName: mapdata.JobMapDataStep,
 		Logger:  logging.WithRequest(h.App, c),
 	})
+	if h.Audit != nil {
+		h.Audit.LogRequest(c, audit.Event{
+			Action:      audit.ActionStaffJumpbridgeClear,
+			Summary:     "Cleared jumpbridges",
+			TargetType:  audit.TargetTypeJumpbridgeSet,
+			TargetLabel: "Clear",
+		})
+	}
 
 	return c.JSON(http.StatusOK, jumpbridgeImportResponse{Count: 0})
 }
@@ -144,6 +165,17 @@ func (h *JumpbridgeHandler) Add(c *core.RequestEvent) error {
 			JobName: mapdata.JobMapDataStep,
 			Logger:  logging.WithRequest(h.App, c),
 		})
+		if h.Audit != nil {
+			h.Audit.LogRequest(c, audit.Event{
+				Action:     audit.ActionStaffJumpbridgeAdd,
+				Summary:    "Added jumpbridge pair",
+				TargetType: audit.TargetTypeJumpbridgePair,
+				TargetMeta: map[string]any{
+					"from_id": payload.FromID,
+					"to_id":   payload.ToID,
+				},
+			})
+		}
 	}
 
 	count := 0
@@ -196,6 +228,18 @@ func (h *JumpbridgeHandler) Remove(c *core.RequestEvent) error {
 			JobName: mapdata.JobMapDataStep,
 			Logger:  logging.WithRequest(h.App, c),
 		})
+		if h.Audit != nil {
+			h.Audit.LogRequest(c, audit.Event{
+				Action:     audit.ActionStaffJumpbridgeRemove,
+				Summary:    "Removed jumpbridge pair",
+				TargetType: audit.TargetTypeJumpbridgePair,
+				TargetMeta: map[string]any{
+					"from_id": payload.FromID,
+					"to_id":   payload.ToID,
+					"deleted": deleted,
+				},
+			})
+		}
 	}
 
 	return c.JSON(http.StatusOK, jumpbridgeMutationResponse{Changed: deleted > 0, Count: deleted / 2})
@@ -250,6 +294,19 @@ func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
 			JobName: mapdata.JobMapDataStep,
 			Logger:  logging.WithRequest(h.App, c),
 		})
+		if h.Audit != nil {
+			h.Audit.LogRequest(c, audit.Event{
+				Action:     audit.ActionStaffJumpbridgeUpdate,
+				Summary:    "Updated jumpbridge pair",
+				TargetType: audit.TargetTypeJumpbridgePair,
+				TargetMeta: map[string]any{
+					"old_from_id": payload.OldFromID,
+					"old_to_id":   payload.OldToID,
+					"from_id":     payload.FromID,
+					"to_id":       payload.ToID,
+				},
+			})
+		}
 	}
 
 	count := 0

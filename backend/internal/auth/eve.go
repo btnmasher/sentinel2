@@ -194,9 +194,11 @@ func (p *EVEProvider) handleLinkCallback(c *core.RequestEvent, flow AuthFlow, ct
 	}
 
 	return &AuthResult{
-		Provider: p.Name(),
-		UserID:   user.Id,
-		Tokens:   oauthTokens(ctx.token),
+		Provider:      p.Name(),
+		UserID:        user.Id,
+		CharacterID:   ctx.charID,
+		CharacterName: ctx.claims.Name,
+		Tokens:        oauthTokens(ctx.token),
 	}, flow, nil
 }
 
@@ -296,9 +298,11 @@ func (p *EVEProvider) handleLoginCallback(c *core.RequestEvent, ctx loginContext
 	}
 
 	return &AuthResult{
-		Provider: p.Name(),
-		UserID:   user.Id,
-		Tokens:   sessionTokens,
+		Provider:      p.Name(),
+		UserID:        user.Id,
+		CharacterID:   ctx.charID,
+		CharacterName: ctx.claims.Name,
+		Tokens:        sessionTokens,
 	}, nil
 }
 

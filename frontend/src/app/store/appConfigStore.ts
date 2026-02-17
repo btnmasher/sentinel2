@@ -6,7 +6,9 @@ type AppConfigState = {
   standaloneAuth: boolean;
   defaultRegions: string[];
   oidcPortalUrl: string;
+  version: string;
   loaded: boolean;
+  setVersion: (version: string) => void;
   load: () => Promise<void>;
 };
 
@@ -15,7 +17,9 @@ export const useAppConfigStore = create<AppConfigState>((set) => ({
   standaloneAuth: false,
   defaultRegions: [],
   oidcPortalUrl: "https://auth.pleaseignore.com",
+  version: "",
   loaded: false,
+  setVersion: (version) => set({ version }),
   load: async () => {
     try {
       const res = await api.get("/app-config");
@@ -29,6 +33,7 @@ export const useAppConfigStore = create<AppConfigState>((set) => ({
           typeof res.data.oidc_portal_url === "string"
             ? res.data.oidc_portal_url
             : "https://auth.pleaseignore.com",
+        version: typeof res.data.version === "string" ? res.data.version : "",
         loaded: true,
       });
     } catch {

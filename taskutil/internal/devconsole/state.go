@@ -241,15 +241,26 @@ func (m viewState) actionCmd(startMsg, okMsg, failPrefix string, fn func() error
 }
 
 func (m *viewState) appendLine(proc, line string) {
+	m.appendLines(proc, []string{line})
+}
+
+func (m *viewState) appendLines(proc string, lines []string) {
+	if len(lines) == 0 {
+		return
+	}
 	switch proc {
 	case "frontend":
-		m.frontendLines = appendWithCap(m.frontendLines, line, m.maxLines)
+		for _, line := range lines {
+			m.frontendLines = appendWithCap(m.frontendLines, line, m.maxLines)
+		}
 		m.frontend.SetContent(wrapLinesForWidth(m.frontendLines, m.frontend.Width))
 		if m.followFrontend {
 			m.frontend.GotoBottom()
 		}
 	case "backend":
-		m.backendLines = appendWithCap(m.backendLines, line, m.maxLines)
+		for _, line := range lines {
+			m.backendLines = appendWithCap(m.backendLines, line, m.maxLines)
+		}
 		m.backend.SetContent(wrapLinesForWidth(m.backendLines, m.backend.Width))
 		if m.followBackend {
 			m.backend.GotoBottom()

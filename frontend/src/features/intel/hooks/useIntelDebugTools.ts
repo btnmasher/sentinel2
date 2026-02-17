@@ -29,7 +29,7 @@ export default function useIntelDebugTools() {
     const win = window as Window & { sentinelDebug?: DebugAPI };
     const api = win.sentinelDebug ?? {};
 
-    const pickRandom = <T,>(items: T[]): T =>
+    const pickRandom = <T>(items: T[]): T =>
       items[Math.floor(Math.random() * items.length)];
 
     const generateFakeIntelReports = (options?: FakeIntelOptions) => {
@@ -150,7 +150,7 @@ export default function useIntelDebugTools() {
             recordId: `debug-${batchID}-${i}-${Math.random().toString(36).slice(2, 8)}`,
             time: clearTime,
             author: pickRandom(authors),
-            text: `${targetSystem.name} CLR`,
+            text: `${targetSystem.name} clear, gate green and local quiet`,
             systems: [targetSystem],
             regions: [targetSystem.region],
             channel_id: "debug",
@@ -179,7 +179,7 @@ export default function useIntelDebugTools() {
           recordId: `debug-${batchID}-${i}-${Math.random().toString(36).slice(2, 8)}`,
           time: reportTime,
           author: pickRandom(authors),
-          text: `${lead.name} TEST contact${suffix}`,
+          text: `${lead.name} TEST contact in system, possible hostile fleet movement${suffix}`,
           systems: pickedSystems.map((system) => ({
             system: system.system,
             name: system.name,

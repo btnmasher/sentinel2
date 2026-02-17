@@ -8,6 +8,7 @@ export const ADMIN_MODAL = {
   Move: "move",
   Audit: "audit",
   Access: "access",
+  Announcement: "announcement",
 } as const;
 
 export const ADMIN_MODAL_KEYS = [
@@ -15,6 +16,7 @@ export const ADMIN_MODAL_KEYS = [
   ADMIN_MODAL.Move,
   ADMIN_MODAL.Audit,
   ADMIN_MODAL.Access,
+  ADMIN_MODAL.Announcement,
 ] as const;
 export type AdminModalKey = (typeof ADMIN_MODAL_KEYS)[number];
 export const adminModalRegistry =

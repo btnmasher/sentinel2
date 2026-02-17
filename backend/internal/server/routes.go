@@ -126,6 +126,8 @@ func registerRoutes(app *pocketbase.PocketBase, cfg config.Config, deps dependen
 			adminGroup.POST("/map-data/region-layout", deps.adminMapDataUpdate.RunRegionLayout)
 			adminGroup.POST("/characters/refresh-all", deps.admin.RefreshAllCharacters)
 			adminGroup.POST("/jobs/cleanup", deps.admin.RunCleanupJob)
+			adminGroup.POST("/announcement", deps.admin.CreateSiteAnnouncement)
+			adminGroup.POST("/announcement/archive-latest", deps.admin.ArchiveLatestSiteAnnouncement)
 			if cfg.DebugEnabled {
 				adminGroup.POST("/debug/seed-search-users", deps.admin.SeedSearchUsers)
 			}

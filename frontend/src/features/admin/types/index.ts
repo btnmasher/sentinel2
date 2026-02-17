@@ -40,6 +40,10 @@ export type AuditEntry = {
   target_user_name: string;
   target_character_id: number;
   target_character_name: string;
+  target_type?: string;
+  target_id?: string;
+  target_label?: string;
+  target_meta?: unknown;
   created: string;
 };
 

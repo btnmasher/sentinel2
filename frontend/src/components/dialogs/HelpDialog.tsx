@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import {
   ChevronDown,
   ChevronUp,
@@ -752,18 +753,20 @@ export const AppModalHelp = defineUIDialogModal({
 });
 
 export default function HelpDialog() {
+  const location = useLocation();
   const introMode = useSettingsStore((s) => s.settings.introduction);
   const helpOpen = useUIStore((s) => s.dialogs[UI_DIALOG.Help]);
   const setDialog = useUIStore((s) => s.setModal);
+  const isMapRoute = location.pathname === "/" || location.pathname === "/nav";
   useEffect(() => {
-    if (!introMode || helpOpen) {
+    if (!introMode || helpOpen || !isMapRoute) {
       return;
     }
     const timer = window.setTimeout(() => {
       setDialog(UI_DIALOG.Help, true);
     }, 100);
     return () => window.clearTimeout(timer);
-  }, [helpOpen, introMode, setDialog]);
+  }, [helpOpen, introMode, isMapRoute, setDialog]);
 
   useModal(AppModalHelp);
 

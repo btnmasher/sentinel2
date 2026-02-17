@@ -1,0 +1,43 @@
+package audit
+
+const (
+	TargetTypeUser           = "user"
+	TargetTypeCharacter      = "character"
+	TargetTypeJob            = "job"
+	TargetTypeAnnouncement   = "announcement"
+	TargetTypeChannel        = "channel"
+	TargetTypeJumpbridgeSet  = "jumpbridge_set"
+	TargetTypeJumpbridgePair = "jumpbridge_pair"
+)
+
+const (
+	ActionDebugSearchSeed           = "debug.search_seed"
+	ActionUserAuthLinkCharacter     = "user.auth.link_character"
+	ActionCharacterRefresh          = "character.refresh"
+	ActionCharacterRefreshAll       = "character.refresh_all"
+	ActionCharacterSetMain          = "character.set_main"
+	ActionCharacterRevokeTokens     = "character.revoke_tokens"
+	ActionCharacterRemove           = "character.remove"
+	ActionCharacterMoveOut          = "character.move_out"
+	ActionCharacterMoveIn           = "character.move_in"
+	ActionUserMergeOut              = "user.merge_out"
+	ActionUserMergeIn               = "user.merge_in"
+	ActionUserRevokeSessions        = "user.revoke_sessions"
+	ActionUserRevokeUploadTokens    = "user.revoke_upload_tokens"
+	ActionUserRegenerateUploadToken = "user.regenerate_upload_token"
+	ActionJobCancel                 = "job.cancel"
+	ActionJobCleanupRun             = "job.cleanup_run"
+	ActionAnnouncementCreate        = "announcement.create"
+	ActionAnnouncementArchiveLatest = "announcement.archive_latest"
+	ActionAdminMapDataRunAll        = "admin.map_data.run_all"
+	ActionAdminMapDataRunStep       = "admin.map_data.run_step"
+	ActionStaffChannelCreate        = "staff.channel.create"
+	ActionStaffChannelDelete        = "staff.channel.delete"
+	ActionStaffJumpbridgeImport     = "staff.jumpbridge.import"
+	ActionStaffJumpbridgeClear      = "staff.jumpbridge.clear"
+	ActionStaffJumpbridgeAdd        = "staff.jumpbridge.add"
+	ActionStaffJumpbridgeRemove     = "staff.jumpbridge.remove"
+	ActionStaffJumpbridgeUpdate     = "staff.jumpbridge.update"
+	ActionUserAccessLevelCleared    = "user.access_level_cleared"
+	ActionUserAccessLevelSet        = "user.access_level_set"
+)

@@ -175,7 +175,11 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resize(m.width, m.height)
 			handled = true
 		case "ctrl+g":
-			cmds = append(cmds, m.actionCmd("migrate + restart backend in progress", "migrate + restart backend succeeded", "migrate + restart backend failed", func() error {
+			cmds = append(cmds, m.actionCmd("stop + rebuild + migrate + restart backend in progress", "stop + rebuild + migrate + restart backend succeeded", "stop + rebuild + migrate + restart backend failed", func() error {
+				m.pm.stop("backend")
+				if err := m.pm.rebuildBackend(); err != nil {
+					return err
+				}
 				if err := m.pm.runMigrate(); err != nil {
 					return err
 				}
@@ -256,6 +260,10 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case lineMsg:
 		m.appendLine(msg.proc, msg.line)
+		return m, tea.Batch(cmds...)
+
+	case lineBatchMsg:
+		m.appendLines(msg.proc, msg.lines)
 		return m, tea.Batch(cmds...)
 
 	case procStartedMsg:

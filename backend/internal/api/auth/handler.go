@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/auth"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/store"
@@ -15,11 +18,12 @@ import (
 )
 
 type AuthHandler struct {
-	Auth *auth.Manager
+	Auth  *auth.Manager
+	Audit *audit.Service
 }
 
-func NewAuthHandler(manager *auth.Manager) *AuthHandler {
-	return &AuthHandler{Auth: manager}
+func NewAuthHandler(manager *auth.Manager, auditSvc *audit.Service) *AuthHandler {
+	return &AuthHandler{Auth: manager, Audit: auditSvc}
 }
 
 func (h *AuthHandler) Authenticate(c *core.RequestEvent) error {
@@ -41,6 +45,27 @@ func (h *AuthHandler) Callback(c *core.RequestEvent) error {
 		return callbackErr
 	}
 	if result.IsLink {
+		linkedCharacter := findCharacterByUserAndEVEID(h.Auth.App, result.UserID, result.CharacterID)
+		linkSummary := "Linked character"
+		if result.CharacterName != "" {
+			linkSummary = fmt.Sprintf("Linked character %s", result.CharacterName)
+		}
+		if h.Audit != nil {
+			h.Audit.LogEvent(audit.Event{
+				Action:                 audit.ActionUserAuthLinkCharacter,
+				Summary:                linkSummary,
+				TargetUserID:           result.UserID,
+				TargetCharacter:        linkedCharacter,
+				TargetType:             audit.TargetTypeCharacter,
+				TargetLabel:            result.CharacterName,
+				ResolveTargetCharacter: linkedCharacter == nil,
+				TargetMeta: map[string]any{
+					"eve_character_id": result.CharacterID,
+				},
+				ActorID:          result.UserID,
+				ActorDisplayName: result.CharacterName,
+			})
+		}
 		logging.WithRequest(h.Auth.App, c).
 			Info("auth link completed")
 		return c.Redirect(http.StatusFound, "/profile?linked=1")
@@ -235,4 +260,25 @@ func (h *AuthHandler) Refresh(c *core.RequestEvent) error {
 		Record:    user.PublicExport(),
 		ExpiresAt: expiresAt,
 	})
+}
+
+func findCharacterByUserAndEVEID(app *pocketbase.PocketBase, userID string, eveCharacterID int) *core.Record {
+	if app == nil || userID == "" || eveCharacterID <= 0 {
+		return nil
+	}
+	records, err := app.FindRecordsByFilter(
+		store.CollectionCharacters,
+		"user = {:user} && eve_character_id = {:character_id}",
+		"",
+		1,
+		0,
+		dbx.Params{
+			"user":         userID,
+			"character_id": eveCharacterID,
+		},
+	)
+	if err != nil || len(records) == 0 {
+		return nil
+	}
+	return records[0]
 }

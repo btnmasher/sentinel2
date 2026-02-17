@@ -6,14 +6,15 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/store"
 
 	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-func NewChannelsHandler(app *pocketbase.PocketBase) *ChannelsHandler {
-	return &ChannelsHandler{App: app}
+func NewChannelsHandler(app *pocketbase.PocketBase, auditSvc *audit.Service) *ChannelsHandler {
+	return &ChannelsHandler{App: app, Audit: auditSvc}
 }
 
 func (h *ChannelsHandler) List(c *core.RequestEvent) error {
@@ -77,6 +78,18 @@ func (h *ChannelsHandler) Create(c *core.RequestEvent) error {
 	logging.WithRequest(h.App, c).
 		WithFields(logFields).
 		Info("channel created")
+	if h.Audit != nil {
+		h.Audit.LogRequest(c, audit.Event{
+			Action:      audit.ActionStaffChannelCreate,
+			Summary:     "Created channel " + payload.ChannelName,
+			TargetType:  audit.TargetTypeChannel,
+			TargetID:    record.Id,
+			TargetLabel: payload.ChannelName,
+			TargetMeta: map[string]any{
+				"channel_id": record.Id,
+			},
+		})
+	}
 
 	return c.JSON(http.StatusCreated, channelCreateResponse{ID: record.Id})
 }
@@ -114,6 +127,18 @@ func (h *ChannelsHandler) Delete(c *core.RequestEvent) error {
 	logging.WithRequest(h.App, c).
 		WithFields(logFields).
 		Info("channel deleted")
+	if h.Audit != nil {
+		h.Audit.LogRequest(c, audit.Event{
+			Action:      audit.ActionStaffChannelDelete,
+			Summary:     "Deleted channel " + record.GetString("channel_name"),
+			TargetType:  audit.TargetTypeChannel,
+			TargetID:    id,
+			TargetLabel: record.GetString("channel_name"),
+			TargetMeta: map[string]any{
+				"channel_id": id,
+			},
+		})
+	}
 
 	return c.NoContent(http.StatusNoContent)
 }

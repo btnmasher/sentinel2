@@ -25,22 +25,35 @@ func (m *Manager) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string, err
 }
 
 type AuthCallbackResult struct {
-	ExchangeCode string
-	IsLink       bool
+	ExchangeCode  string
+	IsLink        bool
+	UserID        string
+	CharacterID   int
+	CharacterName string
 }
 
 func (m *Manager) Callback(c *core.RequestEvent) (*AuthCallbackResult, error) {
 	result, flow, callbackErr := m.Provider.Callback(c)
 	if callbackErr == nil {
 		if flow.Type == FlowLink {
-			return &AuthCallbackResult{IsLink: true}, nil
+			return &AuthCallbackResult{
+				IsLink:        true,
+				UserID:        result.UserID,
+				CharacterID:   result.CharacterID,
+				CharacterName: result.CharacterName,
+			}, nil
 		}
 
 		code := saveAuthExchange(m.App, result.UserID)
 		if code == "" {
 			return nil, ErrFailedIssueExchangeCode
 		}
-		return &AuthCallbackResult{ExchangeCode: code}, nil
+		return &AuthCallbackResult{
+			ExchangeCode:  code,
+			UserID:        result.UserID,
+			CharacterID:   result.CharacterID,
+			CharacterName: result.CharacterName,
+		}, nil
 	}
 
 	return nil, callbackErr

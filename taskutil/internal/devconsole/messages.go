@@ -5,6 +5,11 @@ type lineMsg struct {
 	line string
 }
 
+type lineBatchMsg struct {
+	proc  string
+	lines []string
+}
+
 type procExitMsg struct {
 	proc string
 	err  error

@@ -7,6 +7,7 @@ import type { Character, SearchResult } from "../types";
 import { hasSearchMain } from "../utils/formatters";
 
 type AccessLevel = "user" | "staff";
+type AnnouncementVariant = "banner" | "modal";
 
 type AdminActionsState = {
   refreshAll: () => Promise<void>;
@@ -23,6 +24,11 @@ type AdminActionsState = {
     characterId: string,
     target: SearchResult | null,
   ) => Promise<void>;
+  publishAnnouncement: (
+    variant: AnnouncementVariant,
+    message: string,
+  ) => Promise<void>;
+  archiveLatestAnnouncement: () => Promise<void>;
 };
 
 export const useAdminActionsStore = create<AdminActionsState>(() => ({
@@ -365,5 +371,43 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
       cancelLabel: "Cancel",
       tone: "default",
     });
+  },
+  publishAnnouncement: async (variant, message) => {
+    const { setToast } = useUIStore.getState();
+    const { setModal } = useAdminStore.getState();
+    const trimmed = message.trim();
+    if (!trimmed) {
+      setToast({ text: "Announcement message is required", color: "error" });
+      return;
+    }
+    try {
+      await api.post("/admin/announcement", {
+        variant,
+        message: trimmed,
+      });
+      setToast({ text: "Announcement published", color: "info" });
+      setModal(ADMIN_MODAL.Announcement, false);
+    } catch (error: unknown) {
+      setToast({
+        text: getErrorMessage(error, "Failed to publish announcement"),
+        color: "error",
+      });
+    }
+  },
+  archiveLatestAnnouncement: async () => {
+    const { setToast } = useUIStore.getState();
+    try {
+      const res = await api.post("/admin/announcement/archive-latest");
+      if (res.data?.archived) {
+        setToast({ text: "Latest announcement archived", color: "info" });
+      } else {
+        setToast({ text: "No active announcement to archive", color: "info" });
+      }
+    } catch (error: unknown) {
+      setToast({
+        text: getErrorMessage(error, "Failed to archive announcement"),
+        color: "error",
+      });
+    }
   },
 }));

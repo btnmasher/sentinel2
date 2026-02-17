@@ -8,6 +8,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"golang.org/x/oauth2"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/auth"
 	"sentinel2/internal/cleanup"
 	"sentinel2/internal/config"
@@ -28,6 +29,7 @@ import (
 )
 
 type dependencies struct {
+	audit              *audit.Service
 	provider           auth.Provider
 	authManager        *auth.Manager
 	eveProvider        *auth.EVEProvider
@@ -63,6 +65,7 @@ func Run(cfg config.Config) error {
 		return fmt.Errorf("auth init failed: %w", providerErr)
 	}
 	authManager := auth.NewManager(app, provider)
+	auditSvc := audit.New(app)
 
 	var eveProvider *auth.EVEProvider
 	if value, ok := provider.(*auth.EVEProvider); ok {
@@ -83,17 +86,18 @@ func Run(cfg config.Config) error {
 		intel.NewRoutePlanner(app),
 		intel.NewTopRoutesService(app),
 	)
-	authHandler := authapi.NewAuthHandler(authManager)
+	authHandler := authapi.NewAuthHandler(authManager, auditSvc)
 	cleanup := cleanup.New(app)
-	staffChannels := staffapi.NewChannelsHandler(app)
-	staffJumpbridges := staffapi.NewJumpbridgeHandler(app, jumpbridgeService)
-	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app)
-	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService)
-	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanup, intelService)
+	staffChannels := staffapi.NewChannelsHandler(app, auditSvc)
+	staffJumpbridges := staffapi.NewJumpbridgeHandler(app, jumpbridgeService, auditSvc)
+	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
+	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
+	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanup, intelService, auditSvc)
 	uploaderReleases := uploaderrelease.New(app, cfg)
 	uploaderHandler := uploaderapi.NewHandler(uploaderReleases)
 
 	deps := dependencies{
+		audit:              auditSvc,
 		provider:           provider,
 		authManager:        authManager,
 		eveProvider:        eveProvider,

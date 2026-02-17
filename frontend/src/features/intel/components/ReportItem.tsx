@@ -137,61 +137,85 @@ export default function ReportItem({
           <span>{timestamp}</span>
         </div>
       </div>
-      <p className="text-sm text-slate-200 mt-1 space-x-1">
+      <p className="text-sm text-slate-200 mt-1">
         {splitText.map((chunk, idx) => {
           if (typeof chunk === "string") {
-            return <span key={idx}>{chunk} </span>;
+            return (
+              <span key={idx}>
+                {idx > 0 ? " " : ""}
+                {chunk}
+              </span>
+            );
           }
           if ("tooltip" in chunk) {
             return (
-              <span key={idx} className="text-amber-300" title={chunk.tooltip}>
-                {chunk.text}
+              <span key={idx}>
+                {idx > 0 ? " " : ""}
+                <span className="text-amber-300" title={chunk.tooltip}>
+                  {chunk.text}
+                </span>
               </span>
             );
           }
           const system = chunk.system;
-          if (!system) return <span key={idx}>{chunk.text} </span>;
+          if (!system) {
+            return (
+              <span key={idx}>
+                {idx > 0 ? " " : ""}
+                {chunk.text}
+              </span>
+            );
+          }
           if (system.region >= 11000000) {
-            return <span key={idx}>{chunk.text} </span>;
+            return (
+              <span key={idx}>
+                {idx > 0 ? " " : ""}
+                {chunk.text}
+              </span>
+            );
           }
           const regionId = String(system.region);
           if (!regionIds.has(regionId)) {
             const regionName = REGION_MAP[regionId] || `Region ${regionId}`;
             return (
+              <span key={idx}>
+                {idx > 0 ? " " : ""}
+                <button
+                  className="report-item-unloaded-region"
+                  title={`Click to load ${regionName}`}
+                  onClick={() =>
+                    updateMapConfig({ mapRegions: [...mapRegions, regionId] })
+                  }
+                  onContextMenu={(event) =>
+                    openSystemContextMenu(
+                      event,
+                      system.system,
+                      `Load ${regionName} to open system menu`,
+                    )
+                  }
+                >
+                  {chunk.text}
+                </button>
+              </span>
+            );
+          }
+          return (
+            <span key={idx}>
+              {idx > 0 ? " " : ""}
               <button
-                key={idx}
-                className="report-item-unloaded-region"
-                title={`Click to load ${regionName}`}
-                onClick={() =>
-                  updateMapConfig({ mapRegions: [...mapRegions, regionId] })
-                }
+                className="text-sky-300"
+                onClick={() => setSystemSearch(system.system)}
                 onContextMenu={(event) =>
                   openSystemContextMenu(
                     event,
                     system.system,
-                    `Load ${regionName} to open system menu`,
+                    "System menu unavailable",
                   )
                 }
               >
                 {chunk.text}
               </button>
-            );
-          }
-          return (
-            <button
-              key={idx}
-              className="text-sky-300"
-              onClick={() => setSystemSearch(system.system)}
-              onContextMenu={(event) =>
-                openSystemContextMenu(
-                  event,
-                  system.system,
-                  "System menu unavailable",
-                )
-              }
-            >
-              {chunk.text}
-            </button>
+            </span>
           );
         })}
       </p>

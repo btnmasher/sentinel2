@@ -221,7 +221,7 @@ export default function Uploader() {
           </div>
 
           <div className="grid gap-2 mt-2">
-            <div className="text-sm uppercase tracking-[0.2em] text-slate-500">
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
               Uploader Token
             </div>
             <div className="bg-base-300/60 border border-slate-700 rounded-lg p-3 font-mono text-xs break-all">
@@ -275,13 +275,6 @@ export default function Uploader() {
                   <span className="text-sky-300">Linux</span>
                   <span className="text-emerald-300">
                     $XDG_CONFIG_HOME/sentinel2/uploader-settings.json
-                  </span>
-                </div>
-                <div className="grid grid-cols-[70px_1fr] gap-x-2">
-                  <span />
-                  <span className="text-amber-300/90">
-                    ~/.config/sentinel2/uploader-settings.json{" "}
-                    <span className="ml-1.5 text-slate-400">(fallback)</span>
                   </span>
                 </div>
               </div>

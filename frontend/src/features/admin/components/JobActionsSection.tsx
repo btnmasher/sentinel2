@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import useConfirm from "@/app/hooks/useConfirm";
 import Panel from "@/components/Panel";
 import { useAdminMapDataStore } from "../store/adminMapDataStore";
+import { ADMIN_MODAL } from "../store/adminStore";
+import { useAdminModal } from "./AdminModals";
 
 type ActionGroup = "map_data" | "characters" | "maintenance";
 
@@ -13,6 +15,9 @@ const GROUP_LABELS: Record<ActionGroup, string> = {
 
 export default function JobActionsSection() {
   const requestConfirm = useConfirm();
+  const { open: openAnnouncementModal } = useAdminModal(
+    ADMIN_MODAL.Announcement,
+  );
   const loadingLabel = useAdminMapDataStore((s) => s.loadingLabel);
   const runAction = useAdminMapDataStore((s) => s.runAction);
   const [group, setGroup] = useState<ActionGroup>("map_data");
@@ -104,6 +109,13 @@ export default function JobActionsSection() {
             {action.label}
           </button>
         ))}
+        <button
+          className="btn btn-xs btn-outline"
+          onClick={openAnnouncementModal}
+          disabled={loadingLabel !== null}
+        >
+          Publish announcement
+        </button>
       </div>
       {loadingLabel && (
         <p className="text-xs text-slate-400">Running: {loadingLabel}…</p>

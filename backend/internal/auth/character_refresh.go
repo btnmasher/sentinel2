@@ -25,6 +25,7 @@ type CharacterRefresher struct {
 	ESI       esi.ESIClient
 	PublicESI *esi.ESIPublicClient
 	Intel     *intel.IntelService
+	Audit     *audit.Service
 }
 
 type throttleDelayProvider interface {
@@ -54,8 +55,8 @@ func getRefreshJobMeta(ctx context.Context) refreshJobMeta {
 	return meta
 }
 
-func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esi esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) *CharacterRefresher {
-	return &CharacterRefresher{App: app, EVE: eve, ESI: esi, PublicESI: publicESI, Intel: intelService}
+func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esi esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, auditSvc *audit.Service) *CharacterRefresher {
+	return &CharacterRefresher{App: app, EVE: eve, ESI: esi, PublicESI: publicESI, Intel: intelService, Audit: auditSvc}
 }
 
 func (r *CharacterRefresher) RefreshAll(ctx context.Context) (int, int) {
@@ -238,13 +239,14 @@ func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *co
 			if r.Intel != nil {
 				_ = r.Intel.RevokeUploaderTokensForUser(userID)
 			}
-			audit.New(r.App).Log(
-				"user.revoke_upload_tokens",
-				"Revoked uploader tokens (allowlist)",
-				userID,
-				"",
-				character,
-			)
+			if r.Audit != nil {
+				r.Audit.LogEvent(audit.Event{
+					Action:          audit.ActionUserRevokeUploadTokens,
+					Summary:         "Revoked uploader tokens (allowlist)",
+					TargetUserID:    userID,
+					TargetCharacter: character,
+				})
+			}
 			logging.New(r.App).
 				WithFields(logging.Fields{
 					"user_id":             userID,

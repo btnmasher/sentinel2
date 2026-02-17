@@ -2,18 +2,20 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 
+	"sentinel2/internal/audit"
 	"sentinel2/internal/jobs"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/mapdata"
 )
 
-func NewMapUpdateHandler(app *pocketbase.PocketBase) *MapUpdateHandler {
-	return &MapUpdateHandler{App: app}
+func NewMapUpdateHandler(app *pocketbase.PocketBase, auditSvc *audit.Service) *MapUpdateHandler {
+	return &MapUpdateHandler{App: app, Audit: auditSvc}
 }
 
 func (h *MapUpdateHandler) RunAll(c *core.RequestEvent) error {
@@ -57,6 +59,19 @@ func (h *MapUpdateHandler) RunAll(c *core.RequestEvent) error {
 		})
 		mapdata.RunMapDataUpdateWithContext(baseCtx, h.App, localRunner, jobs.TriggerAdminManual, true)
 	}(jobID, actorID)
+	if h.Audit != nil {
+		h.Audit.LogRequest(c, audit.Event{
+			Action:      audit.ActionAdminMapDataRunAll,
+			Summary:     "Triggered full map data update",
+			TargetType:  audit.TargetTypeJob,
+			TargetID:    jobID,
+			TargetLabel: "all",
+			TargetMeta: map[string]any{
+				"job_id": jobID,
+				"step":   "all",
+			},
+		})
+	}
 
 	return c.JSON(http.StatusAccepted, mapDataResponse{
 		JobID: jobID,
@@ -104,6 +119,19 @@ func (h *MapUpdateHandler) runStep(c *core.RequestEvent, step string) error {
 		JobName: mapdata.JobMapDataStep,
 		Logger:  logging.WithRequest(h.App, c),
 	})
+	if h.Audit != nil {
+		h.Audit.LogRequest(c, audit.Event{
+			Action:      audit.ActionAdminMapDataRunStep,
+			Summary:     fmt.Sprintf("Triggered map data step %s", step),
+			TargetType:  audit.TargetTypeJob,
+			TargetID:    jobID,
+			TargetLabel: step,
+			TargetMeta: map[string]any{
+				"job_id": jobID,
+				"step":   step,
+			},
+		})
+	}
 
 	return c.JSON(http.StatusAccepted, mapDataResponse{
 		JobID: jobID,
