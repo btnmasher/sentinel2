@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strconv"
@@ -204,8 +205,9 @@ func buildCharacterSearchFilter(query string, startsWith string) (string, dbx.Pa
 	filter := "user != \"\""
 	params := dbx.Params{}
 	if query != "" {
-		filter = appendFilter(filter, "eve_character_name ~ {:q}")
+		filter = appendFilter(filter, "(eve_character_name ~ {:q} || user ~ {:q} || user = {:userID})")
 		params["q"] = "%" + query + "%"
+		params["userID"] = query
 	}
 	if isSearchPrefix(startsWith) {
 		filter = appendFilter(filter, "eve_character_name ~ {:startsWith}")
@@ -616,8 +618,47 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 		ordered = append(ordered, *group)
 	}
 
-	etagKey := strings.Join(excludeKinds, ",")
-	etag := fmt.Sprintf(`W/"jobruns-%d-%d-%d-%s"`, latest.Unix(), len(jobIDs), len(records), etagKey)
+	etagHasher := fnv.New64a()
+	_, _ = etagHasher.Write([]byte(strings.Join(excludeKinds, ",")))
+	_, _ = etagHasher.Write([]byte{0})
+	for _, jobID := range jobIDs {
+		group := groups[jobID]
+		if group == nil {
+			continue
+		}
+		parent := group.Parent
+		_, _ = etagHasher.Write([]byte(parent.JobID))
+		_, _ = etagHasher.Write([]byte{0})
+		_, _ = etagHasher.Write([]byte(parent.Kind))
+		_, _ = etagHasher.Write([]byte{0})
+		_, _ = etagHasher.Write([]byte(parent.Step))
+		_, _ = etagHasher.Write([]byte{0})
+		_, _ = etagHasher.Write([]byte(parent.Status))
+		_, _ = etagHasher.Write([]byte{0})
+		_, _ = etagHasher.Write([]byte(parent.StartedAt))
+		_, _ = etagHasher.Write([]byte{0})
+		_, _ = etagHasher.Write([]byte(parent.CompletedAt))
+		_, _ = etagHasher.Write([]byte{0})
+		_, _ = etagHasher.Write([]byte(parent.Error))
+		_, _ = etagHasher.Write([]byte{0})
+		for _, step := range group.Steps {
+			_, _ = etagHasher.Write([]byte(step.JobID))
+			_, _ = etagHasher.Write([]byte{0})
+			_, _ = etagHasher.Write([]byte(step.Kind))
+			_, _ = etagHasher.Write([]byte{0})
+			_, _ = etagHasher.Write([]byte(step.Step))
+			_, _ = etagHasher.Write([]byte{0})
+			_, _ = etagHasher.Write([]byte(step.Status))
+			_, _ = etagHasher.Write([]byte{0})
+			_, _ = etagHasher.Write([]byte(step.StartedAt))
+			_, _ = etagHasher.Write([]byte{0})
+			_, _ = etagHasher.Write([]byte(step.CompletedAt))
+			_, _ = etagHasher.Write([]byte{0})
+			_, _ = etagHasher.Write([]byte(step.Error))
+			_, _ = etagHasher.Write([]byte{0})
+		}
+	}
+	etag := fmt.Sprintf(`W/"jobruns-%x"`, etagHasher.Sum64())
 	if match := c.Request.Header.Get("If-None-Match"); match != "" && match == etag {
 		return c.NoContent(http.StatusNotModified)
 	}
@@ -989,24 +1030,78 @@ func (h *Handler) RefreshCharacter(c *core.RequestEvent) error {
 		})
 	}
 
-	refreshErr := h.Refresher.RefreshCharacter(c.Request.Context(), record)
-	if refreshErr != nil {
-		return router.NewInternalServerError("Failed to refresh character.", logging.Fields{
-			"character_id": record.GetInt("eve_character_id"),
-		})
+	userID := record.GetString("user")
+	actorID := ""
+	if c.Auth != nil {
+		actorID = c.Auth.Id
 	}
+	step := ""
+	if userID != "" {
+		pending, pendingErr := h.App.FindRecordsByFilter(
+			"job_runs",
+			"kind = {:kind} && step = {:step} && status = {:status}",
+			"",
+			1,
+			0,
+			dbx.Params{
+				"kind":   jobs.JobCharacterRefresh,
+				"step":   "character:" + record.Id,
+				"status": jobs.StatusRunning,
+			},
+		)
+		if pendingErr == nil && len(pending) > 0 {
+			return router.NewBadRequestError("Character refresh already running.", logging.Fields{
+				"character_record_id": id,
+				"user_id":             userID,
+			})
+		}
+		step = "user:" + userID
+	}
+
+	runner := jobs.NewRunner(h.App, jobs.RunOptions{
+		JobName: "admin.character_refresh",
+		JobOptions: jobs.JobOptions{
+			Kind:    jobs.JobCharacterRefresh,
+			Step:    step,
+			Trigger: "admin.character_refresh",
+			ActorID: actorID,
+		},
+		Timeout: 2 * time.Minute,
+		JobFunc: func(ctx context.Context) context.Context {
+			return auth.WithRefreshJobMeta(ctx, "admin.character_refresh", actorID)
+		},
+	})
+	jobID := runner.JobID()
+
+	go func(character *core.Record, jobID string) {
+		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
+			return stepper.Run("character:"+character.Id, true, func(ctx context.Context) error {
+				return h.Refresher.RefreshCharacter(ctx, character)
+			})
+		})
+		logging.New(h.App).WithFields(logging.Fields{
+			"job_id":              jobID,
+			"character_record_id": character.Id,
+			"character_id":        character.GetInt("eve_character_id"),
+			"user_id":             character.GetString("user"),
+		}).Info("single character refresh completed")
+	}(record, jobID)
 
 	h.logAction(
 		c,
 		audit.Event{
 			Action:          audit.ActionCharacterRefresh,
-			Summary:         "Refreshed character " + record.GetString("eve_character_name"),
+			Summary:         "Queued character refresh for " + record.GetString("eve_character_name") + " (job " + jobID + ")",
 			TargetUserID:    record.GetString("user"),
 			TargetCharacter: record,
 		},
 	)
 
-	return c.JSON(http.StatusOK, newCharacter(record, nil, nil))
+	return c.JSON(http.StatusAccepted, map[string]any{
+		"job_id":       jobID,
+		"character_id": record.GetInt("eve_character_id"),
+		"user_id":      record.GetString("user"),
+	})
 }
 
 func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
@@ -1162,9 +1257,36 @@ func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
 		var failed int
 
 		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
-			success, failed = h.Refresher.RefreshAllBatched(ctx, records, 25, 350*time.Millisecond)
-			if ctx.Err() != nil {
-				return ctx.Err()
+			for idx, character := range records {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if character == nil {
+					continue
+				}
+
+				stepName := "character:" + character.Id
+				stepErr := stepper.Run(stepName, false, func(ctx context.Context) error {
+					err := h.Refresher.RefreshCharacter(ctx, character)
+					if err != nil {
+						failed++
+					} else {
+						success++
+					}
+					return err
+				})
+				if stepErr != nil {
+					// Defensive: non-critical steps should not bubble an error.
+					failed++
+				}
+
+				if (idx+1)%25 == 0 {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(350 * time.Millisecond):
+					}
+				}
 			}
 			if failed > 0 {
 				stepper.Partial(fmt.Errorf("refresh completed with %d failures", failed))

@@ -176,16 +176,13 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
   },
   refreshCharacter: async (character) => {
     const { setToast } = useUIStore.getState();
-    const { selectedUser, loadUser } = useAdminStore.getState();
     try {
-      await api.post(`/admin/characters/${character.id}/refresh`);
+      const res = await api.post(`/admin/characters/${character.id}/refresh`);
+      const jobId = res.data?.job_id ?? "unknown";
       setToast({
-        text: `Refreshed ${character.name}`,
+        text: `Refresh started for ${character.name} (job ${jobId})`,
         color: "info",
       });
-      if (selectedUser) {
-        await loadUser(selectedUser.user_id);
-      }
     } catch (error: unknown) {
       setToast({
         text: getErrorMessage(error, "Failed to refresh character"),

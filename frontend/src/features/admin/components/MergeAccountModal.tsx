@@ -58,7 +58,7 @@ function MergeAccountModalBody() {
         <label className="text-xs text-slate-400">Destination user</label>
         <input
           className="input input-xs input-bordered bg-base-300 w-full"
-          placeholder="Search destination user"
+          placeholder="Search destination user (name or ID)"
           value={query}
           onChange={(e) => setQuery("merge", e.target.value)}
         />

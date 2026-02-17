@@ -14,7 +14,7 @@ import { useAppModal } from "@/components/dialogs/AppModals";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import IntelServerStatus from "./IntelServerStatus";
 import UploaderCountBadge from "./UploaderCountBadge";
-import ReportCountBadge from "./ReportCountBadge";
+import ReportHealthBadge from "./ReportHealthBadge";
 import { Activity, ChevronDown, ChevronUp } from "lucide-react";
 import AlarmMuteToggleButton from "@/components/AlarmMuteToggleButton";
 import useIntelDebugTools from "../hooks/useIntelDebugTools";
@@ -56,7 +56,7 @@ export default function Intel() {
     <>
       <IntelServerStatus />
       <UploaderCountBadge />
-      <ReportCountBadge />
+      <ReportHealthBadge />
       <AlarmMuteToggleButton
         muted={alarmMuted}
         onToggle={() => applySetting("alarm", "enabled", !alarmEnabled)}

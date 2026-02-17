@@ -103,7 +103,7 @@ export default function StartsWithFilter({
                     : enabled
                       ? "starts-with-token-available border-transparent"
                       : "text-slate-300 border-transparent"
-                } ${enabled ? "starts-with-token-available-hover" : "opacity-45 cursor-not-allowed"}`}
+                } ${enabled ? "starts-with-token-available-hover" : "opacity-45"}`}
                 style={{
                   transform: `scale(${tokenDisplayScale(tokenId, active)})`,
                   zIndex: hoveredToken === tokenId ? 30 : 10,

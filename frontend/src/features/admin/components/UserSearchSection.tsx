@@ -170,10 +170,10 @@ export default function UserSearchSection() {
   const searchAction = (
     <input
       className="input input-xs input-bordered bg-base-300 w-48 sm:w-56"
-      placeholder="Search by character name"
+      placeholder="Search by character name or user ID"
       value={query}
       onChange={(e) => setQuery(e.target.value)}
-      aria-label="Search by character name"
+      aria-label="Search by character name or user ID"
     />
   );
 
