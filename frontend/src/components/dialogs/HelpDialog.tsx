@@ -182,7 +182,7 @@ function HelpDialogBody() {
             </div>
             <div>
               <p className="text-sm font-medium text-slate-100">
-                Report staleness badge
+                Report health badge
               </p>
               <p className="mt-1 text-xs text-slate-300">
                 Green means fresh, yellow means stale, red pulse means very

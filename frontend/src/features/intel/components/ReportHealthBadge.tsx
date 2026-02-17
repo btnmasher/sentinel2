@@ -14,14 +14,14 @@ const CHANNEL_STATUS_STYLE = {
     dotColor: "intel-status-dot-active",
     badgeClass: "badge-success",
   },
-  warn: {
-    label: "Warn",
+  stale: {
+    label: "Stale",
     textColor: "intel-status-text-warn",
     dotColor: "intel-status-dot-warn",
     badgeClass: "badge-warning",
   },
-  stale: {
-    label: "Stale",
+  veryStale: {
+    label: "Very stale",
     textColor: "intel-status-text-stale",
     dotColor: "intel-status-dot-stale",
     badgeClass: "badge-error",
@@ -31,11 +31,11 @@ const CHANNEL_STATUS_STYLE = {
 type ChannelStatus = keyof typeof CHANNEL_STATUS_STYLE;
 const CHANNEL_STATUS_SCORE: Record<ChannelStatus, number> = {
   active: 2,
-  warn: 1,
-  stale: 0,
+  stale: 1,
+  veryStale: 0,
 };
 
-export default function ReportCountBadge() {
+export default function ReportHealthBadge() {
   const reports = useIntelStore((state) => state.reports);
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -91,8 +91,8 @@ export default function ReportCountBadge() {
     }> = [];
     const counts: Record<ChannelStatus, number> = {
       active: 0,
-      warn: 0,
       stale: 0,
+      veryStale: 0,
     };
 
     for (const channel of configuredChannels) {
@@ -103,8 +103,8 @@ export default function ReportCountBadge() {
         hasUpdates && ageSeconds <= CHANNEL_WARN_AFTER_SECONDS
           ? "active"
           : hasUpdates && ageSeconds <= CHANNEL_STALE_AFTER_SECONDS
-            ? "warn"
-            : "stale";
+            ? "stale"
+            : "veryStale";
       counts[status]++;
       channelRows.push({
         channelId: channel.id,
@@ -142,15 +142,19 @@ export default function ReportCountBadge() {
         ) / summary.channels.length;
 
   const overallStatus: ChannelStatus =
-    averageScore >= 1.5 ? "active" : averageScore >= 0.75 ? "warn" : "stale";
+    averageScore >= 1.5
+      ? "active"
+      : averageScore >= 0.75
+        ? "stale"
+        : "veryStale";
 
   const outlierStatus: ChannelStatus =
     summary.channels.length === 0
-      ? "stale"
-      : summary.counts.stale > 0
-        ? "stale"
-        : summary.counts.warn > 0
-          ? "warn"
+      ? "veryStale"
+      : summary.counts.veryStale > 0
+        ? "veryStale"
+        : summary.counts.stale > 0
+          ? "stale"
           : "active";
 
   const statusStyle = CHANNEL_STATUS_STYLE[overallStatus];
@@ -197,7 +201,7 @@ export default function ReportCountBadge() {
         ref={buttonRef}
         type="button"
         className="flex items-center gap-2 rounded-full bg-base-300/70 px-2 py-1 text-base-content transition-colors hover:bg-base-300/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        aria-label="Total reports currently loaded in the feed"
+        aria-label="Intel report health badge"
         onMouseEnter={showCard}
         onMouseLeave={hideCard}
         onFocus={showCard}
@@ -205,15 +209,13 @@ export default function ReportCountBadge() {
       >
         <span
           className={`intel-badge-icon-bg relative inline-flex h-6 w-6 items-center justify-center rounded-full text-base-content ${
-            overallStatus === "stale" ? "intel-status-icon--alert" : ""
+            overallStatus === "veryStale" ? "intel-status-icon--alert" : ""
           }`}
         >
           <ScrollText className={`h-3.5 w-3.5 ${statusStyle.textColor}`} />
-          {outlierStatus !== overallStatus && (
-            <span
-              className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-base-100 ${outlierStyle.dotColor}`}
-            />
-          )}
+          <span
+            className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-base-100 ${outlierStyle.dotColor}`}
+          />
         </span>
         <span>{reports.length}</span>
       </button>
@@ -222,7 +224,7 @@ export default function ReportCountBadge() {
         open={open}
         onMouseEnter={showCard}
         onMouseLeave={hideCard}
-        className="w-80 rounded-xl border border-base-content/15 bg-base-100/95 p-3 text-xs text-base-content shadow-xl backdrop-blur-sm"
+        className="w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-base-content/15 bg-base-100/95 p-3 text-xs text-base-content shadow-xl backdrop-blur-sm"
       >
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Intel report health</p>
@@ -246,14 +248,14 @@ export default function ReportCountBadge() {
             Active {summary.counts.active}
           </span>
           <span
-            className={`badge badge-xs ${CHANNEL_STATUS_STYLE.warn.badgeClass}`}
-          >
-            Warn {summary.counts.warn}
-          </span>
-          <span
             className={`badge badge-xs ${CHANNEL_STATUS_STYLE.stale.badgeClass}`}
           >
             Stale {summary.counts.stale}
+          </span>
+          <span
+            className={`badge badge-xs ${CHANNEL_STATUS_STYLE.veryStale.badgeClass}`}
+          >
+            Very stale {summary.counts.veryStale}
           </span>
         </div>
         {summary.channels.length > 0 ? (
