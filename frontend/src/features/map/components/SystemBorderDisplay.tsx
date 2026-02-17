@@ -14,6 +14,9 @@ export default function SystemBorderDisplay({
       className={[
         "map-system-border",
         border.pulse ? "map-system-border-pulse" : "",
+        border.pulse && border.pulseSpeed === "slow"
+          ? "map-system-border-pulse-slow"
+          : "",
       ]
         .filter(Boolean)
         .join(" ")}

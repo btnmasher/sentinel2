@@ -11,23 +11,29 @@ type CharacterVisibilityRowProps = {
   id: number;
   name: string;
   inSpace?: boolean;
+  locationSystemId?: number;
   dockedSystemName?: string;
   checked: boolean;
   onToggle: (checked: boolean) => void;
+  onFocusLocation?: (systemId: number) => void;
 };
 
 function CharacterVisibilityRow({
   id,
   name,
   inSpace,
+  locationSystemId,
   dockedSystemName,
   checked,
   onToggle,
+  onFocusLocation,
 }: CharacterVisibilityRowProps) {
   const portraitUrl = useCharacterPortrait(id, 32);
+  const canFocus =
+    Number.isFinite(locationSystemId) && Number(locationSystemId) > 0;
 
   return (
-    <label className="flex items-center gap-2 text-xs">
+    <div className="flex items-center gap-2 text-xs">
       <input
         type="checkbox"
         className="checkbox checkbox-xs rounded-[3px]"
@@ -40,7 +46,18 @@ function CharacterVisibilityRow({
         className="h-4 w-4 rounded-full"
         loading="lazy"
       />
-      <span className="flex-1">{name}</span>
+      {canFocus && onFocusLocation ? (
+        <button
+          type="button"
+          className="flex-1 truncate text-left text-sky-300 underline-offset-2 hover:text-sky-200 hover:underline"
+          onClick={() => onFocusLocation(Number(locationSystemId))}
+          title="Focus this character's location on the map"
+        >
+          {name}
+        </button>
+      ) : (
+        <span className="flex-1">{name}</span>
+      )}
       <span
         className={
           inSpace === false
@@ -58,7 +75,7 @@ function CharacterVisibilityRow({
           ) : null}
         </>
       )}
-    </label>
+    </div>
   );
 }
 
@@ -71,6 +88,7 @@ export default function IntelCharacterVisibilityCard({
   const characterInSpace = useMapStore((s) => s.characterInSpace);
   const characterLocations = useMapStore((s) => s.characterLocations);
   const systems = useMapStore((s) => s.systems);
+  const setSystemSearch = useMapStore((s) => s.setSystemSearch);
   const selectAllCharacters = useMapStore((s) => s.selectAllCharacters);
   const selectNoCharacters = useMapStore((s) => s.selectNoCharacters);
   const setVisibleCharacters = useMapStore((s) => s.setVisibleCharacters);
@@ -132,11 +150,13 @@ export default function IntelCharacterVisibilityCard({
                 id={char.id}
                 name={char.name}
                 inSpace={characterInSpace[char.id]}
+                locationSystemId={characterLocations[char.id]}
                 dockedSystemName={
                   characterInSpace[char.id] === false
                     ? systems[characterLocations[char.id]]?.name
                     : undefined
                 }
+                onFocusLocation={setSystemSearch}
                 checked={visibleCharacterIds.includes(char.id)}
                 onToggle={(checked) => {
                   if (checked) {

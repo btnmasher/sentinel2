@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 type AccordionCardProps = {
-  title: string;
+  title: ReactNode;
   subtitle?: ReactNode;
   open: boolean;
   onToggle: () => void;

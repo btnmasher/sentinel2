@@ -5,6 +5,7 @@ export type SystemBorderState = {
   visible: boolean;
   color?: string;
   pulse: boolean;
+  pulseSpeed?: "normal" | "slow";
 };
 
 type SystemBorderInput = {
@@ -43,6 +44,8 @@ export function useSystemBorderState({
       color,
       // Pulse color priority: route head > undocked > docked.
       pulse: isRouteOrigin || hasCharacters,
+      pulseSpeed:
+        hasCharacters && !hasUndocked && !isRouteOrigin ? "slow" : "normal",
     };
   }, [characters, isRouteOrigin, isRouteWaypoint]);
 }

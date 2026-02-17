@@ -58,6 +58,44 @@ func (s *IntelService) IssueUploaderRealtimeSession(userID string, uploaderToken
 	}, nil
 }
 
+func (s *IntelService) RefreshUploaderRealtimeSession(session *core.Record) (UploaderRealtimeSession, error) {
+	if session == nil || session.Collection() == nil || session.Collection().Name != store.CollectionUploaderSessions {
+		return UploaderRealtimeSession{}, ErrExpiredOrRevoked
+	}
+	if session.GetString("scope") != UploaderSessionScopeConfig {
+		return UploaderRealtimeSession{}, ErrExpiredOrRevoked
+	}
+
+	uploaderTokenID := session.GetString("uploader_token")
+	if uploaderTokenID == "" {
+		return UploaderRealtimeSession{}, ErrExpiredOrRevoked
+	}
+	if _, tokenErr := s.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
+		return UploaderRealtimeSession{}, tokenErr
+	}
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(UploaderRealtimeSessionTTL)
+	expiresAtValue, _ := types.ParseDateTime(expiresAt)
+
+	session.Set("expires_at", expiresAtValue)
+	session.Set("last_seen_at", types.NowDateTime())
+	if saveErr := s.App.Save(session); saveErr != nil {
+		return UploaderRealtimeSession{}, saveErr
+	}
+
+	token, tokenErr := session.NewStaticAuthToken(UploaderRealtimeSessionTTL)
+	if tokenErr != nil {
+		return UploaderRealtimeSession{}, tokenErr
+	}
+
+	return UploaderRealtimeSession{
+		Token:        token,
+		ExpiresAt:    expiresAt,
+		RefreshAfter: UploaderRealtimeSessionRefreshAfter,
+	}, nil
+}
+
 func (s *IntelService) RevokeUploaderSessionsForUser(userID string) error {
 	return s.revokeUploaderSessions(
 		"user = {:user}",

@@ -15,14 +15,16 @@ import (
 	"sentinel2/internal/store"
 )
 
+const uploaderCountRecomputeInterval = 30 * time.Second
+
 func registerRealtime(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher) {
-	registerUploaderConfigTopicAuth(app)
+	registerUploaderConfigTopicAuth(app, intelService)
 	registerIntelUploadersTopic(app, intelService)
 	registerUploaderConfigBroadcasts(app, intelService, publisher)
-	registerIntelUploaderCountBroadcasts(app, intelService, publisher)
+	startIntelUploaderHeartbeatCountBroadcasts(app, intelService, publisher)
 }
 
-func registerUploaderConfigTopicAuth(app *pocketbase.PocketBase) {
+func registerUploaderConfigTopicAuth(app *pocketbase.PocketBase, intelService *intel.IntelService) {
 	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
 		requiresUploaderSession := false
 		for _, subscription := range e.Subscriptions {
@@ -49,6 +51,15 @@ func registerUploaderConfigTopicAuth(app *pocketbase.PocketBase) {
 		expiresAt := authRecord.GetDateTime("expires_at")
 		if expiresAt.IsZero() || expiresAt.Time().Before(time.Now()) {
 			return e.ForbiddenError("Uploader realtime session expired.", nil)
+		}
+		if intelService != nil {
+			uploaderTokenID := strings.TrimSpace(authRecord.GetString("uploader_token"))
+			if uploaderTokenID == "" {
+				return e.ForbiddenError("Uploader realtime session missing token linkage.", nil)
+			}
+			if _, tokenErr := intelService.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
+				return e.ForbiddenError("Uploader token revoked.", nil)
+			}
 		}
 
 		return e.Next()
@@ -128,35 +139,49 @@ func registerIntelUploadersTopic(app *pocketbase.PocketBase, intelService *intel
 	})
 }
 
-func registerIntelUploaderCountBroadcasts(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher) {
-	broadcast := func(e *core.ModelEvent) error {
-		record := resolveRecord(e.Model)
-		if record == nil || record.Collection() == nil || record.Collection().Name != store.CollectionIntelUploaders {
-			return e.Next()
-		}
-		if intelService == nil || publisher == nil {
-			return e.Next()
-		}
-
-		count, countErr := intelService.UploaderCount()
-		if countErr != nil {
-			logging.New(app).
-				WithErr(countErr).
-				Warn("intel uploader count realtime build failed")
-			return e.Next()
-		}
-		if _, publishErr := publisher.PublishJSON(realtime.TopicIntelUploaders, map[string]any{"uploaders": count}); publishErr != nil {
-			logging.New(app).
-				WithErr(publishErr).
-				Warn("intel uploader count realtime publish failed")
-		}
-
-		return e.Next()
+func startIntelUploaderHeartbeatCountBroadcasts(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher) {
+	if app == nil || intelService == nil || publisher == nil {
+		return
 	}
 
-	app.OnModelAfterCreateSuccess().BindFunc(broadcast)
-	app.OnModelAfterUpdateSuccess().BindFunc(broadcast)
-	app.OnModelAfterDeleteSuccess().BindFunc(broadcast)
+	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+
+		ticker := time.NewTicker(uploaderCountRecomputeInterval)
+		go func() {
+			defer ticker.Stop()
+
+			lastCount := -1
+			for range ticker.C {
+				count, countErr := intelService.UploaderCount()
+				if countErr != nil {
+					logging.New(app).
+						WithErr(countErr).
+						Warn("intel uploader heartbeat count build failed")
+					continue
+				}
+				if count == lastCount {
+					continue
+				}
+				if publishErr := publishIntelUploaderCount(publisher, count); publishErr != nil {
+					logging.New(app).
+						WithErr(publishErr).
+						Warn("intel uploader heartbeat count publish failed")
+					continue
+				}
+				lastCount = count
+			}
+		}()
+
+		return nil
+	})
+}
+
+func publishIntelUploaderCount(publisher *realtime.Publisher, count int) error {
+	_, err := publisher.PublishJSON(realtime.TopicIntelUploaders, map[string]any{"uploaders": count})
+	return err
 }
 
 func resolveRecord(model core.Model) *core.Record {

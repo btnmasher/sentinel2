@@ -232,6 +232,22 @@ func (s *IntelService) ValidateUploaderToken(token string) (*core.Record, error)
 	return record, nil
 }
 
+func (s *IntelService) ValidateUploaderTokenID(tokenID string) (*core.Record, error) {
+	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionUploaderTokens)
+	if collErr != nil {
+		return nil, collErr
+	}
+
+	record, recordErr := s.App.FindRecordById(coll.Name, tokenID)
+	if recordErr != nil {
+		return nil, recordErr
+	}
+	if record.GetBool("revoked") {
+		return nil, ErrExpiredOrRevoked
+	}
+	return record, nil
+}
+
 func (s *IntelService) RevokeUploaderTokensForUser(userID string) error {
 	records, recordsErr := s.App.FindRecordsByFilter(
 		store.CollectionUploaderTokens,

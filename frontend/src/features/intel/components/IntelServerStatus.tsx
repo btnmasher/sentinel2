@@ -6,12 +6,9 @@ const SERVER_STATUS = {
   connected: { status: "Connected", color: "text-emerald-300" },
 } as const;
 
-type IntelServerStatusProps = {
-  version?: string;
-};
-
-export default function IntelServerStatus({ version }: IntelServerStatusProps) {
+export default function IntelServerStatus() {
   const intelStatus = useIntelStore((state) => state.intelStatus);
+  const version = useIntelStore((state) => state.version);
   const status = SERVER_STATUS[intelStatus];
   const title =
     status === SERVER_STATUS.connected

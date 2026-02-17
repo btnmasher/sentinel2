@@ -40,7 +40,12 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 			"reason": "missing uploader user context",
 		})
 	}
-	_ = h.Service.UpdateUploader(userID)
+	if updateErr := h.Service.UpdateUploader(userID); updateErr != nil {
+		return router.NewInternalServerError("Failed to refresh uploader heartbeat.", logging.Fields{
+			"uploader_user_id": userID,
+			"error":            updateErr.Error(),
+		})
+	}
 
 	if payload.Text != "" {
 		channelID := strings.TrimSpace(payload.ChannelID)
@@ -126,6 +131,22 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 		}
 	}
 
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *IntelHandler) Heartbeat(c *core.RequestEvent) error {
+	ctxUserID, _ := c.Get("uploader_user_id").(string)
+	if ctxUserID == "" {
+		return router.NewUnauthorizedError("Invalid uploader token.", logging.Fields{
+			"reason": "missing uploader user context",
+		})
+	}
+	if updateErr := h.Service.UpdateUploader(ctxUserID); updateErr != nil {
+		return router.NewInternalServerError("Failed to refresh uploader heartbeat.", logging.Fields{
+			"uploader_user_id": ctxUserID,
+			"error":            updateErr.Error(),
+		})
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -222,6 +243,28 @@ func (h *IntelHandler) UploaderRealtimeToken(c *core.RequestEvent) error {
 			"user_id":           ctxUserID,
 			"uploader_token_id": ctxUploaderTokenID,
 			"error":             sessionErr.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, uploaderRealtimeTokenResponse{
+		Token:               session.Token,
+		Topic:               realtime.TopicUploaderConfig,
+		ExpiresAt:           session.ExpiresAt.Unix(),
+		RefreshAfterSeconds: int64(session.RefreshAfter.Seconds()),
+	})
+}
+
+func (h *IntelHandler) UploaderSessionRefresh(c *core.RequestEvent) error {
+	if c.Auth == nil {
+		return router.NewUnauthorizedError("Invalid uploader session.", nil)
+	}
+	session, sessionErr := h.Service.RefreshUploaderRealtimeSession(c.Auth)
+	if sessionErr != nil {
+		if sessionErr == intel.ErrExpiredOrRevoked {
+			return router.NewUnauthorizedError("Uploader token revoked.", nil)
+		}
+		return router.NewInternalServerError("Failed to refresh realtime token.", logging.Fields{
+			"error": sessionErr.Error(),
 		})
 	}
 
