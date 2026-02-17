@@ -322,6 +322,26 @@ tasks:
       - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d
     desc: Start production compose with Cloudflare Tunnel sidecar in detached mode.
 
+  docker:tunnel:up:migrate:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
+    cmds:
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml run --rm sentinel2 /app/sentinel2-server migrate
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build
+    desc: Run migrations, then start production+tunnel compose.
+
+  docker:tunnel:up:migrate:detach:
+    deps: [setup:taskutil]
+    vars:
+      BUILD_VERSION:
+        sh: "{{.TASKUTIL_BIN}} version"
+    cmds:
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml run --rm sentinel2 /app/sentinel2-server migrate
+      - BUILD_VERSION={{.BUILD_VERSION}} docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d
+    desc: Run migrations, then start production+tunnel compose in detached mode.
+
   docker:tunnel:up:ghcr:
     requires:
       vars: [IMAGE]

@@ -82,6 +82,8 @@ See `docs/WINDOWS_DEVELOPMENT.md` for the full Windows notes.
 - runs via:
   - `task docker:tunnel:up`
   - `task docker:tunnel:up:detach`
+  - `task docker:tunnel:up:migrate`
+  - `task docker:tunnel:up:migrate:detach`
 
 ### Dockerfile stages
 - `toolchain`: installs Go/Bun/Task and base packages
@@ -235,6 +237,8 @@ Detached HEAD:
 | `task docker:tunnel:status` | Show production+tunnel compose status. |
 | `task docker:tunnel:up` | Start production compose with Cloudflare Tunnel sidecar. |
 | `task docker:tunnel:up:detach` | Start production+tunnel compose in detached mode. |
+| `task docker:tunnel:up:migrate` | Run migrations, then start production+tunnel compose. |
+| `task docker:tunnel:up:migrate:detach` | Run migrations, then start production+tunnel compose in detached mode. |
 | `task docker:up` | Start production compose. |
 | `task docker:up:detach` | Start production compose in detached mode. |
 | `task docker:up:migrate` | Run migrations, then start production compose. |
