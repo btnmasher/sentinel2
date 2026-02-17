@@ -78,9 +78,20 @@ export default function UploaderCountBadge() {
               Uploaders online
             </p>
             <p className="mt-1 text-base-content/80">
-              {uploaders} uploader{uploaders === 1 ? "" : "s"} are currently
-              reporting intel heartbeats.
+              {uploaders} uploader{uploaders === 1 ? "" : "s"}{" "}
+              {uploaders === 1 ? "is" : "are"} currently online and contributing
+              intel.
             </p>
+            <p className="mt-1 text-base-content/80">
+              You can join them to help keep intel fresh.
+            </p>
+            <Link
+              to="/uploader"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs font-medium text-primary transition hover:bg-primary/20"
+            >
+              <Download className="h-3 w-3" />
+              Go to download page
+            </Link>
           </>
         ) : (
           <>
