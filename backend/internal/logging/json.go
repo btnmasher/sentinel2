@@ -11,6 +11,8 @@ import (
 
 var jsonMu sync.Mutex
 
+const jsonFilePerm = 0o600
+
 type jsonEntry struct {
 	Time   string         `json:"time"`
 	Level  string         `json:"level"`
@@ -39,11 +41,11 @@ func writeJSONLog(level slog.Level, msg string, attrs []slog.Attr) {
 	jsonMu.Lock()
 	defer jsonMu.Unlock()
 
-	file, err := os.OpenFile(jsonPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(jsonPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, jsonFilePerm)
 	if err != nil {
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	_, _ = fmt.Fprintln(file, string(payload))
 }

@@ -9,6 +9,8 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
+
+	"sentinel2/internal/shared/collections"
 )
 
 const orgCacheChunk = 50
@@ -35,17 +37,10 @@ func GetOrgNames(app *pocketbase.PocketBase, collection string, ids []int) map[i
 		if id == 0 {
 			continue
 		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		unique = append(unique, id)
+		_ = collections.AppendUnique(&unique, seen, id)
 	}
 	for start := 0; start < len(unique); start += orgCacheChunk {
-		end := start + orgCacheChunk
-		if end > len(unique) {
-			end = len(unique)
-		}
+		end := min(start+orgCacheChunk, len(unique))
 		clauses := make([]string, 0, end-start)
 		params := dbx.Params{}
 		for i, id := range unique[start:end] {

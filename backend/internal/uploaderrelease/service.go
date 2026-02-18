@@ -52,14 +52,14 @@ type cacheState struct {
 
 type Service struct {
 	app    *pocketbase.PocketBase
-	cfg    config.Config
+	cfg    *config.Config
 	client *http.Client
 
 	mu    sync.RWMutex
 	state cacheState
 }
 
-func New(app *pocketbase.PocketBase, cfg config.Config) *Service {
+func New(app *pocketbase.PocketBase, cfg *config.Config) *Service {
 	s := &Service{
 		app: app,
 		cfg: cfg,
@@ -93,13 +93,15 @@ func (s *Service) Refresh(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, s.latestReleaseAPIURL(), nil)
+	req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, s.latestReleaseAPIURL(), http.NoBody)
 	if reqErr != nil {
 		return false, reqErr
 	}
 	req.Header.Set("Accept", githubAcceptHeader)
 	req.Header.Set("X-GitHub-Api-Version", githubAPIVersionDate)
-	req.Header.Set("User-Agent", s.cfg.ESIUserAgent)
+	if s.cfg != nil {
+		req.Header.Set("User-Agent", s.cfg.ESIUserAgent)
+	}
 
 	s.mu.RLock()
 	etag := s.state.etag
@@ -116,7 +118,7 @@ func (s *Service) Refresh(ctx context.Context) (bool, error) {
 	if respErr != nil {
 		return false, respErr
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusNotModified:
@@ -186,10 +188,16 @@ func (s *Service) applyCacheHeaders(resp *http.Response, touchUpdatedAt bool) {
 }
 
 func (s *Service) latestReleaseAPIURL() string {
+	if s == nil || s.cfg == nil {
+		return ""
+	}
 	return fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", strings.TrimSpace(s.cfg.UploaderGitHubRepo))
 }
 
 func (s *Service) latestReleasePageURL() string {
+	if s == nil || s.cfg == nil {
+		return ""
+	}
 	return fmt.Sprintf("https://github.com/%s/releases/latest", strings.TrimSpace(s.cfg.UploaderGitHubRepo))
 }
 

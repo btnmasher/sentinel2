@@ -245,7 +245,7 @@ func (pm *processManager) start(name string) error {
 		_ = logFile.Close()
 		return fmt.Errorf("failed to start process %q", name)
 	}
-	go pm.wait(name, proc.cmd)
+	go pm.wait(name, proc.cmd.ProcessID(), proc.cmd)
 	pm.events <- procStartedMsg{proc: name, pid: proc.cmd.ProcessID()}
 	return nil
 }
@@ -284,7 +284,7 @@ func (pm *processManager) stream(name string, reader io.Reader, logFile *os.File
 	}
 }
 
-func (pm *processManager) wait(name string, cmd execCmd) {
+func (pm *processManager) wait(name string, pid int, cmd execCmd) {
 	err := cmd.Wait()
 	code := 0
 	if err != nil {
@@ -295,7 +295,7 @@ func (pm *processManager) wait(name string, cmd execCmd) {
 			code = -1
 		}
 	}
-	pm.events <- procExitMsg{proc: name, err: err, code: code}
+	pm.events <- procExitMsg{proc: name, pid: pid, err: err, code: code}
 }
 
 func (pm *processManager) stop(name string) {

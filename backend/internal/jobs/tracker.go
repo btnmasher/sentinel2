@@ -27,7 +27,7 @@ func NewJobTracker(app *pocketbase.PocketBase) *JobTracker {
 	return &JobTracker{app: app}
 }
 
-func (t *JobTracker) IsRunning(kind string, step string) (bool, error) {
+func (t *JobTracker) IsRunning(kind, step string) (bool, error) {
 	if t == nil || t.app == nil {
 		return false, nil
 	}

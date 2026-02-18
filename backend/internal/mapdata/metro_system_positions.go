@@ -19,7 +19,10 @@ import (
 	"sentinel2/internal/store"
 )
 
-var dotPosRe = regexp.MustCompile(`^\s*([0-9]+)\s+\[.*?pos="([0-9eE+.\-]+),([0-9eE+.\-]+)`)
+var dotPosRe = regexp.MustCompile(`^\s*(\d+)\s+\[.*?pos="([0-9eE+.\-]+),([0-9eE+.\-]+)`)
+
+const dotMatchParts = 4
+const regionGraphContextStride = 500
 
 func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) error {
 	regions, regionsErr := app.FindRecordsByFilter(store.CollectionRegions, "eve_id < 11000000", "name", 0, 0, nil)
@@ -61,8 +64,31 @@ func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) erro
 }
 
 func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, region *core.Record) error {
-	regionID := int(region.GetInt("eve_id"))
+	regionID := region.GetInt("eve_id")
 
+	gateRecords, systems, loadErr := loadRegionGraphInputs(ctx, app, regionID)
+	if loadErr != nil {
+		return loadErr
+	}
+	dot, dotErr := buildRegionDOT(ctx, gateRecords, systems)
+	if dotErr != nil {
+		return dotErr
+	}
+	positions, positionsErr := runNeato(ctx, dot)
+	if positionsErr != nil {
+		logging.New(app).
+			WithFields(logging.Fields{
+				"region_id": regionID,
+			}).
+			WithErr(positionsErr).
+			Warn("system graph layout failed")
+		return positionsErr
+	}
+
+	return saveRegionGraphPositions(ctx, app, region, positions)
+}
+
+func loadRegionGraphInputs(ctx context.Context, app *pocketbase.PocketBase, regionID int) (gateRecords, systems []*core.Record, err error) {
 	gateRecords, gateErr := app.FindRecordsByFilter(
 		store.CollectionGates,
 		"from_region = {:id} || to_region = {:id}",
@@ -72,24 +98,9 @@ func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, regio
 		map[string]any{"id": regionID},
 	)
 	if gateErr != nil {
-		logging.New(app).
-			WithFields(logging.Fields{
-				"region_id": regionID,
-			}).
-			WithErr(gateErr).
-			Warn("system graph gate lookup failed")
-		return gateErr
+		logging.New(app).WithFields(logging.Fields{"region_id": regionID}).WithErr(gateErr).Warn("system graph gate lookup failed")
+		return nil, nil, gateErr
 	}
-
-	systemIDs := map[int]struct{}{}
-	for i, gate := range gateRecords {
-		if i%500 == 0 && ctx.Err() != nil {
-			return ctx.Err()
-		}
-		systemIDs[int(gate.GetInt("from_solarsystem"))] = struct{}{}
-		systemIDs[int(gate.GetInt("to_solarsystem"))] = struct{}{}
-	}
-
 	systems, systemsErr := app.FindRecordsByFilter(
 		store.CollectionSolarSystems,
 		"region_id = {:id}",
@@ -99,55 +110,85 @@ func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, regio
 		map[string]any{"id": regionID},
 	)
 	if systemsErr != nil {
-		logging.New(app).
-			WithFields(logging.Fields{
-				"region_id": regionID,
-			}).
-			WithErr(systemsErr).
-			Warn("system graph system lookup failed")
-		return systemsErr
+		logging.New(app).WithFields(logging.Fields{"region_id": regionID}).WithErr(systemsErr).Warn("system graph system lookup failed")
+		return nil, nil, systemsErr
 	}
-	for i, system := range systems {
-		if i%500 == 0 && ctx.Err() != nil {
+	if err := checkContextStride(ctx, len(gateRecords), regionGraphContextStride); err != nil {
+		return nil, nil, err
+	}
+	if err := checkContextStride(ctx, len(systems), regionGraphContextStride); err != nil {
+		return nil, nil, err
+	}
+	return gateRecords, systems, nil
+}
+
+func checkContextStride(ctx context.Context, total, stride int) error {
+	if stride <= 0 {
+		return nil
+	}
+	for i := range total {
+		if i%stride == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		systemIDs[int(system.GetInt("eve_id"))] = struct{}{}
 	}
+	return nil
+}
 
+func buildRegionDOT(ctx context.Context, gateRecords, systems []*core.Record) (string, error) {
+	systemIDs, gatherErr := gatherRegionSystemIDs(ctx, gateRecords, systems)
+	if gatherErr != nil {
+		return "", gatherErr
+	}
+	edges, edgeErr := gatherRegionEdges(ctx, gateRecords)
+	if edgeErr != nil {
+		return "", edgeErr
+	}
 	dot := new(strings.Builder)
 	dot.WriteString("graph G {\n")
 	dot.WriteString("  overlap=false;\n")
 	dot.WriteString("  start=1;\n")
 	dot.WriteString("  node [shape=point];\n")
+	appendSystemNodes(dot, systemIDs)
+	appendGateEdges(dot, edges)
+	dot.WriteString("}\n")
+	return dot.String(), nil
+}
 
-	systemList := make([]int, 0, len(systemIDs))
-	for id := range systemIDs {
-		systemList = append(systemList, id)
-	}
-	sort.Ints(systemList)
-	for _, id := range systemList {
-		dot.WriteString(fmt.Sprintf("  %d;\n", id))
-	}
+type edge struct {
+	from int
+	to   int
+}
 
-	type edge struct {
-		from int
-		to   int
+func gatherRegionSystemIDs(ctx context.Context, gateRecords, systems []*core.Record) (map[int]struct{}, error) {
+	systemIDs := map[int]struct{}{}
+	for i, gate := range gateRecords {
+		if i%500 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		systemIDs[gate.GetInt("from_solarsystem")] = struct{}{}
+		systemIDs[gate.GetInt("to_solarsystem")] = struct{}{}
 	}
+	for i, system := range systems {
+		if i%500 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		systemIDs[system.GetInt("eve_id")] = struct{}{}
+	}
+	return systemIDs, nil
+}
+
+func gatherRegionEdges(ctx context.Context, gateRecords []*core.Record) ([]edge, error) {
 	edges := map[string]edge{}
 	for i, gate := range gateRecords {
 		if i%500 == 0 && ctx.Err() != nil {
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
-		from := int(gate.GetInt("from_solarsystem"))
-		to := int(gate.GetInt("to_solarsystem"))
-		if from == 0 || to == 0 {
+		from, to, ok := normalizeEdge(gate.GetInt("from_solarsystem"), gate.GetInt("to_solarsystem"))
+		if !ok {
 			continue
 		}
-		if from > to {
-			from, to = to, from
-		}
 		key := fmt.Sprintf("%d-%d", from, to)
-		if _, ok := edges[key]; ok {
+		if _, exists := edges[key]; exists {
 			continue
 		}
 		edges[key] = edge{from: from, to: to}
@@ -162,23 +203,38 @@ func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, regio
 		}
 		return edgeList[i].from < edgeList[j].from
 	})
+	return edgeList, nil
+}
+
+func normalizeEdge(from, to int) (left, right int, ok bool) {
+	if from == 0 || to == 0 {
+		return 0, 0, false
+	}
+	if from > to {
+		from, to = to, from
+	}
+	return from, to, true
+}
+
+func appendSystemNodes(dot *strings.Builder, systemIDs map[int]struct{}) {
+	systemList := make([]int, 0, len(systemIDs))
+	for id := range systemIDs {
+		systemList = append(systemList, id)
+	}
+	sort.Ints(systemList)
+	for _, id := range systemList {
+		fmt.Fprintf(dot, "  %d;\n", id)
+	}
+}
+
+func appendGateEdges(dot *strings.Builder, edgeList []edge) {
 	for _, e := range edgeList {
-		dot.WriteString(fmt.Sprintf("  %d -- %d;\n", e.from, e.to))
+		fmt.Fprintf(dot, "  %d -- %d;\n", e.from, e.to)
 	}
+}
 
-	dot.WriteString("}\n")
-
-	positions, positionsErr := runNeato(ctx, dot.String())
-	if positionsErr != nil {
-		logging.New(app).
-			WithFields(logging.Fields{
-				"region_id": regionID,
-			}).
-			WithErr(positionsErr).
-			Warn("system graph layout failed")
-		return positionsErr
-	}
-
+func saveRegionGraphPositions(ctx context.Context, app *pocketbase.PocketBase, region *core.Record, positions map[int]nodePos) error {
+	regionID := region.GetInt("eve_id")
 	for i, id := range sortedKeys(positions) {
 		if i%200 == 0 && ctx.Err() != nil {
 			return ctx.Err()
@@ -188,25 +244,23 @@ func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, regio
 		if systemErr != nil {
 			continue
 		}
-
-		if int(system.GetInt("region_id")) == regionID {
-			system.Set("metro_x", pos.x)
-			system.Set("metro_y", pos.y)
-			if saveErr := app.Save(system); saveErr != nil {
-				logging.New(app).
-					WithFields(logging.Fields{
-						"region_id":   regionID,
-						"system_id":   system.GetInt("eve_id"),
-						"system_name": system.GetString("name"),
-					}).
-					WithErr(saveErr).
-					Debug("system graph save failed")
-			}
-		} else {
+		if system.GetInt("region_id") != regionID {
 			updateRegionGateCoords(app, system, region, pos.x, pos.y, "metro")
+			continue
+		}
+		system.Set("metro_x", pos.x)
+		system.Set("metro_y", pos.y)
+		if saveErr := app.Save(system); saveErr != nil {
+			logging.New(app).
+				WithFields(logging.Fields{
+					"region_id":   regionID,
+					"system_id":   system.GetInt("eve_id"),
+					"system_name": system.GetString("name"),
+				}).
+				WithErr(saveErr).
+				Debug("system graph save failed")
 		}
 	}
-
 	return nil
 }
 
@@ -229,13 +283,13 @@ func runNeato(ctx context.Context, dot string) (map[int]nodePos, error) {
 	if graphErr != nil {
 		return nil, fmt.Errorf("graphviz parse failed: %w", graphErr)
 	}
-	defer graph.Close()
+	defer func() { _ = graph.Close() }()
 
 	g, graphvizErr := graphviz.New(ctx)
 	if graphvizErr != nil {
 		return nil, fmt.Errorf("graphviz init failed: %w", graphvizErr)
 	}
-	defer g.Close()
+	defer func() { _ = g.Close() }()
 
 	g.SetLayout(graphviz.NEATO)
 
@@ -266,7 +320,7 @@ func parseDotPositions(dot []byte) (map[int]nodePos, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		match := dotPosRe.FindStringSubmatch(line)
-		if len(match) != 4 {
+		if len(match) != dotMatchParts {
 			continue
 		}
 		id, idErr := strconv.Atoi(match[1])

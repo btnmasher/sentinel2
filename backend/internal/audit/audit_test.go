@@ -13,7 +13,7 @@ func TestNormalizeTargetFields_CharacterDefaults(t *testing.T) {
 	character.Set("eve_character_name", "Pilot One")
 
 	gotType, gotID, gotLabel, gotMeta := normalizeTargetFields(
-		Event{},
+		&Event{},
 		character,
 		"",
 		"",
@@ -39,7 +39,7 @@ func TestNormalizeTargetFields_CharacterDefaults(t *testing.T) {
 
 func TestNormalizeTargetFields_UserDefaults(t *testing.T) {
 	gotType, gotID, gotLabel, gotMeta := normalizeTargetFields(
-		Event{TargetUserID: "u_123"},
+		&Event{TargetUserID: "u_123"},
 		nil,
 		"Main Pilot",
 		"",
@@ -65,7 +65,7 @@ func TestNormalizeTargetFields_UserDefaults(t *testing.T) {
 func TestNormalizeTargetFields_ExplicitValuesPreserved(t *testing.T) {
 	customMeta := map[string]any{"step": "all"}
 	gotType, gotID, gotLabel, gotMeta := normalizeTargetFields(
-		Event{TargetUserID: "u_123"},
+		&Event{TargetUserID: "u_123"},
 		nil,
 		"Main Pilot",
 		TargetTypeJob,

@@ -15,6 +15,8 @@ import (
 	"sentinel2/internal/mapdata"
 )
 
+const jumpbridgePairRecordCount = 2
+
 func NewJumpbridgeHandler(app *pocketbase.PocketBase, service *jumpbridges.JumpbridgeService, auditSvc *audit.Service) *JumpbridgeHandler {
 	return &JumpbridgeHandler{App: app, Service: service, Audit: auditSvc}
 }
@@ -59,7 +61,7 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 		WithFields(logFields).
 		Info("jumpbridge import completed")
 	if h.Audit != nil {
-		h.Audit.LogRequest(c, audit.Event{
+		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionStaffJumpbridgeImport,
 			Summary:     "Imported jumpbridges",
 			TargetType:  audit.TargetTypeJumpbridgeSet,
@@ -111,7 +113,7 @@ func (h *JumpbridgeHandler) Clear(c *core.RequestEvent) error {
 		Logger:  logging.WithRequest(h.App, c),
 	})
 	if h.Audit != nil {
-		h.Audit.LogRequest(c, audit.Event{
+		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionStaffJumpbridgeClear,
 			Summary:     "Cleared jumpbridges",
 			TargetType:  audit.TargetTypeJumpbridgeSet,
@@ -166,7 +168,7 @@ func (h *JumpbridgeHandler) Add(c *core.RequestEvent) error {
 			Logger:  logging.WithRequest(h.App, c),
 		})
 		if h.Audit != nil {
-			h.Audit.LogRequest(c, audit.Event{
+			h.Audit.LogRequest(c, &audit.Event{
 				Action:     audit.ActionStaffJumpbridgeAdd,
 				Summary:    "Added jumpbridge pair",
 				TargetType: audit.TargetTypeJumpbridgePair,
@@ -229,7 +231,7 @@ func (h *JumpbridgeHandler) Remove(c *core.RequestEvent) error {
 			Logger:  logging.WithRequest(h.App, c),
 		})
 		if h.Audit != nil {
-			h.Audit.LogRequest(c, audit.Event{
+			h.Audit.LogRequest(c, &audit.Event{
 				Action:     audit.ActionStaffJumpbridgeRemove,
 				Summary:    "Removed jumpbridge pair",
 				TargetType: audit.TargetTypeJumpbridgePair,
@@ -242,7 +244,7 @@ func (h *JumpbridgeHandler) Remove(c *core.RequestEvent) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, jumpbridgeMutationResponse{Changed: deleted > 0, Count: deleted / 2})
+	return c.JSON(http.StatusOK, jumpbridgeMutationResponse{Changed: deleted > 0, Count: deleted / jumpbridgePairRecordCount})
 }
 
 func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
@@ -295,7 +297,7 @@ func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
 			Logger:  logging.WithRequest(h.App, c),
 		})
 		if h.Audit != nil {
-			h.Audit.LogRequest(c, audit.Event{
+			h.Audit.LogRequest(c, &audit.Event{
 				Action:     audit.ActionStaffJumpbridgeUpdate,
 				Summary:    "Updated jumpbridge pair",
 				TargetType: audit.TargetTypeJumpbridgePair,

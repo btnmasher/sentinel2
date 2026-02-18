@@ -2,6 +2,7 @@ package format
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -20,9 +21,7 @@ func GetQueryList(values url.Values, key string) []string {
 	}
 	out := []string{}
 	for _, value := range raw {
-		for _, token := range SplitTokens(value) {
-			out = append(out, token)
-		}
+		out = append(out, SplitTokens(value)...)
 	}
 	return out
 }
@@ -40,4 +39,22 @@ func SplitTokens(value string) []string {
 		out = append(out, token)
 	}
 	return out
+}
+
+func GetPositiveInt(values url.Values, key string, defaultValue, maxValue int) int {
+	if values == nil {
+		return defaultValue
+	}
+	raw := strings.TrimSpace(values.Get(key))
+	if raw == "" {
+		return defaultValue
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return defaultValue
+	}
+	if maxValue > 0 && parsed > maxValue {
+		return defaultValue
+	}
+	return parsed
 }

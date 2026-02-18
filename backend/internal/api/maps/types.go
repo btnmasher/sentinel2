@@ -11,7 +11,7 @@ import (
 
 type MapHandler struct {
 	App          *pocketbase.PocketBase
-	Config       config.Config
+	Config       *config.Config
 	ESI          esi.ESIClient
 	Provider     auth.Provider
 	EVE          *auth.EVEProvider
@@ -112,8 +112,4 @@ type LocationsRequest struct {
 
 type LocationsResponse struct {
 	Locations []LocationEntry `json:"locations"`
-}
-
-type filterValue interface {
-	~int | ~string
 }

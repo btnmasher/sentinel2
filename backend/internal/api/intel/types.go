@@ -9,7 +9,7 @@ import (
 
 type IntelHandler struct {
 	App     *pocketbase.PocketBase
-	Config  config.Config
+	Config  *config.Config
 	Service *intel.IntelService
 }
 

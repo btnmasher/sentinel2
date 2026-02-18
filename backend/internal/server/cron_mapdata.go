@@ -10,7 +10,7 @@ import (
 )
 
 func runMapDataBootstrap(app *pocketbase.PocketBase) {
-	runner := jobs.NewRunner(app, jobs.RunOptions{
+	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: mapdata.JobMapDataUpdate,
 		JobOptions: jobs.JobOptions{
 			Kind:    "map_data_update",
@@ -22,7 +22,7 @@ func runMapDataBootstrap(app *pocketbase.PocketBase) {
 }
 
 func runMapDataCron(app *pocketbase.PocketBase, ctx context.Context) {
-	runner := jobs.NewRunner(app, jobs.RunOptions{
+	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: mapdata.JobMapDataUpdate,
 		JobOptions: jobs.JobOptions{
 			Kind:    "map_data_update",

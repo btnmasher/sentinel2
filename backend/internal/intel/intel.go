@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strconv"
 	"time"
@@ -21,6 +22,7 @@ const (
 	ReportHashExpiry       = 300
 	DefaultReportHashSlots = 20
 	UploaderExpiry         = 120
+	reportTimeFuzzSeconds  = 10
 )
 
 type IntelService struct {
@@ -69,13 +71,6 @@ func (s *IntelService) SetReportHashSlots(slots int) {
 		return
 	}
 	s.ReportHashSlots = slots
-}
-
-func (s *IntelService) reportHashSlots() int {
-	if s.ReportHashSlots < 1 {
-		return DefaultReportHashSlots
-	}
-	return s.ReportHashSlots
 }
 
 func (s *IntelService) GetOrCreateUploaderToken(userID string) (*core.Record, error) {
@@ -141,76 +136,12 @@ func (s *IntelService) RegenerateUploaderToken(userID string) (*core.Record, err
 	return s.regenerateUploaderToken(userID)
 }
 
-func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, error) {
-	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionUploaderTokens)
-	if collErr != nil {
-		return nil, collErr
-	}
-
-	if err := s.RevokeUploaderSessionsForUser(userID); err != nil {
-		return nil, err
-	}
-
-	records, recordsErr := s.App.FindRecordsByFilter(
-		coll.Name,
-		"user = {:user}",
-		"",
-		0,
-		0,
-		map[string]any{"user": userID},
-	)
-	if recordsErr != nil {
-		return nil, recordsErr
-	}
-
-	failed := 0
-	for _, rec := range records {
-		rec.Set("revoked", true)
-		if saveErr := s.App.Save(rec); saveErr != nil {
-			failed++
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"user_id":  userID,
-					"token_id": rec.Id,
-				}).
-				WithErr(saveErr).
-				Debug("uploader token revoke save failed")
-		}
-		if revokeErr := s.RevokeUploaderSessionsForUploaderToken(rec.Id); revokeErr != nil {
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"user_id":  userID,
-					"token_id": rec.Id,
-				}).
-				WithErr(revokeErr).
-				Debug("uploader sessions revoke failed")
-		}
-	}
-	if failed > 0 {
-		logging.New(s.App).
-			WithFields(logging.Fields{
-				"user_id": userID,
-				"failed":  failed,
-			}).
-			Warn("uploader token revoke failures")
-	}
-
-	record := core.NewRecord(coll)
-	record.Set("user", userID)
-	record.Set("revoked", false)
-	record.Set("created_date", types.NowDateTime())
-	if saveErr := s.App.Save(record); saveErr != nil {
-		return nil, saveErr
-	}
-	return record, nil
-}
-
 func (s *IntelService) HasValidUploaderToken(userID string) (bool, error) {
 	_, err := s.GetValidUploaderToken(userID)
 	if err == nil {
 		return true, nil
 	}
-	if err == ErrExpiredOrRevoked {
+	if errors.Is(err, ErrExpiredOrRevoked) {
 		return false, nil
 	}
 	return false, err
@@ -350,7 +281,10 @@ func (s *IntelService) UploaderCount() (int, error) {
 	return len(records), nil
 }
 
-func (s *IntelService) CreateReport(report IntelReport) error {
+func (s *IntelService) CreateReport(report *IntelReport) error {
+	if report == nil {
+		return nil
+	}
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionIntelReports)
 	if collErr != nil {
 		return collErr
@@ -410,7 +344,7 @@ func (s *IntelService) ListReports(limit int) ([]IntelReport, error) {
 	return reports, nil
 }
 
-func (s *IntelService) ShouldCreateReport(author string, text string, reportTime int64) (bool, error) {
+func (s *IntelService) ShouldCreateReport(author, text string, reportTime int64) (bool, error) {
 	hash := sha256.Sum256([]byte(author + "+" + text))
 	hashText := hex.EncodeToString(hash[:])
 
@@ -442,7 +376,7 @@ func (s *IntelService) ShouldCreateReport(author string, text string, reportTime
 			return true, s.App.Save(rec)
 		}
 
-		if absInt64(int64(records[0].GetInt("report_time"))-reportTime) < 10 {
+		if absInt64(int64(records[0].GetInt("report_time"))-reportTime) < reportTimeFuzzSeconds {
 			return false, nil
 		}
 	}
@@ -450,18 +384,89 @@ func (s *IntelService) ShouldCreateReport(author string, text string, reportTime
 	return false, nil
 }
 
-func decodeSystems(value interface{}) []IntelSystem {
+func (s *IntelService) reportHashSlots() int {
+	if s.ReportHashSlots < 1 {
+		return DefaultReportHashSlots
+	}
+	return s.ReportHashSlots
+}
+
+func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, error) {
+	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionUploaderTokens)
+	if collErr != nil {
+		return nil, collErr
+	}
+
+	if err := s.RevokeUploaderSessionsForUser(userID); err != nil {
+		return nil, err
+	}
+
+	records, recordsErr := s.App.FindRecordsByFilter(
+		coll.Name,
+		"user = {:user}",
+		"",
+		0,
+		0,
+		map[string]any{"user": userID},
+	)
+	if recordsErr != nil {
+		return nil, recordsErr
+	}
+
+	failed := 0
+	for _, rec := range records {
+		rec.Set("revoked", true)
+		if saveErr := s.App.Save(rec); saveErr != nil {
+			failed++
+			logging.New(s.App).
+				WithFields(logging.Fields{
+					"user_id":  userID,
+					"token_id": rec.Id,
+				}).
+				WithErr(saveErr).
+				Debug("uploader token revoke save failed")
+		}
+		if revokeErr := s.RevokeUploaderSessionsForUploaderToken(rec.Id); revokeErr != nil {
+			logging.New(s.App).
+				WithFields(logging.Fields{
+					"user_id":  userID,
+					"token_id": rec.Id,
+				}).
+				WithErr(revokeErr).
+				Debug("uploader sessions revoke failed")
+		}
+	}
+	if failed > 0 {
+		logging.New(s.App).
+			WithFields(logging.Fields{
+				"user_id": userID,
+				"failed":  failed,
+			}).
+			Warn("uploader token revoke failures")
+	}
+
+	record := core.NewRecord(coll)
+	record.Set("user", userID)
+	record.Set("revoked", false)
+	record.Set("created_date", types.NowDateTime())
+	if saveErr := s.App.Save(record); saveErr != nil {
+		return nil, saveErr
+	}
+	return record, nil
+}
+
+func decodeSystems(value any) []IntelSystem {
 	out := []IntelSystem{}
 	switch v := value.(type) {
 	case []IntelSystem:
 		return v
-	case []map[string]interface{}:
+	case []map[string]any:
 		for _, item := range v {
 			out = append(out, decodeSystemMap(item))
 		}
-	case []interface{}:
+	case []any:
 		for _, item := range v {
-			if m, ok := item.(map[string]interface{}); ok {
+			if m, ok := item.(map[string]any); ok {
 				out = append(out, decodeSystemMap(m))
 			}
 		}
@@ -469,7 +474,7 @@ func decodeSystems(value interface{}) []IntelSystem {
 	return out
 }
 
-func decodeSystemMap(m map[string]interface{}) IntelSystem {
+func decodeSystemMap(m map[string]any) IntelSystem {
 	sys := IntelSystem{}
 	if value, ok := m["system"]; ok {
 		sys.System = toInt(value)
@@ -488,7 +493,7 @@ func decodeSystemMap(m map[string]interface{}) IntelSystem {
 	return sys
 }
 
-func toInt(value interface{}) int {
+func toInt(value any) int {
 	switch v := value.(type) {
 	case float64:
 		return int(v)
@@ -507,12 +512,12 @@ func toInt(value interface{}) int {
 	return 0
 }
 
-func toIntSlice(value interface{}) []int {
+func toIntSlice(value any) []int {
 	out := []int{}
 	switch v := value.(type) {
 	case []int:
 		return v
-	case []interface{}:
+	case []any:
 		for _, item := range v {
 			switch num := item.(type) {
 			case float64:

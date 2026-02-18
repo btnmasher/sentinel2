@@ -12,8 +12,8 @@ import (
 	"sentinel2/internal/logging"
 )
 
-func runCharacterRefreshJob(app *pocketbase.PocketBase, deps dependencies) {
-	runner := jobs.NewRunner(app, jobs.RunOptions{
+func runCharacterRefreshJob(app *pocketbase.PocketBase, deps *dependencies) {
+	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: jobs.JobCharacterRefresh,
 		JobOptions: jobs.JobOptions{
 			Kind:    jobs.JobCharacterRefresh,
@@ -41,7 +41,7 @@ func runCharacterRefreshJob(app *pocketbase.PocketBase, deps dependencies) {
 		"failed":  failed,
 	})
 	if deps.audit != nil {
-		deps.audit.LogEvent(audit.Event{
+		deps.audit.LogEvent(&audit.Event{
 			Action:  audit.ActionCharacterRefreshAll,
 			Summary: fmt.Sprintf("Scheduled refresh (%d ok, %d failed)", success, failed),
 		})

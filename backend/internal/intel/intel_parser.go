@@ -13,6 +13,11 @@ import (
 
 var reportPattern = regexp.MustCompile(`\[ (?P<date>.*) \] (?P<author>[\s\w\-']+) > (?P<text>.*)`)
 
+const (
+	maxReportBodyLen      = 256
+	minSystemTokenLenHint = 3
+)
+
 type ParsedReport struct {
 	Date   time.Time
 	Author string
@@ -35,8 +40,8 @@ func ParseReportText(text string) (ParsedReport, error) {
 		return ParsedReport{}, parseErr
 	}
 
-	if len(body) > 256 {
-		body = body[:256]
+	if len(body) > maxReportBodyLen {
+		body = body[:maxReportBodyLen]
 	}
 
 	return ParsedReport{Date: parsed, Author: author, Text: body}, nil
@@ -47,7 +52,7 @@ func LinkSystemNames(app *pocketbase.PocketBase, text string) ([]IntelSystem, er
 	filters := []string{}
 	params := map[string]any{}
 	for i, word := range words {
-		if len(word) < 3 {
+		if len(word) < minSystemTokenLenHint {
 			continue
 		}
 		key := "w" + strconv.Itoa(i)
@@ -72,10 +77,10 @@ func LinkSystemNames(app *pocketbase.PocketBase, text string) ([]IntelSystem, er
 			continue
 		}
 		systems = append(systems, IntelSystem{
-			System:        int(rec.GetInt("eve_id")),
+			System:        rec.GetInt("eve_id"),
 			Name:          name,
-			Constellation: int(rec.GetInt("constellation")),
-			Region:        int(rec.GetInt("region_id")),
+			Constellation: rec.GetInt("constellation"),
+			Region:        rec.GetInt("region_id"),
 		})
 	}
 	return systems, nil

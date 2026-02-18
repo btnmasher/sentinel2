@@ -11,6 +11,7 @@ const (
 	authFlowTTL     = 10 * time.Minute
 	exchangeCodeTTL = 5 * time.Minute
 	pbTokenTTL      = 15 * time.Minute
+	exchangeCodeLen = 48
 )
 
 func PBTokenTTL() time.Duration {
@@ -36,7 +37,7 @@ type authExchange struct {
 }
 
 func newExchangeCode() string {
-	return security.RandomString(48)
+	return security.RandomString(exchangeCodeLen)
 }
 
 func flowKey(state string) string {

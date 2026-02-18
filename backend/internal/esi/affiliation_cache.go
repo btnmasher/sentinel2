@@ -52,7 +52,7 @@ func (c *affiliationCache) etag(id int) (string, bool) {
 	return entry.ETag, true
 }
 
-func (c *affiliationCache) set(id int, corpID int, allianceID int, resp *http.Response) {
+func (c *affiliationCache) set(id, corpID, allianceID int, resp *http.Response) {
 	entry := affiliationCacheEntry{
 		CorporationID: corpID,
 		AllianceID:    allianceID,

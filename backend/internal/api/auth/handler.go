@@ -51,7 +51,7 @@ func (h *AuthHandler) Callback(c *core.RequestEvent) error {
 			linkSummary = fmt.Sprintf("Linked character %s", result.CharacterName)
 		}
 		if h.Audit != nil {
-			h.Audit.LogEvent(audit.Event{
+			h.Audit.LogEvent(&audit.Event{
 				Action:                 audit.ActionUserAuthLinkCharacter,
 				Summary:                linkSummary,
 				TargetUserID:           result.UserID,
@@ -106,7 +106,7 @@ func (h *AuthHandler) Link(c *core.RequestEvent) error {
 			Debug("auth link failed")
 		return err
 	}
-	return c.JSON(200, map[string]string{"url": authURL})
+	return c.JSON(http.StatusOK, map[string]string{"url": authURL})
 }
 
 type authMeResponse struct {
@@ -121,7 +121,7 @@ func (h *AuthHandler) Me(c *core.RequestEvent) error {
 		return recordErr
 	}
 
-	return c.JSON(200, authMeResponse{
+	return c.JSON(http.StatusOK, authMeResponse{
 		UserID:      record.Id,
 		AccessLevel: record.GetString("access_level"),
 		Provider:    record.GetString("auth_provider"),
@@ -190,7 +190,7 @@ func (h *AuthHandler) Profile(c *core.RequestEvent) error {
 				ESILastRefreshAt: refreshAt,
 			})
 		}
-		return c.JSON(200, response)
+		return c.JSON(http.StatusOK, response)
 	}
 
 	charID := record.GetInt("eve_character_id")
@@ -217,7 +217,7 @@ func (h *AuthHandler) Profile(c *core.RequestEvent) error {
 			ESILastRefreshAt: refreshAt,
 		})
 	}
-	return c.JSON(200, response)
+	return c.JSON(http.StatusOK, response)
 }
 
 type authExchangeResponse struct {

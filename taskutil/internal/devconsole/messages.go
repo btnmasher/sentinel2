@@ -12,6 +12,7 @@ type lineBatchMsg struct {
 
 type procExitMsg struct {
 	proc string
+	pid  int
 	err  error
 	code int
 }

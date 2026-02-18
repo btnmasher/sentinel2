@@ -277,6 +277,10 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case procExitMsg:
 		p := m.procs[msg.proc]
+		// Ignore stale exits from an older process instance after a restart.
+		if p.running && p.pid > 0 && msg.pid > 0 && p.pid != msg.pid {
+			return m, tea.Batch(cmds...)
+		}
 		p.running = false
 		p.pid = 0
 		p.lastExit = exitSummary(msg.err, msg.code)

@@ -3,6 +3,7 @@ package mapdata
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,12 @@ import (
 )
 
 const DotlanURL = "https://evemaps.dotlan.net/svg/%s.svg"
+const (
+	dotlanHTTPErrorStatus = http.StatusBadRequest
+	regionIDA821A         = 10000019
+	regionIDJ7HZF         = 10000017
+	regionIDUUAF4         = 10000004
+)
 
 var sysRegex = regexp.MustCompile(`sys(\d{8})`)
 
@@ -64,7 +71,7 @@ func DownloadDotlan(ctx context.Context, app *pocketbase.PocketBase) error {
 
 func updateRegionDotlan(ctx context.Context, app *pocketbase.PocketBase, region *core.Record) error {
 	name := strings.ReplaceAll(region.GetString("name"), " ", "_")
-	req, reqErr := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf(DotlanURL, name), nil)
+	req, reqErr := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf(DotlanURL, name), http.NoBody)
 	if reqErr != nil {
 		return reqErr
 	}
@@ -72,86 +79,105 @@ func updateRegionDotlan(ctx context.Context, app *pocketbase.PocketBase, region 
 	if respErr != nil {
 		return respErr
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= dotlanHTTPErrorStatus {
 		return fmt.Errorf("failed to fetch dotlan for %s (status %d)", name, resp.StatusCode)
 	}
 
 	decoder := xml.NewDecoder(resp.Body)
-	inSysUse := false
-	sysUseDepth := 0
+	state := dotlanParseState{}
 	for {
-		token, err := decoder.Token()
-		if err != nil {
-			if err == io.EOF {
+		token, tokenErr := decoder.Token()
+		if tokenErr != nil {
+			if errors.Is(tokenErr, io.EOF) {
 				break
 			}
-			return err
+			return tokenErr
 		}
-
-		switch elem := token.(type) {
-		case xml.StartElement:
-			id := attrValue(elem.Attr, "id")
-			if id == "sysuse" {
-				inSysUse = true
-				sysUseDepth = 1
-				continue
-			}
-			if !inSysUse {
-				continue
-			}
-			sysUseDepth++
-			if !strings.HasPrefix(id, "sys") {
-				continue
-			}
-
-			match := sysRegex.FindStringSubmatch(id)
-			if len(match) == 0 {
-				continue
-			}
-			sysID, _ := strconv.Atoi(match[1])
-			x, _ := strconv.Atoi(attrValue(elem.Attr, "x"))
-			y, _ := strconv.Atoi(attrValue(elem.Attr, "y"))
-
-			system, systemErr := findSystemByID(app, sysID)
-			if systemErr != nil {
-				continue
-			}
-
-			if skipDotlanRegion(system.GetInt("region_id")) {
-				continue
-			}
-
-			if int(system.GetInt("region_id")) == int(region.GetInt("eve_id")) {
-				system.Set("dotlan_x", x)
-				system.Set("dotlan_y", y)
-				if saveErr := app.Save(system); saveErr != nil {
-					logging.New(app).
-						WithFields(logging.Fields{
-							"region_id":   region.GetInt("eve_id"),
-							"system_id":   system.GetInt("eve_id"),
-							"system_name": system.GetString("name"),
-						}).
-						WithErr(saveErr).
-						Debug("dotlan system sync failed")
-				}
-				continue
-			}
-
-			updateRegionGateCoords(app, system, region, x, y, "dotlan")
-		case xml.EndElement:
-			if !inSysUse {
-				continue
-			}
-			sysUseDepth--
-			if sysUseDepth <= 0 {
-				inSysUse = false
-				sysUseDepth = 0
-			}
+		if handleErr := handleDotlanToken(app, region, &state, token); handleErr != nil {
+			return handleErr
 		}
 	}
 
+	return nil
+}
+
+type dotlanParseState struct {
+	inSysUse    bool
+	sysUseDepth int
+}
+
+func handleDotlanToken(app *pocketbase.PocketBase, region *core.Record, state *dotlanParseState, token xml.Token) error {
+	switch elem := token.(type) {
+	case xml.StartElement:
+		return handleDotlanStartElement(app, region, state, elem)
+	case xml.EndElement:
+		handleDotlanEndElement(state)
+	}
+	return nil
+}
+
+func handleDotlanStartElement(app *pocketbase.PocketBase, region *core.Record, state *dotlanParseState, elem xml.StartElement) error {
+	id := attrValue(elem.Attr, "id")
+	if id == "sysuse" {
+		state.inSysUse = true
+		state.sysUseDepth = 1
+		return nil
+	}
+	if !state.inSysUse {
+		return nil
+	}
+	state.sysUseDepth++
+	if !strings.HasPrefix(id, "sys") {
+		return nil
+	}
+	match := sysRegex.FindStringSubmatch(id)
+	if len(match) == 0 {
+		return nil
+	}
+	sysID, _ := strconv.Atoi(match[1])
+	x, _ := strconv.Atoi(attrValue(elem.Attr, "x"))
+	y, _ := strconv.Atoi(attrValue(elem.Attr, "y"))
+	return updateDotlanSystemCoords(app, region, sysID, x, y)
+}
+
+func handleDotlanEndElement(state *dotlanParseState) {
+	if !state.inSysUse {
+		return
+	}
+	state.sysUseDepth--
+	if state.sysUseDepth <= 0 {
+		state.inSysUse = false
+		state.sysUseDepth = 0
+	}
+}
+
+func updateDotlanSystemCoords(app *pocketbase.PocketBase, region *core.Record, sysID, x, y int) error {
+	system, systemErr := findSystemByID(app, sysID)
+	if systemErr != nil || skipDotlanRegion(system.GetInt("region_id")) {
+		return nil
+	}
+	if system.GetInt("region_id") == region.GetInt("eve_id") {
+		return saveDotlanSystemCoords(app, system, region, x, y)
+	}
+	updateRegionGateCoords(app, system, region, x, y, "dotlan")
+	return nil
+}
+
+func saveDotlanSystemCoords(app *pocketbase.PocketBase, system, region *core.Record, x, y int) error {
+	system.Set("dotlan_x", x)
+	system.Set("dotlan_y", y)
+	if saveErr := app.Save(system); saveErr != nil {
+		logging.New(app).
+			WithFields(logging.Fields{
+				"region_id":   region.GetInt("eve_id"),
+				"system_id":   system.GetInt("eve_id"),
+				"system_name": system.GetString("name"),
+			}).
+			WithErr(saveErr).
+			Debug("dotlan system sync failed")
+	}
 	return nil
 }
 
@@ -165,15 +191,16 @@ func attrValue(attrs []xml.Attr, key string) string {
 }
 
 func skipDotlanRegion(regionID int) bool {
+	// These EVE regions don't have usable Dotlan overlays for our import flow.
 	switch regionID {
-	case 10000019, 10000017, 10000004:
+	case regionIDA821A, regionIDJ7HZF, regionIDUUAF4:
 		return true
 	default:
 		return false
 	}
 }
 
-func updateRegionGateCoords(app *pocketbase.PocketBase, system *core.Record, region *core.Record, x int, y int, mode string) {
+func updateRegionGateCoords(app *pocketbase.PocketBase, system, region *core.Record, x, y int, mode string) {
 	records, recordsErr := app.FindRecordsByFilter(
 		store.CollectionGates,
 		"from_solarsystem = {:id} || to_solarsystem = {:id}",
@@ -187,45 +214,47 @@ func updateRegionGateCoords(app *pocketbase.PocketBase, system *core.Record, reg
 	}
 
 	for _, gate := range records {
-		fromRegion := gate.GetInt("from_region")
-		toRegion := gate.GetInt("to_region")
-		if fromRegion == toRegion {
+		if !shouldUpdateGateCoords(gate) {
 			continue
 		}
-
-		if gate.GetInt("to_solarsystem") == system.GetInt("eve_id") && fromRegion == region.GetInt("eve_id") {
-			updateGateCoords(gate, "to", mode, x, y)
-			if saveErr := app.Save(gate); saveErr != nil {
-				logging.New(app).
-					WithFields(logging.Fields{
-						"gate_id":    gate.Id,
-						"system_id":  system.GetInt("eve_id"),
-						"region_id":  region.GetInt("eve_id"),
-						"coord_mode": mode,
-					}).
-					WithErr(saveErr).
-					Debug("dotlan gate sync failed")
-			}
+		updateDirection := gateCoordDirection(gate, system, region)
+		if updateDirection == "" {
+			continue
 		}
-
-		if gate.GetInt("from_solarsystem") == system.GetInt("eve_id") && toRegion == region.GetInt("eve_id") {
-			updateGateCoords(gate, "from", mode, x, y)
-			if saveErr := app.Save(gate); saveErr != nil {
-				logging.New(app).
-					WithFields(logging.Fields{
-						"gate_id":    gate.Id,
-						"system_id":  system.GetInt("eve_id"),
-						"region_id":  region.GetInt("eve_id"),
-						"coord_mode": mode,
-					}).
-					WithErr(saveErr).
-					Debug("dotlan gate sync failed")
-			}
-		}
+		updateGateCoords(gate, updateDirection, mode, x, y)
+		saveDotlanGate(app, gate, system, region, mode)
 	}
 }
 
-func updateGateCoords(gate *core.Record, direction string, mode string, x int, y int) {
+func shouldUpdateGateCoords(gate *core.Record) bool {
+	return gate.GetInt("from_region") != gate.GetInt("to_region")
+}
+
+func gateCoordDirection(gate, system, region *core.Record) string {
+	if gate.GetInt("to_solarsystem") == system.GetInt("eve_id") && gate.GetInt("from_region") == region.GetInt("eve_id") {
+		return "to"
+	}
+	if gate.GetInt("from_solarsystem") == system.GetInt("eve_id") && gate.GetInt("to_region") == region.GetInt("eve_id") {
+		return "from"
+	}
+	return ""
+}
+
+func saveDotlanGate(app *pocketbase.PocketBase, gate, system, region *core.Record, mode string) {
+	if saveErr := app.Save(gate); saveErr != nil {
+		logging.New(app).
+			WithFields(logging.Fields{
+				"gate_id":    gate.Id,
+				"system_id":  system.GetInt("eve_id"),
+				"region_id":  region.GetInt("eve_id"),
+				"coord_mode": mode,
+			}).
+			WithErr(saveErr).
+			Debug("dotlan gate sync failed")
+	}
+}
+
+func updateGateCoords(gate *core.Record, direction, mode string, x, y int) {
 	prefix := direction + "_" + mode
 	gate.Set(prefix+"_x", x)
 	gate.Set(prefix+"_y", y)

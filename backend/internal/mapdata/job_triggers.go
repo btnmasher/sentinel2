@@ -2,6 +2,7 @@ package mapdata
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -28,7 +29,7 @@ func TriggerMapDataStep(app *pocketbase.PocketBase, opts StepTriggerOptions) str
 		logger = logging.New(app)
 	}
 
-	runner := jobs.NewRunner(app, jobs.RunOptions{
+	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: jobName,
 		JobOptions: jobs.JobOptions{
 			Kind:    "map_data_step",
@@ -49,9 +50,10 @@ func TriggerMapDataStep(app *pocketbase.PocketBase, opts StepTriggerOptions) str
 	go func(jobID string, step string, trigger string, actorID string) {
 		start := time.Now()
 		log := logging.New(app).WithFields(logFields)
+		service := NewMapDataService(app, log)
 		baseCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		localRunner := jobs.NewRunner(app, jobs.RunOptions{
+		localRunner := jobs.NewRunner(app, &jobs.RunOptions{
 			JobID: jobID,
 			JobOptions: jobs.JobOptions{
 				Kind:    "map_data_step",
@@ -63,29 +65,14 @@ func TriggerMapDataStep(app *pocketbase.PocketBase, opts StepTriggerOptions) str
 			Timeout: jobs.NoTimeout,
 		})
 		err := localRunner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
-			switch step {
-			case StepSDEImport:
-				importer := NewSDEImporter(app)
-				return importer.DownloadAndImport(ctx, "")
-			case StepRealPositions:
-				return CalculateRealPositions(ctx, app)
-			case StepEve2DPositions:
-				return UpdateRegionPositionsFromSystems(app)
-			case StepDotlanImport:
-				return DownloadDotlan(ctx, app)
-			case StepMetroPositions:
-				if err := CalculateSystemGraphs(ctx, app); err != nil {
-					return err
+			if err := service.RunStep(ctx, step); err != nil {
+				if errors.Is(err, ErrUnknownMapDataStep) {
+					log.Warn("unknown map data step")
+					return nil
 				}
-				return CalculateRegionLayouts(ctx, app)
-			case StepBuildGraph:
-				return CalculateSystemGraphs(ctx, app)
-			case StepRegionLayout:
-				return CalculateRegionLayouts(ctx, app)
-			default:
-				log.Warn("unknown map data step")
-				return nil
+				return err
 			}
+			return nil
 		})
 
 		if err != nil {

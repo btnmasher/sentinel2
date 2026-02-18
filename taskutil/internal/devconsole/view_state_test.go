@@ -249,6 +249,28 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	}
 }
 
+func TestUpdate_StaleProcExitIgnoredAfterRestart(t *testing.T) {
+	m := newTestViewState(110, 16)
+
+	model, _ := m.Update(procStartedMsg{proc: "backend", pid: 100})
+	m = model.(viewState)
+	model, _ = m.Update(procStartedMsg{proc: "backend", pid: 200})
+	m = model.(viewState)
+
+	model, _ = m.Update(procExitMsg{proc: "backend", pid: 100, code: -1, err: context.Canceled})
+	m = model.(viewState)
+
+	if !m.procs["backend"].running {
+		t.Fatalf("backend should remain running after stale exit")
+	}
+	if m.procs["backend"].pid != 200 {
+		t.Fatalf("backend pid = %d, want 200", m.procs["backend"].pid)
+	}
+	if m.procs["backend"].lastExit != "" {
+		t.Fatalf("lastExit = %q, want empty", m.procs["backend"].lastExit)
+	}
+}
+
 func TestUpdate_DownAtBottomResumesFollow(t *testing.T) {
 	m := newTestViewState(110, 16)
 	for i := range 80 {

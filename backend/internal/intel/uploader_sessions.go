@@ -23,7 +23,7 @@ type UploaderRealtimeSession struct {
 	RefreshAfter time.Duration
 }
 
-func (s *IntelService) IssueUploaderRealtimeSession(userID string, uploaderTokenID string) (UploaderRealtimeSession, error) {
+func (s *IntelService) IssueUploaderRealtimeSession(userID, uploaderTokenID string) (UploaderRealtimeSession, error) {
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionUploaderSessions)
 	if collErr != nil {
 		return UploaderRealtimeSession{}, collErr

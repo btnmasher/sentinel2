@@ -1,6 +1,7 @@
 package mapdata
 
 import (
+	"context"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -8,11 +9,11 @@ import (
 	"sentinel2/internal/store"
 )
 
-func ShouldUpdateSDE(importer *SDEImporter, maxAge time.Duration) (bool, string, error) {
+func ShouldUpdateSDE(ctx context.Context, importer *SDEImporter, maxAge time.Duration) (needsUpdate bool, etag string, err error) {
 	lastUpdated, hasLastUpdate := sdeUpdatedAt(importer.App)
 	stale := !hasLastUpdate || lastUpdated.Before(time.Now().Add(-maxAge))
 
-	needs, etag, needsErr := importer.NeedsUpdate()
+	needs, etag, needsErr := importer.NeedsUpdate(ctx)
 	if needsErr == nil {
 		if needs {
 			return true, etag, nil

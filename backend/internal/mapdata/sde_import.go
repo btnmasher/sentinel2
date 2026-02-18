@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,8 +23,11 @@ import (
 )
 
 const (
-	LatestJSONLZip = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
-	LatestBuildURL = "https://developers.eveonline.com/static-data/tranquility/latest.jsonl"
+	LatestJSONLZip    = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
+	LatestBuildURL    = "https://developers.eveonline.com/static-data/tranquility/latest.jsonl"
+	sdeHTTPTimeout    = 120 * time.Second
+	jsonlScanBufBytes = 1024 * 1024
+	jsonlScanMaxBytes = 1024 * 1024 * 20
 )
 
 type SDEImporter struct {
@@ -34,12 +38,12 @@ type SDEImporter struct {
 func NewSDEImporter(app *pocketbase.PocketBase) *SDEImporter {
 	return &SDEImporter{
 		App:    app,
-		Client: &http.Client{Timeout: 120 * time.Second},
+		Client: &http.Client{Timeout: sdeHTTPTimeout},
 	}
 }
 
-func (s *SDEImporter) NeedsUpdate() (bool, string, error) {
-	etag, etagErr := s.fetchETag(context.Background(), LatestJSONLZip)
+func (s *SDEImporter) NeedsUpdate(ctx context.Context) (needs bool, etag string, err error) {
+	etag, etagErr := s.fetchETag(ctx, LatestJSONLZip)
 	if etagErr != nil {
 		return true, "", etagErr
 	}
@@ -88,7 +92,7 @@ func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error 
 		return importErr
 	}
 
-	build := s.fetchBuildNumber()
+	build := s.fetchBuildNumber(ctx)
 	_ = s.saveMeta("last_sde_update", time.Now().UTC().Format(time.RFC3339))
 	if etag != "" {
 		_ = s.saveMeta("sde_zip_etag", etag)
@@ -140,41 +144,27 @@ func (s *SDEImporter) importRegions(ctx context.Context, data []byte) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		regionID := getInt(row, "regionID", "id", "_key")
-		if regionID == 0 {
+		region := parseRegionRow(row)
+		switch validateRegionRow(region) {
+		case "missing_id":
 			logging.New(s.App).
-				WithFields(logging.Fields{"row_id": getString(row, "id", "_key")}).
+				WithFields(logging.Fields{"row_id": region.rowID}).
 				Warn("region missing id")
 			missingID++
 			continue
-		}
-		name := getString(row, "regionName", "name")
-		if name == "" {
+		case "missing_name":
 			logging.New(s.App).
-				WithFields(logging.Fields{"region_id": regionID}).
+				WithFields(logging.Fields{"region_id": region.regionID}).
 				Warn("region missing name")
 			missingName++
 			continue
 		}
-		rawX, rawY, _ := getPositionXYZ(row)
-		var rawXValue any = rawX
-		var rawYValue any = rawY
-		if rawX == 0 && rawY == 0 {
-			rawXValue = nil
-			rawYValue = nil
+		if region.rawX == 0 && region.rawY == 0 {
 			missingPos++
 		}
-		payload := map[string]any{
-			"eve_id": regionID,
-			"name":   name,
-		}
-		if rawXValue != nil || rawYValue != nil {
-			payload["raw_x"] = rawXValue
-			payload["raw_y"] = rawYValue
-		}
-		if upsertErr := s.upsertNumberRecord(store.CollectionRegions, regionID, payload); upsertErr != nil {
+		if upsertErr := s.upsertNumberRecord(store.CollectionRegions, region.regionID, region.payload()); upsertErr != nil {
 			log.WithErr(upsertErr).
-				WithFields(logging.Fields{"region_id": regionID}).
+				WithFields(logging.Fields{"region_id": region.regionID}).
 				Error("region upsert failed")
 			return upsertErr
 		}
@@ -187,6 +177,48 @@ func (s *SDEImporter) importRegions(ctx context.Context, data []byte) error {
 		"missing_position_count":     missingPos,
 	}).Info("regions import complete")
 	return nil
+}
+
+type regionRowData struct {
+	regionID int
+	name     string
+	rawX     float64
+	rawY     float64
+	rowID    string
+}
+
+func parseRegionRow(row map[string]any) regionRowData {
+	rawX, rawY, _ := getPositionXYZ(row)
+	return regionRowData{
+		regionID: getInt(row, "regionID", "id", "_key"),
+		name:     getString(row, "regionName", "name"),
+		rawX:     rawX,
+		rawY:     rawY,
+		rowID:    getString(row, "id", "_key"),
+	}
+}
+
+func validateRegionRow(row regionRowData) string {
+	if row.regionID == 0 {
+		return "missing_id"
+	}
+	if row.name == "" {
+		return "missing_name"
+	}
+	return ""
+}
+
+func (row regionRowData) payload() map[string]any {
+	payload := map[string]any{
+		"eve_id": row.regionID,
+		"name":   row.name,
+	}
+	if row.rawX == 0 && row.rawY == 0 {
+		return payload
+	}
+	payload["raw_x"] = row.rawX
+	payload["raw_y"] = row.rawY
+	return payload
 }
 
 func (s *SDEImporter) importConstellations(ctx context.Context, data []byte) error {
@@ -263,81 +295,40 @@ func (s *SDEImporter) importSystems(ctx context.Context, data []byte) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		id := getInt(row, "solarSystemID", "id", "_key")
-		if id == 0 {
-			logging.New(s.App).
-				WithFields(logging.Fields{"row_id": getString(row, "id", "_key")}).
-				Warn("system missing id")
+		system := parseSystemRow(row)
+		switch validateSystemRow(&system) {
+		case "missing_id":
+			logging.New(s.App).WithFields(logging.Fields{"row_id": system.rowID}).Warn("system missing id")
 			missingID++
 			continue
-		}
-		constID := getInt(row, "constellationID")
-		regionID := getInt(row, "regionID")
-		security := getFloat(row, "security", "securityStatus")
-		x, y, z := getPositionXYZ(row)
-		name := getString(row, "solarSystemName", "name")
-		if constID == 0 || regionID == 0 {
+		case "missing_region_or_constellation":
 			logging.New(s.App).
 				WithFields(logging.Fields{
-					"system_id":        id,
-					"region_id":        regionID,
-					"constellation_id": constID,
+					"system_id":        system.id,
+					"region_id":        system.regionID,
+					"constellation_id": system.constID,
 				}).
 				Warn("system missing region or constellation")
 			missingRegionConst++
 			continue
-		}
-		if name == "" {
-			logging.New(s.App).
-				WithFields(logging.Fields{"system_id": id}).
-				Warn("system missing name")
+		case "missing_name":
+			logging.New(s.App).WithFields(logging.Fields{"system_id": system.id}).Warn("system missing name")
 			missingName++
 			continue
 		}
 
-		var posX any = x
-		var posY any = y
-		var posZ any = z
-		if x == 0 && y == 0 && z == 0 {
+		if system.coordsMissing() {
 			missingCoords++
-			posX = nil
-			posY = nil
-			posZ = nil
 		}
-
-		var dotlanPosX any = 0
-		var dotlanPosY any = 0
-		var metroPosX any = 0
-		var metroPosY any = 0
-		pos2dX, pos2dY, has2d := getPosition2D(row)
-		var pos2dXValue any = pos2dX
-		var pos2dYValue any = pos2dY
-		if !has2d {
-			pos2dXValue = nil
-			pos2dYValue = nil
-			missingPos2D++
-		} else {
+		if system.hasPos2D {
 			withPos2D++
+		} else {
+			missingPos2D++
 		}
 
-		if upsertErr := s.upsertNumberRecord(store.CollectionSolarSystems, id, map[string]any{
-			"eve_id":          id,
-			"name":            name,
-			"security_status": security,
-			"constellation":   constID,
-			"region_id":       regionID,
-			"raw_x":           posX,
-			"raw_y":           posY,
-			"raw_z":           posZ,
-			"dotlan_x":        dotlanPosX,
-			"dotlan_y":        dotlanPosY,
-			"metro_x":         metroPosX,
-			"metro_y":         metroPosY,
-			"eve2d_x":         pos2dXValue,
-			"eve2d_y":         pos2dYValue,
-		}); upsertErr != nil {
+		if upsertErr := s.upsertNumberRecord(store.CollectionSolarSystems, system.id, system.payload()); upsertErr != nil {
 			log.WithErr(upsertErr).
-				WithFields(logging.Fields{"system_id": id}).
+				WithFields(logging.Fields{"system_id": system.id}).
 				Error("system upsert failed")
 			return upsertErr
 		}
@@ -355,6 +346,88 @@ func (s *SDEImporter) importSystems(ctx context.Context, data []byte) error {
 	return nil
 }
 
+type systemRowData struct {
+	id       int
+	rowID    string
+	constID  int
+	regionID int
+	security float64
+	name     string
+	x        float64
+	y        float64
+	z        float64
+	pos2dX   float64
+	pos2dY   float64
+	hasPos2D bool
+}
+
+func parseSystemRow(row map[string]any) systemRowData {
+	x, y, z := getPositionXYZ(row)
+	pos2dX, pos2dY, has2d := getPosition2D(row)
+	return systemRowData{
+		id:       getInt(row, "solarSystemID", "id", "_key"),
+		rowID:    getString(row, "id", "_key"),
+		constID:  getInt(row, "constellationID"),
+		regionID: getInt(row, "regionID"),
+		security: getFloat(row, "security", "securityStatus"),
+		name:     getString(row, "solarSystemName", "name"),
+		x:        x,
+		y:        y,
+		z:        z,
+		pos2dX:   pos2dX,
+		pos2dY:   pos2dY,
+		hasPos2D: has2d,
+	}
+}
+
+func validateSystemRow(row *systemRowData) string {
+	if row.id == 0 {
+		return "missing_id"
+	}
+	if row.constID == 0 || row.regionID == 0 {
+		return "missing_region_or_constellation"
+	}
+	if row.name == "" {
+		return "missing_name"
+	}
+	return ""
+}
+
+func (row *systemRowData) coordsMissing() bool {
+	return row.x == 0 && row.y == 0 && row.z == 0
+}
+
+func (row *systemRowData) payload() map[string]any {
+	payload := map[string]any{
+		"eve_id":          row.id,
+		"name":            row.name,
+		"security_status": row.security,
+		"constellation":   row.constID,
+		"region_id":       row.regionID,
+		"dotlan_x":        0,
+		"dotlan_y":        0,
+		"metro_x":         0,
+		"metro_y":         0,
+	}
+	if row.coordsMissing() {
+		payload["raw_x"] = nil
+		payload["raw_y"] = nil
+		payload["raw_z"] = nil
+	} else {
+		payload["raw_x"] = row.x
+		payload["raw_y"] = row.y
+		payload["raw_z"] = row.z
+	}
+	if row.hasPos2D {
+		payload["eve2d_x"] = row.pos2dX
+		payload["eve2d_y"] = row.pos2dY
+	} else {
+		payload["eve2d_x"] = nil
+		payload["eve2d_y"] = nil
+	}
+	return payload
+}
+
 func (s *SDEImporter) importGates(ctx context.Context, data []byte) error {
 	rows, rowsErr := parseJSONL(data)
 	if rowsErr != nil {
@@ -369,73 +442,23 @@ func (s *SDEImporter) importGates(ctx context.Context, data []byte) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		fromID := getInt(row, "fromSolarSystemID", "solarSystemID")
-		toID := getNestedInt(row, "destination", "solarSystemID", "toSolarSystemID")
-		if fromID == 0 || toID == 0 {
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"from_system": fromID,
-					"to_system":   toID,
-				}).
-				Warn("gate missing system id")
+		result, importErr := s.importGateRow(row)
+		if importErr != nil {
+			log.WithErr(importErr).Error("gate save failed")
+			return importErr
+		}
+		switch result {
+		case gateImportSaved:
+			saved++
+		case gateImportMissingID:
 			missingID++
-			continue
-		}
-		if s.gateExists(fromID, toID) {
-			skippedExisting++
-			continue
-		}
-
-		fromSystem, fromErr := s.findSystem(fromID)
-		if fromErr != nil {
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"from_system": fromID,
-					"to_system":   toID,
-				}).
-				WithErr(fromErr).
-				Warn("gate missing from system")
+		case gateImportMissingFrom:
 			missingFrom++
-			continue
-		}
-		toSystem, toErr := s.findSystem(toID)
-		if toErr != nil {
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"from_system": fromID,
-					"to_system":   toID,
-				}).
-				WithErr(toErr).
-				Warn("gate missing to system")
+		case gateImportMissingTo:
 			missingTo++
-			continue
+		case gateImportSkippedExisting:
+			skippedExisting++
 		}
-
-		record := core.NewRecord(s.collection(store.CollectionGates))
-		record.Set("from_solarsystem", fromID)
-		record.Set("to_solarsystem", toID)
-		record.Set("from_region", fromSystem.GetInt("region_id"))
-		record.Set("to_region", toSystem.GetInt("region_id"))
-		record.Set("from_constellation", fromSystem.GetInt("constellation"))
-		record.Set("to_constellation", toSystem.GetInt("constellation"))
-		record.Set("from_dotlan_x", fromSystem.GetInt("dotlan_x"))
-		record.Set("from_dotlan_y", fromSystem.GetInt("dotlan_y"))
-		record.Set("to_dotlan_x", toSystem.GetInt("dotlan_x"))
-		record.Set("to_dotlan_y", toSystem.GetInt("dotlan_y"))
-		record.Set("from_metro_x", fromSystem.GetInt("metro_x"))
-		record.Set("from_metro_y", fromSystem.GetInt("metro_y"))
-		record.Set("to_metro_x", toSystem.GetInt("metro_x"))
-		record.Set("to_metro_y", toSystem.GetInt("metro_y"))
-		if saveErr := s.App.Save(record); saveErr != nil {
-			log.WithErr(saveErr).
-				WithFields(logging.Fields{
-					"from_system": fromID,
-					"to_system":   toID,
-				}).
-				Error("gate save failed")
-			return saveErr
-		}
-		saved++
 	}
 	log.WithFields(logging.Fields{
 		"saved_count":                 saved,
@@ -447,21 +470,120 @@ func (s *SDEImporter) importGates(ctx context.Context, data []byte) error {
 	return nil
 }
 
+type gateRowData struct {
+	fromID int
+	toID   int
+}
+
+func parseGateRow(row map[string]any) gateRowData {
+	return gateRowData{
+		fromID: getInt(row, "fromSolarSystemID", "solarSystemID"),
+		toID:   getNestedInt(row, "destination", "solarSystemID", "toSolarSystemID"),
+	}
+}
+
+type gateImportResult string
+
+const (
+	gateImportSaved           gateImportResult = "saved"
+	gateImportMissingID       gateImportResult = "missing_id"
+	gateImportMissingFrom     gateImportResult = "missing_from"
+	gateImportMissingTo       gateImportResult = "missing_to"
+	gateImportSkippedExisting gateImportResult = "skipped_existing"
+)
+
+func (s *SDEImporter) importGateRow(row map[string]any) (gateImportResult, error) {
+	gate := parseGateRow(row)
+	if gate.fromID == 0 || gate.toID == 0 {
+		logging.New(s.App).WithFields(logging.Fields{"from_system": gate.fromID, "to_system": gate.toID}).Warn("gate missing system id")
+		return gateImportMissingID, nil
+	}
+	if s.gateExists(gate.fromID, gate.toID) {
+		return gateImportSkippedExisting, nil
+	}
+	fromSystem, toSystem, systemErr := s.gateSystems(gate)
+	if systemErr != nil {
+		logging.New(s.App).
+			WithFields(logging.Fields{"from_system": gate.fromID, "to_system": gate.toID}).
+			WithErr(systemErr.err).
+			Warn(systemErr.message())
+		if systemErr.kind == gateSystemErrFrom {
+			return gateImportMissingFrom, nil
+		}
+		return gateImportMissingTo, nil
+	}
+	record := s.newGateRecord(gate, fromSystem, toSystem)
+	if saveErr := s.App.Save(record); saveErr != nil {
+		return "", saveErr
+	}
+	return gateImportSaved, nil
+}
+
+type gateSystemErrorKind string
+
+const (
+	gateSystemErrFrom gateSystemErrorKind = "from"
+	gateSystemErrTo   gateSystemErrorKind = "to"
+)
+
+type gateSystemError struct {
+	kind gateSystemErrorKind
+	err  error
+}
+
+func (e gateSystemError) message() string {
+	if e.kind == gateSystemErrFrom {
+		return "gate missing from system"
+	}
+	return "gate missing to system"
+}
+
+func (s *SDEImporter) gateSystems(gate gateRowData) (fromSystem, toSystem *core.Record, err *gateSystemError) {
+	fromSystem, fromErr := s.findSystem(gate.fromID)
+	if fromErr != nil {
+		return nil, nil, &gateSystemError{kind: gateSystemErrFrom, err: fromErr}
+	}
+	toSystem, toErr := s.findSystem(gate.toID)
+	if toErr != nil {
+		return nil, nil, &gateSystemError{kind: gateSystemErrTo, err: toErr}
+	}
+	return fromSystem, toSystem, nil
+}
+
+func (s *SDEImporter) newGateRecord(gate gateRowData, fromSystem, toSystem *core.Record) *core.Record {
+	record := core.NewRecord(s.collection(store.CollectionGates))
+	record.Set("from_solarsystem", gate.fromID)
+	record.Set("to_solarsystem", gate.toID)
+	record.Set("from_region", fromSystem.GetInt("region_id"))
+	record.Set("to_region", toSystem.GetInt("region_id"))
+	record.Set("from_constellation", fromSystem.GetInt("constellation"))
+	record.Set("to_constellation", toSystem.GetInt("constellation"))
+	record.Set("from_dotlan_x", fromSystem.GetInt("dotlan_x"))
+	record.Set("from_dotlan_y", fromSystem.GetInt("dotlan_y"))
+	record.Set("to_dotlan_x", toSystem.GetInt("dotlan_x"))
+	record.Set("to_dotlan_y", toSystem.GetInt("dotlan_y"))
+	record.Set("from_metro_x", fromSystem.GetInt("metro_x"))
+	record.Set("from_metro_y", fromSystem.GetInt("metro_y"))
+	record.Set("to_metro_x", toSystem.GetInt("metro_x"))
+	record.Set("to_metro_y", toSystem.GetInt("metro_y"))
+	return record
+}
+
 func (s *SDEImporter) fetchETag(ctx context.Context, url string) (string, error) {
-	req, _ := http.NewRequestWithContext(ctx, "HEAD", url, nil)
+	req, _ := http.NewRequestWithContext(ctx, "HEAD", url, http.NoBody)
 	resp, respErr := s.Client.Do(req)
 	if respErr != nil {
 		return "", respErr
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= http.StatusBadRequest {
 		return "", ErrETagRequestFailed
 	}
 	return resp.Header.Get("ETag"), nil
 }
 
 func (s *SDEImporter) downloadZip(ctx context.Context, url string) ([]byte, error) {
-	req, reqErr := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, reqErr := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if reqErr != nil {
 		return nil, reqErr
 	}
@@ -469,9 +591,9 @@ func (s *SDEImporter) downloadZip(ctx context.Context, url string) ([]byte, erro
 	if respErr != nil {
 		return nil, respErr
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, ErrSDEDownloadFailed
 	}
 
@@ -501,7 +623,10 @@ func unzipJSONL(data []byte) (map[string][]byte, error) {
 			return nil, openErr
 		}
 		body, bodyErr := io.ReadAll(rc)
-		rc.Close()
+		closeErr := rc.Close()
+		if closeErr != nil {
+			return nil, closeErr
+		}
 		if bodyErr != nil {
 			return nil, bodyErr
 		}
@@ -514,16 +639,16 @@ func unzipJSONL(data []byte) (map[string][]byte, error) {
 	return needed, nil
 }
 
-func parseJSONL(data []byte) ([]map[string]interface{}, error) {
-	rows := []map[string]interface{}{}
+func parseJSONL(data []byte) ([]map[string]any, error) {
+	rows := []map[string]any{}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024*20)
+	scanner.Buffer(make([]byte, jsonlScanBufBytes), jsonlScanMaxBytes)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		var payload map[string]interface{}
+		var payload map[string]any
 		if unmarshalErr := json.Unmarshal([]byte(line), &payload); unmarshalErr != nil {
 			return nil, unmarshalErr
 		}
@@ -532,15 +657,13 @@ func parseJSONL(data []byte) ([]map[string]interface{}, error) {
 	return rows, nil
 }
 
-func normalizeJSONL(payload map[string]interface{}) map[string]interface{} {
+func normalizeJSONL(payload map[string]any) map[string]any {
 	if key, ok := payload["_key"]; ok {
 		payload["_key"] = key
 	}
 	if value, ok := payload["_value"]; ok {
-		if m, ok := value.(map[string]interface{}); ok {
-			for k, v := range m {
-				payload[k] = v
-			}
+		if m, ok := value.(map[string]any); ok {
+			maps.Copy(payload, m)
 		}
 	}
 	return payload
@@ -562,7 +685,7 @@ func (s *SDEImporter) findSystem(systemID int) (*core.Record, error) {
 	return records[0], nil
 }
 
-func (s *SDEImporter) gateExists(fromID int, toID int) bool {
+func (s *SDEImporter) gateExists(fromID, toID int) bool {
 	records, recordsErr := s.App.FindRecordsByFilter(
 		store.CollectionGates,
 		"(from_solarsystem = {:from} && to_solarsystem = {:to}) || (from_solarsystem = {:to} && to_solarsystem = {:from})",
@@ -597,7 +720,7 @@ func (s *SDEImporter) upsertNumberRecord(collection string, id int, data map[str
 	return s.App.Save(record)
 }
 
-func (s *SDEImporter) saveMeta(key string, value string) error {
+func (s *SDEImporter) saveMeta(key, value string) error {
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionSDEMeta)
 	if collErr != nil {
 		return nil
@@ -626,38 +749,52 @@ func (s *SDEImporter) getMeta(key string) string {
 	return records[0].GetString("value")
 }
 
-func (s *SDEImporter) fetchBuildNumber() string {
-	resp, respErr := s.Client.Get(LatestBuildURL)
+func (s *SDEImporter) fetchBuildNumber(ctx context.Context) string {
+	req, reqErr := http.NewRequestWithContext(ctx, "GET", LatestBuildURL, http.NoBody)
+	if reqErr != nil {
+		return ""
+	}
+	resp, respErr := s.Client.Do(req)
 	if respErr != nil {
 		return ""
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= http.StatusBadRequest {
 		return ""
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.Contains(line, "\"sde\"") {
-			continue
-		}
-		var payload map[string]interface{}
-		if unmarshalErr := json.Unmarshal([]byte(line), &payload); unmarshalErr != nil {
-			continue
-		}
-		if payload["_key"] == "sde" {
-			if value, ok := payload["_value"].(map[string]interface{}); ok {
-				if build, ok := value["build"]; ok {
-					return fmt.Sprintf("%v", build)
-				}
-			}
+		if build, ok := parseBuildNumberLine(scanner.Text()); ok {
+			return build
 		}
 	}
 	return ""
 }
 
-func getInt(row map[string]interface{}, keys ...string) int {
+func parseBuildNumberLine(line string) (string, bool) {
+	if !strings.Contains(line, "\"sde\"") {
+		return "", false
+	}
+	var payload map[string]any
+	if unmarshalErr := json.Unmarshal([]byte(line), &payload); unmarshalErr != nil {
+		return "", false
+	}
+	if payload["_key"] != "sde" {
+		return "", false
+	}
+	value, ok := payload["_value"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	build, ok := value["build"]
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%v", build), true
+}
+
+func getInt(row map[string]any, keys ...string) int {
 	for _, key := range keys {
 		if value, ok := row[key]; ok {
 			switch v := value.(type) {
@@ -674,7 +811,7 @@ func getInt(row map[string]interface{}, keys ...string) int {
 	return 0
 }
 
-func getFloat(row map[string]interface{}, keys ...string) float64 {
+func getFloat(row map[string]any, keys ...string) float64 {
 	for _, key := range keys {
 		if value, ok := row[key]; ok {
 			switch v := value.(type) {
@@ -691,31 +828,46 @@ func getFloat(row map[string]interface{}, keys ...string) float64 {
 	return 0
 }
 
-func getString(row map[string]interface{}, keys ...string) string {
+func getString(row map[string]any, keys ...string) string {
 	for _, key := range keys {
-		if value, ok := row[key]; ok {
-			switch v := value.(type) {
-			case string:
-				return v
-			case map[string]interface{}:
-				// Prefer English localization if present.
-				if en, ok := v["en"].(string); ok && en != "" {
-					return en
-				}
-				for _, nested := range v {
-					if s, ok := nested.(string); ok && s != "" {
-						return s
-					}
-				}
-			}
+		value, ok := row[key]
+		if !ok {
+			continue
+		}
+		if text, ok := asString(value); ok {
+			return text
+		}
+		if text, ok := localizedString(value); ok {
+			return text
 		}
 	}
 	return ""
 }
 
-func getPositionXYZ(row map[string]interface{}) (float64, float64, float64) {
+func asString(value any) (string, bool) {
+	text, ok := value.(string)
+	return text, ok && text != ""
+}
+
+func localizedString(value any) (string, bool) {
+	labels, ok := value.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	if en, ok := labels["en"].(string); ok && en != "" {
+		return en, true
+	}
+	for _, nested := range labels {
+		if text, ok := nested.(string); ok && text != "" {
+			return text, true
+		}
+	}
+	return "", false
+}
+
+func getPositionXYZ(row map[string]any) (x, y, z float64) {
 	if value, ok := row["position"]; ok {
-		if m, ok := value.(map[string]interface{}); ok {
+		if m, ok := value.(map[string]any); ok {
 			x := getFloat(m, "x")
 			y := getFloat(m, "y")
 			z := getFloat(m, "z")
@@ -725,23 +877,23 @@ func getPositionXYZ(row map[string]interface{}) (float64, float64, float64) {
 	return getFloat(row, "x"), getFloat(row, "y"), getFloat(row, "z")
 }
 
-func getPosition2D(row map[string]interface{}) (float64, float64, bool) {
+func getPosition2D(row map[string]any) (x, y float64, ok bool) {
 	if value, ok := row["position2D"]; ok {
-		if m, ok := value.(map[string]interface{}); ok {
+		if m, ok := value.(map[string]any); ok {
 			return getFloat(m, "x"), getFloat(m, "y"), true
 		}
 	}
 	if value, ok := row["position2d"]; ok {
-		if m, ok := value.(map[string]interface{}); ok {
+		if m, ok := value.(map[string]any); ok {
 			return getFloat(m, "x"), getFloat(m, "y"), true
 		}
 	}
 	return 0, 0, false
 }
 
-func getNestedInt(row map[string]interface{}, first string, keys ...string) int {
+func getNestedInt(row map[string]any, first string, keys ...string) int {
 	if value, ok := row[first]; ok {
-		if m, ok := value.(map[string]interface{}); ok {
+		if m, ok := value.(map[string]any); ok {
 			return getInt(m, keys...)
 		}
 	}

@@ -12,16 +12,25 @@ import (
 	"golang.org/x/oauth2"
 
 	"sentinel2/internal/config"
+	"sentinel2/internal/shared/collections"
 )
 
 type Client struct {
-	Config       config.Config
+	Config       *config.Config
 	Provider     *oidc.Provider
 	Verifier     *oidc.IDTokenVerifier
 	OAuth2Config oauth2.Config
 }
 
-func New(ctx context.Context, cfg config.Config) (*Client, error) {
+const (
+	randomStateBytes = 32
+	minJWTParts      = 2
+)
+
+func New(ctx context.Context, cfg *config.Config) (*Client, error) {
+	if cfg == nil {
+		return nil, errors.New("missing oidc config")
+	}
 	provider, providerErr := oidc.NewProvider(ctx, cfg.OIDCIssuer)
 	if providerErr != nil {
 		return nil, providerErr
@@ -69,7 +78,7 @@ func splitScopes(value string) []string {
 }
 
 func RandomState() (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, randomStateBytes)
 	if _, readErr := rand.Read(b); readErr != nil {
 		return "", readErr
 	}
@@ -90,30 +99,45 @@ func VerifyRoles(accessToken string, required []string) (bool, error) {
 		return false, claimsErr
 	}
 
-	rolesAny := false
-	if realm, ok := claims["realm_access"].(map[string]interface{}); ok {
-		if roles, ok := realm["roles"].([]interface{}); ok {
-			roleSet := map[string]struct{}{}
-			for _, r := range roles {
-				if s, ok := r.(string); ok {
-					roleSet[s] = struct{}{}
-				}
-			}
-			for _, req := range required {
-				if _, ok := roleSet[req]; ok {
-					rolesAny = true
-					break
-				}
-			}
-		}
+	roleSet := roleSetFromClaims(claims)
+	if len(roleSet) == 0 {
+		return false, nil
 	}
-
-	return rolesAny, nil
+	return hasRequiredRole(roleSet, required), nil
 }
 
-func parseUnverifiedJWT(token string) (map[string]interface{}, error) {
+func roleSetFromClaims(claims map[string]any) map[string]struct{} {
+	realm, ok := claims["realm_access"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	roles, ok := realm["roles"].([]any)
+	if !ok {
+		return nil
+	}
+	roleNames := make([]string, 0, len(roles))
+	for _, role := range roles {
+		s, ok := role.(string)
+		if !ok || s == "" {
+			continue
+		}
+		roleNames = append(roleNames, s)
+	}
+	return collections.ToSet(roleNames)
+}
+
+func hasRequiredRole(roleSet map[string]struct{}, required []string) bool {
+	for _, req := range required {
+		if _, ok := roleSet[req]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func parseUnverifiedJWT(token string) (map[string]any, error) {
 	parts := split(token, '.')
-	if len(parts) < 2 {
+	if len(parts) < minJWTParts {
 		return nil, errors.New("invalid jwt")
 	}
 	payload, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
@@ -123,8 +147,8 @@ func parseUnverifiedJWT(token string) (map[string]interface{}, error) {
 	return decodeJSON(payload)
 }
 
-func decodeJSON(payload []byte) (map[string]interface{}, error) {
-	out := map[string]interface{}{}
+func decodeJSON(payload []byte) (map[string]any, error) {
+	out := map[string]any{}
 	if decodeErr := json.Unmarshal(payload, &out); decodeErr != nil {
 		return nil, decodeErr
 	}
@@ -134,7 +158,7 @@ func decodeJSON(payload []byte) (map[string]interface{}, error) {
 func split(value string, sep byte) []string {
 	out := []string{}
 	current := ""
-	for i := 0; i < len(value); i++ {
+	for i := range len(value) {
 		if value[i] == sep {
 			out = append(out, current)
 			current = ""

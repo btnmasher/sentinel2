@@ -24,7 +24,7 @@ import (
 
 type EVEProvider struct {
 	App       *pocketbase.PocketBase
-	OAuth2    oauth2.Config
+	OAuth2    *oauth2.Config
 	ESI       esi.ESIClient
 	PublicESI *esi.ESIPublicClient
 	Intel     *intel.IntelService
@@ -37,7 +37,12 @@ type eveTokenClaims struct {
 	Scp  []string `json:"scp"`
 }
 
-func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) *EVEProvider {
+const (
+	minJWTParts = 2
+	minSubParts = 3
+)
+
+func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) *EVEProvider {
 	return &EVEProvider{
 		App:       app,
 		OAuth2:    oauthConfig,
@@ -66,7 +71,7 @@ func (p *EVEProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string,
 	}
 	saveAuthFlow(p.App, state, flow)
 
-	redirectURL := absoluteURL(c, "/api/auth/callback")
+	redirectURL := absoluteURL(c)
 	p.OAuth2.RedirectURL = redirectURL
 
 	authURL := p.OAuth2.AuthCodeURL(state)
@@ -89,7 +94,7 @@ func (p *EVEProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, err
 		return nil, AuthFlow{}, ErrMissingCode
 	}
 
-	redirectURL := absoluteURL(c, "/api/auth/callback")
+	redirectURL := absoluteURL(c)
 	p.OAuth2.RedirectURL = redirectURL
 
 	token, tokenErr := p.OAuth2.Exchange(c.Request.Context(), code)
@@ -141,6 +146,23 @@ func (p *EVEProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, err
 	return result, flow, nil
 }
 
+func (p *EVEProvider) Refresh(ctx context.Context, user *core.Record) (AuthTokens, error) {
+	mainChar, mainErr := p.findMainCharacter(user.Id)
+	if mainErr != nil || mainChar == nil {
+		return AuthTokens{}, errors.New("missing main character")
+	}
+
+	return p.refreshCharacter(ctx, user, mainChar)
+}
+
+func (p *EVEProvider) Logout(c *core.RequestEvent) error {
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (p *EVEProvider) RefreshCharacter(ctx context.Context, user, character *core.Record) (AuthTokens, error) {
+	return p.refreshCharacter(ctx, user, character)
+}
+
 type linkContext struct {
 	token        *oauth2.Token
 	claims       *eveTokenClaims
@@ -175,7 +197,7 @@ func (p *EVEProvider) handleLinkCallback(c *core.RequestEvent, flow AuthFlow, ct
 		}
 	}
 
-	charRecord, upsertErr := p.upsertCharacterForUser(c.Request.Context(), user, characterUpsertInput{
+	charRecord, upsertErr := p.upsertCharacterForUser(c.Request.Context(), user, &characterUpsertInput{
 		existing:   ctx.existingChar,
 		charID:     ctx.charID,
 		name:       ctx.claims.Name,
@@ -217,72 +239,9 @@ func (p *EVEProvider) handleLoginCallback(c *core.RequestEvent, ctx loginContext
 		return nil, ErrFailedPersistUser
 	}
 
-	var mainChar *core.Record
-	if ctx.existingChar == nil {
-		if authorizeErr := p.authorizeAccess(ctx.corpID, ctx.allianceID); authorizeErr != nil {
-			return nil, authorizeErr
-		}
-
-		charRecord, upsertErr := p.upsertCharacterForUser(c.Request.Context(), user, characterUpsertInput{
-			existing:   ctx.existingChar,
-			charID:     ctx.charID,
-			name:       ctx.claims.Name,
-			corpID:     ctx.corpID,
-			allianceID: ctx.allianceID,
-			token:      ctx.token,
-			scopes:     ctx.claims.Scp,
-		}, true)
-		if upsertErr != nil {
-			return nil, upsertErr
-		}
-		mainChar = charRecord
-		if updateErr := p.updateUserFromCharacter(user, charRecord); updateErr != nil {
-			return nil, ErrFailedPersistUser
-		}
-	} else {
-		charRecord, upsertErr := p.upsertCharacterForUser(c.Request.Context(), user, characterUpsertInput{
-			existing:   ctx.existingChar,
-			charID:     ctx.charID,
-			name:       ctx.claims.Name,
-			corpID:     ctx.corpID,
-			allianceID: ctx.allianceID,
-			token:      ctx.token,
-			scopes:     ctx.claims.Scp,
-		}, ctx.existingChar.GetBool("is_main"))
-		if upsertErr != nil {
-			return nil, upsertErr
-		}
-		ctx.existingChar = charRecord
-
-		mainChar, _ = p.findMainCharacter(user.Id)
-		if mainChar == nil {
-			if authorizeErr := p.authorizeAccess(ctx.corpID, ctx.allianceID); authorizeErr != nil {
-				return nil, authorizeErr
-			}
-			ctx.existingChar.Set("is_main", true)
-			if saveErr := p.App.Save(ctx.existingChar); saveErr != nil {
-				return nil, ErrFailedPersistCharacter
-			}
-			mainChar = ctx.existingChar
-		}
-
-		if mainChar != nil {
-			if mainChar.Id != ctx.existingChar.Id {
-				if ensureErr := p.refreshMainAffiliation(c.Request.Context(), mainChar); ensureErr != nil {
-					return nil, ensureErr
-				}
-			} else {
-				if authorizeErr := p.authorizeAccess(ctx.corpID, ctx.allianceID); authorizeErr != nil {
-					return nil, authorizeErr
-				}
-			}
-		}
-
-		if mainChar != nil {
-			if updateErr := p.updateUserFromCharacter(user, mainChar); updateErr != nil {
-				return nil, ErrFailedPersistUser
-			}
-		}
+	mainChar, loginErr := p.resolveLoginMainCharacter(c.Request.Context(), user, ctx)
+	if loginErr != nil {
+		return nil, loginErr
 	}
 
 	sessionTokens := AuthTokens{
@@ -306,6 +265,77 @@ func (p *EVEProvider) handleLoginCallback(c *core.RequestEvent, ctx loginContext
 	}, nil
 }
 
+func (p *EVEProvider) resolveLoginMainCharacter(ctx context.Context, user *core.Record, loginCtx loginContext) (*core.Record, error) {
+	input := &characterUpsertInput{
+		existing:   loginCtx.existingChar,
+		charID:     loginCtx.charID,
+		name:       loginCtx.claims.Name,
+		corpID:     loginCtx.corpID,
+		allianceID: loginCtx.allianceID,
+		token:      loginCtx.token,
+		scopes:     loginCtx.claims.Scp,
+	}
+	if loginCtx.existingChar == nil {
+		return p.handleLoginNewCharacter(ctx, user, input)
+	}
+	return p.handleLoginExistingCharacter(ctx, user, input)
+}
+
+func (p *EVEProvider) handleLoginNewCharacter(ctx context.Context, user *core.Record, input *characterUpsertInput) (*core.Record, error) {
+	if authorizeErr := p.authorizeAccess(input.corpID, input.allianceID); authorizeErr != nil {
+		return nil, authorizeErr
+	}
+	mainChar, upsertErr := p.upsertCharacterForUser(ctx, user, input, true)
+	if upsertErr != nil {
+		return nil, upsertErr
+	}
+	if updateErr := p.updateUserFromCharacter(user, mainChar); updateErr != nil {
+		return nil, ErrFailedPersistUser
+	}
+	return mainChar, nil
+}
+
+func (p *EVEProvider) handleLoginExistingCharacter(ctx context.Context, user *core.Record, input *characterUpsertInput) (*core.Record, error) {
+	charRecord, upsertErr := p.upsertCharacterForUser(ctx, user, input, input.existing.GetBool("is_main"))
+	if upsertErr != nil {
+		return nil, upsertErr
+	}
+	mainChar, mainErr := p.ensureMainCharacter(ctx, user, charRecord, input.corpID, input.allianceID)
+	if mainErr != nil {
+		return nil, mainErr
+	}
+	if mainChar != nil {
+		if updateErr := p.updateUserFromCharacter(user, mainChar); updateErr != nil {
+			return nil, ErrFailedPersistUser
+		}
+	}
+	return mainChar, nil
+}
+
+func (p *EVEProvider) ensureMainCharacter(ctx context.Context, user, current *core.Record, corpID, allianceID int) (*core.Record, error) {
+	mainChar, _ := p.findMainCharacter(user.Id)
+	if mainChar == nil {
+		if authorizeErr := p.authorizeAccess(corpID, allianceID); authorizeErr != nil {
+			return nil, authorizeErr
+		}
+		current.Set("is_main", true)
+		if saveErr := p.App.Save(current); saveErr != nil {
+			return nil, ErrFailedPersistCharacter
+		}
+		return current, nil
+	}
+	if mainChar.Id == current.Id {
+		if authorizeErr := p.authorizeAccess(corpID, allianceID); authorizeErr != nil {
+			return nil, authorizeErr
+		}
+		return mainChar, nil
+	}
+	if ensureErr := p.refreshMainAffiliation(ctx, mainChar); ensureErr != nil {
+		return nil, ensureErr
+	}
+	return mainChar, nil
+}
+
 type characterUpsertInput struct {
 	existing   *core.Record
 	charID     int
@@ -316,7 +346,10 @@ type characterUpsertInput struct {
 	scopes     []string
 }
 
-func (p *EVEProvider) upsertCharacterForUser(ctx context.Context, user *core.Record, input characterUpsertInput, isMain bool) (*core.Record, error) {
+func (p *EVEProvider) upsertCharacterForUser(ctx context.Context, user *core.Record, input *characterUpsertInput, isMain bool) (*core.Record, error) {
+	if input == nil {
+		return nil, ErrFailedPersistCharacter
+	}
 	charRecord, upsertErr := p.upsertCharacter(
 		user.Id,
 		input.existing,
@@ -336,7 +369,7 @@ func (p *EVEProvider) upsertCharacterForUser(ctx context.Context, user *core.Rec
 	return charRecord, nil
 }
 
-func (p *EVEProvider) authorizeAccess(corpID int, allianceID int) error {
+func (p *EVEProvider) authorizeAccess(corpID, allianceID int) error {
 	allowed, accessErr := p.allowedAccess(corpID, allianceID)
 	if accessErr != nil {
 		return ErrFailedCheckAccess
@@ -375,22 +408,9 @@ func oauthTokens(token *oauth2.Token) AuthTokens {
 	}
 }
 
-func (p *EVEProvider) Refresh(ctx context.Context, user *core.Record) (AuthTokens, error) {
-	mainChar, mainErr := p.findMainCharacter(user.Id)
-	if mainErr != nil || mainChar == nil {
-		return AuthTokens{}, errors.New("missing main character")
-	}
-
-	return p.refreshCharacter(ctx, user, mainChar)
-}
-
-func (p *EVEProvider) Logout(c *core.RequestEvent) error {
-	return c.NoContent(http.StatusNoContent)
-}
-
 func parseEVEToken(accessToken string) (*eveTokenClaims, error) {
 	parts := strings.Split(accessToken, ".")
-	if len(parts) < 2 {
+	if len(parts) < minJWTParts {
 		return nil, errors.New("invalid token")
 	}
 	payload, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
@@ -406,7 +426,7 @@ func parseEVEToken(accessToken string) (*eveTokenClaims, error) {
 
 func parseCharacterID(sub string) (int, error) {
 	parts := strings.Split(sub, ":")
-	if len(parts) < 3 {
+	if len(parts) < minSubParts {
 		return 0, errors.New("invalid sub")
 	}
 	return strconv.Atoi(parts[len(parts)-1])
@@ -453,7 +473,7 @@ func (p *EVEProvider) findMainCharacter(userID string) (*core.Record, error) {
 	return records[0], nil
 }
 
-func (p *EVEProvider) upsertCharacter(userID string, existing *core.Record, characterID int, name string, corpID int, allianceID int, token *oauth2.Token, scopes []string, isMain bool) (*core.Record, error) {
+func (p *EVEProvider) upsertCharacter(userID string, existing *core.Record, characterID int, name string, corpID, allianceID int, token *oauth2.Token, scopes []string, isMain bool) (*core.Record, error) {
 	coll, collErr := p.App.FindCollectionByNameOrId(store.CollectionCharacters)
 	if collErr != nil {
 		return nil, collErr
@@ -497,7 +517,7 @@ func (p *EVEProvider) upsertCharacter(userID string, existing *core.Record, char
 	return record, nil
 }
 
-func (p *EVEProvider) updateUserFromCharacter(user *core.Record, character *core.Record) error {
+func (p *EVEProvider) updateUserFromCharacter(user, character *core.Record) error {
 	user.Set("auth_provider", p.Name())
 	user.Set("auth_provider_sub", strconv.Itoa(character.GetInt("eve_character_id")))
 	user.Set("sub", strconv.Itoa(character.GetInt("eve_character_id")))
@@ -528,7 +548,7 @@ func tokensFromCharacter(record *core.Record) (AuthTokens, bool) {
 	}, true
 }
 
-func (p *EVEProvider) refreshCharacter(ctx context.Context, user *core.Record, character *core.Record) (AuthTokens, error) {
+func (p *EVEProvider) refreshCharacter(ctx context.Context, user, character *core.Record) (AuthTokens, error) {
 	if character == nil {
 		return AuthTokens{}, errors.New("missing character")
 	}
@@ -558,35 +578,13 @@ func (p *EVEProvider) refreshCharacter(ctx context.Context, user *core.Record, c
 	}
 
 	isMain := character.GetBool("is_main")
-	if isMain {
-		allowed, accessErr := p.allowedAccess(corpID, allianceID)
-		if accessErr != nil {
-			return AuthTokens{}, accessErr
-		}
-		if !allowed {
-			return AuthTokens{}, ErrAccessDenied
-		}
+	if accessErr := p.ensureCharacterAccess(isMain, corpID, allianceID); accessErr != nil {
+		return AuthTokens{}, accessErr
 	}
 
-	character.Set("eve_character_id", charID)
-	character.Set("eve_character_name", claims.Name)
-	character.Set("eve_corporation_id", corpID)
-	character.Set("eve_alliance_id", allianceID)
+	p.applyCharacterRefresh(character, charID, claims.Name, corpID, allianceID, token, claims.Scp)
 	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionCorporations, corpID)
 	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionAlliances, allianceID)
-	character.Set("oauth_access_token", token.AccessToken)
-	accessExpiresAt, _ := types.ParseDateTime(time.Unix(tokenExpiry(token), 0))
-	character.Set("oauth_access_expires_at", accessExpiresAt)
-	if token.RefreshToken != "" {
-		character.Set("oauth_refresh_token", token.RefreshToken)
-		refreshExpiresAt, _ := types.ParseDateTime(time.Unix(eveRefreshExpiry(), 0))
-		character.Set("oauth_refresh_expires_at", refreshExpiresAt)
-	}
-	character.Set("oauth_scopes", strings.Join(claims.Scp, " "))
-	lastRefreshAt, _ := types.ParseDateTime(time.Now())
-	character.Set("esi_last_refresh_at", lastRefreshAt)
-	character.Set("esi_last_error", "")
-	character.Set("esi_token_valid", true)
 
 	if saveErr := p.App.Save(character); saveErr != nil {
 		return AuthTokens{}, saveErr
@@ -606,11 +604,41 @@ func (p *EVEProvider) refreshCharacter(ctx context.Context, user *core.Record, c
 	}, nil
 }
 
-func (p *EVEProvider) RefreshCharacter(ctx context.Context, user *core.Record, character *core.Record) (AuthTokens, error) {
-	return p.refreshCharacter(ctx, user, character)
+func (p *EVEProvider) ensureCharacterAccess(isMain bool, corpID, allianceID int) error {
+	if !isMain {
+		return nil
+	}
+	allowed, accessErr := p.allowedAccess(corpID, allianceID)
+	if accessErr != nil {
+		return accessErr
+	}
+	if !allowed {
+		return ErrAccessDenied
+	}
+	return nil
 }
 
-func (p *EVEProvider) allowedAccess(corpID int, allianceID int) (bool, error) {
+func (p *EVEProvider) applyCharacterRefresh(character *core.Record, charID int, name string, corpID, allianceID int, token *oauth2.Token, scopes []string) {
+	character.Set("eve_character_id", charID)
+	character.Set("eve_character_name", name)
+	character.Set("eve_corporation_id", corpID)
+	character.Set("eve_alliance_id", allianceID)
+	character.Set("oauth_access_token", token.AccessToken)
+	accessExpiresAt, _ := types.ParseDateTime(time.Unix(tokenExpiry(token), 0))
+	character.Set("oauth_access_expires_at", accessExpiresAt)
+	if token.RefreshToken != "" {
+		character.Set("oauth_refresh_token", token.RefreshToken)
+		refreshExpiresAt, _ := types.ParseDateTime(time.Unix(eveRefreshExpiry(), 0))
+		character.Set("oauth_refresh_expires_at", refreshExpiresAt)
+	}
+	character.Set("oauth_scopes", strings.Join(scopes, " "))
+	lastRefreshAt, _ := types.ParseDateTime(time.Now())
+	character.Set("esi_last_refresh_at", lastRefreshAt)
+	character.Set("esi_last_error", "")
+	character.Set("esi_token_valid", true)
+}
+
+func (p *EVEProvider) allowedAccess(corpID, allianceID int) (bool, error) {
 	corpAllowed, corpErr := p.allowedID("allowed_corporations", corpID)
 	if corpErr != nil {
 		return false, corpErr

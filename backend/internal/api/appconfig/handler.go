@@ -16,8 +16,11 @@ type appConfigResponse struct {
 	Version        string   `json:"version"`
 }
 
-func AppConfig(cfg config.Config) func(*core.RequestEvent) error {
+func AppConfig(cfg *config.Config) func(*core.RequestEvent) error {
 	return func(c *core.RequestEvent) error {
+		if cfg == nil {
+			return c.JSON(http.StatusOK, appConfigResponse{})
+		}
 		c.Response.Header().Set("Cache-Control", "no-store")
 		standalone := cfg.AuthBackend == "eve"
 		return c.JSON(http.StatusOK, appConfigResponse{

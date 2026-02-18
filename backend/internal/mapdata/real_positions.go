@@ -6,18 +6,17 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase"
+	"github.com/pocketbase/pocketbase/core"
 
 	"sentinel2/internal/logging"
+	"sentinel2/internal/shared/geom"
 	"sentinel2/internal/store"
 )
 
-type regionFloatBounds struct {
-	minX  float64
-	minY  float64
-	maxX  float64
-	maxY  float64
-	count int
-}
+const (
+	regionScaleTarget     = 1000.0
+	centerMidpointDivisor = 2.0
+)
 
 func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) error {
 	regions, regionsErr := app.FindRecordsByFilter(store.CollectionRegions, "eve_id < 11000000", "name", 0, 0, nil)
@@ -38,17 +37,54 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 		}).
 		Debug("real positions calc started")
 
-	regionSet := map[int]struct{}{}
-	for _, region := range regions {
-		regionSet[int(region.GetInt("eve_id"))] = struct{}{}
+	regionSet := regionIDSet(regions)
+	regionBounds, boundsErr := collectRealBounds(ctx, systems, regionSet)
+	if boundsErr != nil {
+		return boundsErr
 	}
 
-	regionBounds := map[int]*regionFloatBounds{}
+	regionScales := buildRegionScales(regionBounds)
+
+	if saveErr := saveSystemRealPositions(ctx, app, systems, regionScales); saveErr != nil {
+		return saveErr
+	}
+
+	centers, minX, minY, maxX, maxY := centersFromRealBounds(regionBounds)
+	scale := normalizeScale(minX, minY, maxX, maxY, normalizedRegionTarget)
+	if saveErr := saveRegionRealPositions(ctx, realRegionSaveInput{
+		app:     app,
+		regions: regions,
+		centers: centers,
+		minX:    minX,
+		minY:    minY,
+		scale:   scale,
+	}); saveErr != nil {
+		return saveErr
+	}
+
+	logging.New(app).
+		WithFields(logging.Fields{
+			"duration_ms":       time.Since(start).Milliseconds(),
+			"regions_with_real": len(centers),
+		}).
+		Debug("real positions calc completed")
+
+	return nil
+}
+
+type regionScale struct {
+	minX  float64
+	minY  float64
+	scale float64
+}
+
+func collectRealBounds(ctx context.Context, systems []*core.Record, regionSet map[int]struct{}) (map[int]*geom.Bounds[float64], error) {
+	regionBounds := map[int]*geom.Bounds[float64]{}
 	for _, system := range systems {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
-		regionID := int(system.GetInt("region_id"))
+		regionID := system.GetInt("region_id")
 		if _, ok := regionSet[regionID]; !ok {
 			continue
 		}
@@ -57,56 +93,38 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 		if x == 0 && y == 0 {
 			continue
 		}
-		b, exists := regionBounds[regionID]
-		if !exists {
-			regionBounds[regionID] = &regionFloatBounds{
-				minX:  x,
-				minY:  y,
-				maxX:  x,
-				maxY:  y,
-				count: 1,
-			}
-			continue
+		b := regionBounds[regionID]
+		if b == nil {
+			b = &geom.Bounds[float64]{}
+			regionBounds[regionID] = b
 		}
-		if x < b.minX {
-			b.minX = x
-		}
-		if y < b.minY {
-			b.minY = y
-		}
-		if x > b.maxX {
-			b.maxX = x
-		}
-		if y > b.maxY {
-			b.maxY = y
-		}
-		b.count++
+		b.Add(x, y)
 	}
+	return regionBounds, nil
+}
 
-	type regionScale struct {
-		minX  float64
-		minY  float64
-		scale float64
-	}
+func buildRegionScales(regionBounds map[int]*geom.Bounds[float64]) map[int]regionScale {
 	regionScales := map[int]regionScale{}
 	for regionID, b := range regionBounds {
-		dx := b.maxX - b.minX
-		dy := b.maxY - b.minY
+		dx := b.MaxX - b.MinX
+		dy := b.MaxY - b.MinY
 		if dx == 0 || dy == 0 {
 			continue
 		}
-		scale := 1000.0 / dx
-		if yScale := 1000.0 / dy; yScale < scale {
-			scale = yScale
-		}
-		regionScales[regionID] = regionScale{minX: b.minX, minY: b.minY, scale: scale}
+		scale := regionScaleTarget / dx
+		yScale := regionScaleTarget / dy
+		scale = min(scale, yScale)
+		regionScales[regionID] = regionScale{minX: b.MinX, minY: b.MinY, scale: scale}
 	}
+	return regionScales
+}
 
+func saveSystemRealPositions(ctx context.Context, app *pocketbase.PocketBase, systems []*core.Record, regionScales map[int]regionScale) error {
 	for i, system := range systems {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
-		regionID := int(system.GetInt("region_id"))
+		regionID := system.GetInt("region_id")
 		scale, ok := regionScales[regionID]
 		if !ok {
 			continue
@@ -117,68 +135,51 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 		system.Set("real_y", int(math.Round((y-scale.minY)*scale.scale)))
 		if saveErr := app.Save(system); saveErr != nil {
 			logging.New(app).
-				WithFields(logging.Fields{
-					"system_id": system.GetInt("eve_id"),
-				}).
+				WithFields(logging.Fields{"system_id": system.GetInt("eve_id")}).
 				WithErr(saveErr).
 				Debug("real system position save failed")
 		}
 	}
+	return nil
+}
 
-	centers := map[int][2]float64{}
-	minX, minY := 0.0, 0.0
-	maxX, maxY := 0.0, 0.0
+func centersFromRealBounds(regionBounds map[int]*geom.Bounds[float64]) (centers map[int][2]float64, minX, minY, maxX, maxY float64) {
+	centers = map[int][2]float64{}
 	first := true
 	for regionID, b := range regionBounds {
-		if b.count == 0 {
+		if b == nil || b.Count == 0 {
 			continue
 		}
-		x := b.minX + (b.maxX-b.minX)/2
-		y := b.minY + (b.maxY-b.minY)/2
+		x := b.MinX + (b.MaxX-b.MinX)/centerMidpointDivisor
+		y := b.MinY + (b.MaxY-b.MinY)/centerMidpointDivisor
 		centers[regionID] = [2]float64{x, y}
-		if first {
-			minX, maxX = x, x
-			minY, maxY = y, y
-			first = false
-			continue
-		}
-		if x < minX {
-			minX = x
-		}
-		if x > maxX {
-			maxX = x
-		}
-		if y < minY {
-			minY = y
-		}
-		if y > maxY {
-			maxY = y
-		}
+		minX, minY, maxX, maxY = extendFloatBounds(x, y, minX, minY, maxX, maxY, first)
+		first = false
 	}
+	return centers, minX, minY, maxX, maxY
+}
 
-	scale := 1.0
-	dx := maxX - minX
-	dy := maxY - minY
-	const target = 10000.0
-	if dx > 0 || dy > 0 {
-		if dx > dy {
-			scale = target / dx
-		} else {
-			scale = target / dy
-		}
-	}
+type realRegionSaveInput struct {
+	app     *pocketbase.PocketBase
+	regions []*core.Record
+	centers map[int][2]float64
+	minX    float64
+	minY    float64
+	scale   float64
+}
 
-	for _, region := range regions {
+func saveRegionRealPositions(ctx context.Context, input realRegionSaveInput) error {
+	for _, region := range input.regions {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		regionID := int(region.GetInt("eve_id"))
-		if center, ok := centers[regionID]; ok {
-			region.Set("real_x", int(math.Round((center[0]-minX)*scale)))
-			region.Set("real_y", int(math.Round((center[1]-minY)*scale)))
+		regionID := region.GetInt("eve_id")
+		if center, ok := input.centers[regionID]; ok {
+			region.Set("real_x", int(math.Round((center[0]-input.minX)*input.scale)))
+			region.Set("real_y", int(math.Round((center[1]-input.minY)*input.scale)))
 		}
-		if saveErr := app.Save(region); saveErr != nil {
-			logging.New(app).
+		if saveErr := input.app.Save(region); saveErr != nil {
+			logging.New(input.app).
 				WithFields(logging.Fields{
 					"region_id":   regionID,
 					"region_name": region.GetString("name"),
@@ -187,13 +188,5 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 				Debug("real region position save failed")
 		}
 	}
-
-	logging.New(app).
-		WithFields(logging.Fields{
-			"duration_ms":       time.Since(start).Milliseconds(),
-			"regions_with_real": len(centers),
-		}).
-		Debug("real positions calc completed")
-
 	return nil
 }

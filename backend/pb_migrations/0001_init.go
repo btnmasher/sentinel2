@@ -10,6 +10,7 @@ import (
 	"sentinel2/internal/pbutils"
 )
 
+//nolint:gocognit // Migration registration blocks are intentionally long and schema-focused.
 func init() {
 	m.Register(func(app core.App) error {
 		users, usersErr := app.FindCollectionByNameOrId("users")

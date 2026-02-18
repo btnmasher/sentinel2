@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -18,6 +19,7 @@ const NoTimeout time.Duration = -1
 
 type RunOptions struct {
 	JobOptions
+
 	JobName  string
 	JobID    string
 	StepKind string
@@ -51,7 +53,7 @@ type stepState struct {
 }
 
 type tracker interface {
-	IsRunning(kind string, step string) (bool, error)
+	IsRunning(kind, step string) (bool, error)
 	Start(jobID string, opts JobOptions) (*core.Record, error)
 	Finish(record *core.Record, err error)
 	FinishPartial(record *core.Record, err error)
@@ -72,18 +74,22 @@ type runnerSteps struct {
 	ctx    context.Context
 }
 
-func NewRunner(app *pocketbase.PocketBase, opts RunOptions) *Runner {
-	if opts.JobID == "" {
-		name := opts.JobName
+func NewRunner(app *pocketbase.PocketBase, opts *RunOptions) *Runner {
+	runOpts := RunOptions{}
+	if opts != nil {
+		runOpts = *opts
+	}
+	if runOpts.JobID == "" {
+		name := runOpts.JobName
 		if name == "" {
-			name = opts.Kind
+			name = runOpts.Kind
 		}
-		opts.JobID = newJobID(name)
+		runOpts.JobID = newJobID(name)
 	}
 	return &Runner{
 		app:     app,
 		tracker: NewJobTracker(app),
-		opts:    opts,
+		opts:    runOpts,
 		fields:  logging.Fields{},
 	}
 }
@@ -96,21 +102,22 @@ func (r *Runner) JobID() string {
 }
 
 func (r *Runner) WithFields(fields logging.Fields) *Runner {
-	if r == nil || len(fields) == 0 {
+	if r == nil {
+		return nil
+	}
+	if len(fields) == 0 {
 		return r
 	}
 	if r.fields == nil {
 		r.fields = logging.Fields{}
 	}
-	for key, value := range fields {
-		r.fields[key] = value
-	}
+	maps.Copy(r.fields, fields)
 	return r
 }
 
 func (r *Runner) WithMessage(message string) *Runner {
 	if r == nil {
-		return r
+		return nil
 	}
 	r.message = message
 	return r
@@ -191,12 +198,12 @@ func (r *Runner) Run(fn func(ctx context.Context, step Stepper) error) error {
 	return nil
 }
 
-func (r *Runner) buildContext() (context.Context, context.CancelFunc, context.CancelFunc) {
+func (r *Runner) buildContext() (ctx context.Context, cancel, timeoutCancel context.CancelFunc) {
 	parent := r.opts.Parent
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel = context.WithCancel(parent)
 	if r.opts.JobFunc != nil {
 		ctx = r.opts.JobFunc(ctx)
 	}
@@ -232,9 +239,7 @@ func (r *Runner) logger() *logging.Logger {
 	if r.opts.ActorID != "" {
 		fields["actor_id"] = r.opts.ActorID
 	}
-	for key, value := range r.fields {
-		fields[key] = value
-	}
+	maps.Copy(fields, r.fields)
 	return logging.New(r.app).WithFields(fields)
 }
 
@@ -250,13 +255,11 @@ func (r *Runner) stepLogger(step string) *logging.Logger {
 	if r.opts.ActorID != "" {
 		fields["actor_id"] = r.opts.ActorID
 	}
-	for key, value := range r.fields {
-		fields[key] = value
-	}
+	maps.Copy(fields, r.fields)
 	return logging.New(r.app).WithFields(fields)
 }
 
-func (r *Runner) logCompletion(log *logging.Logger, startedAt time.Time, status string, message string, isError bool, isTimeout bool) {
+func (r *Runner) logCompletion(log *logging.Logger, startedAt time.Time, status, message string, isError, isTimeout bool) {
 	if log == nil {
 		return
 	}
@@ -369,74 +372,19 @@ func (s runnerSteps) Run(name string, critical bool, fn func(context.Context) er
 		return nil
 	}
 	s.runner.noteStepStart()
-	stepRecord, err := s.runner.tracker.Start(
-		s.runner.opts.JobID,
-		JobOptions{
-			Kind:    s.runner.stepKind(),
-			Step:    name,
-			Trigger: s.runner.opts.Trigger,
-			ActorID: s.runner.opts.ActorID,
-			Hidden:  s.runner.opts.Hidden,
-		},
-	)
+	stepRecord, stepLog, stepStartedAt, err := s.startStep(name)
 	if err != nil {
-		if critical {
-			s.runner.noteStepFailure(true)
-			return err
-		}
-		s.runner.noteStepFailure(false)
-		s.runner.markPartial(err)
-		return nil
+		return s.handleStepStartError(err, critical)
 	}
 
-	stepLog := s.runner.stepLogger(name)
-	stepStartedAt := recordTime(stepRecord.Get("started_at"))
-	stepLog.Info(MessageStepStarted)
-
-	ctx := s.ctx
-	runErr := fn(ctx)
-	if err := ctx.Err(); err != nil {
-		if errors.Is(err, context.Canceled) {
-			s.runner.tracker.FinishCanceled(stepRecord, MessageCanceled)
-			s.runner.logStepCompletion(stepLog, stepStartedAt, StatusCanceled, MessageCanceled, false, false)
-		} else {
-			s.runner.tracker.Finish(stepRecord, err)
-			isTimeout := errors.Is(err, context.DeadlineExceeded)
-			status := StatusFailed
-			if isTimeout {
-				status = StatusTimeout
-			}
-			s.runner.logStepCompletion(stepLog, stepStartedAt, status, err.Error(), true, isTimeout)
-		}
-		if critical {
-			s.runner.noteStepFailure(true)
-			return err
-		}
-		s.runner.noteStepFailure(false)
-		s.runner.markPartial(err)
-		return nil
+	runErr := fn(s.ctx)
+	if ctxErr := s.ctx.Err(); ctxErr != nil {
+		return s.handleStepContextError(stepRecord, stepLog, stepStartedAt, ctxErr, critical)
 	}
 	if runErr != nil {
-		s.runner.tracker.Finish(stepRecord, runErr)
-		status := StatusFailed
-		levelError := true
-		if !critical {
-			status = StatusPartial
-			levelError = false
-		}
-		s.runner.logStepCompletion(stepLog, stepStartedAt, status, runErr.Error(), levelError, false)
-		if critical {
-			s.runner.noteStepFailure(true)
-			return runErr
-		}
-		s.runner.noteStepFailure(false)
-		s.runner.markPartial(runErr)
-		return nil
+		return s.handleStepRunError(stepRecord, stepLog, stepStartedAt, runErr, critical)
 	}
-	s.runner.tracker.Finish(stepRecord, nil)
-	s.runner.logStepCompletion(stepLog, stepStartedAt, StatusSuccess, "", false, false)
-	s.runner.noteStepSuccess()
-	return nil
+	return s.handleStepSuccess(stepRecord, stepLog, stepStartedAt)
 }
 
 func (s runnerSteps) Partial(err error) {
@@ -461,7 +409,7 @@ func (s runnerSteps) WithMessage(message string) {
 	s.runner.WithMessage(message)
 }
 
-func (s runnerSteps) SkipStep(name string, reason string) error {
+func (s runnerSteps) SkipStep(name, reason string) error {
 	if s.runner == nil {
 		return nil
 	}
@@ -491,7 +439,81 @@ func (s runnerSteps) SkipStep(name string, reason string) error {
 	return nil
 }
 
-func (r *Runner) logStepCompletion(log *logging.Logger, startedAt time.Time, status string, message string, isError bool, isTimeout bool) {
+func (s runnerSteps) startStep(name string) (*core.Record, *logging.Logger, time.Time, error) {
+	stepRecord, err := s.runner.tracker.Start(
+		s.runner.opts.JobID,
+		JobOptions{
+			Kind:    s.runner.stepKind(),
+			Step:    name,
+			Trigger: s.runner.opts.Trigger,
+			ActorID: s.runner.opts.ActorID,
+			Hidden:  s.runner.opts.Hidden,
+		},
+	)
+	if err != nil {
+		return nil, nil, time.Time{}, err
+	}
+	stepLog := s.runner.stepLogger(name)
+	stepStartedAt := recordTime(stepRecord.Get("started_at"))
+	stepLog.Info(MessageStepStarted)
+	return stepRecord, stepLog, stepStartedAt, nil
+}
+
+func (s runnerSteps) handleStepStartError(err error, critical bool) error {
+	s.runner.noteStepFailure(critical)
+	if critical {
+		return err
+	}
+	s.runner.markPartial(err)
+	return nil
+}
+
+func (s runnerSteps) handleStepContextError(stepRecord *core.Record, stepLog *logging.Logger, stepStartedAt time.Time, ctxErr error, critical bool) error {
+	if errors.Is(ctxErr, context.Canceled) {
+		s.runner.tracker.FinishCanceled(stepRecord, MessageCanceled)
+		s.runner.logStepCompletion(stepLog, stepStartedAt, StatusCanceled, MessageCanceled, false, false)
+	} else {
+		s.runner.tracker.Finish(stepRecord, ctxErr)
+		isTimeout := errors.Is(ctxErr, context.DeadlineExceeded)
+		status := StatusFailed
+		if isTimeout {
+			status = StatusTimeout
+		}
+		s.runner.logStepCompletion(stepLog, stepStartedAt, status, ctxErr.Error(), true, isTimeout)
+	}
+	s.runner.noteStepFailure(critical)
+	if critical {
+		return ctxErr
+	}
+	s.runner.markPartial(ctxErr)
+	return nil
+}
+
+func (s runnerSteps) handleStepRunError(stepRecord *core.Record, stepLog *logging.Logger, stepStartedAt time.Time, runErr error, critical bool) error {
+	s.runner.tracker.Finish(stepRecord, runErr)
+	status := StatusFailed
+	levelError := true
+	if !critical {
+		status = StatusPartial
+		levelError = false
+	}
+	s.runner.logStepCompletion(stepLog, stepStartedAt, status, runErr.Error(), levelError, false)
+	s.runner.noteStepFailure(critical)
+	if critical {
+		return runErr
+	}
+	s.runner.markPartial(runErr)
+	return nil
+}
+
+func (s runnerSteps) handleStepSuccess(stepRecord *core.Record, stepLog *logging.Logger, stepStartedAt time.Time) error {
+	s.runner.tracker.Finish(stepRecord, nil)
+	s.runner.logStepCompletion(stepLog, stepStartedAt, StatusSuccess, "", false, false)
+	s.runner.noteStepSuccess()
+	return nil
+}
+
+func (r *Runner) logStepCompletion(log *logging.Logger, startedAt time.Time, status, message string, isError, isTimeout bool) {
 	if log == nil {
 		return
 	}

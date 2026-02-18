@@ -23,6 +23,16 @@ linters:
     - unconvert
     - unparam
     - wastedassign
+    - modernize
+    - musttag
+    - gosec
+    - contextcheck
+    - bidichk
+    - funcorder
+    - embeddedstructfieldcheck
+    - durationcheck
+    - intrange
+    - mnd
 
   settings:
     gocognit:

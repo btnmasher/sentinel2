@@ -29,8 +29,8 @@ func main() {
 		JSONPath:             cfg.LogJSONPath,
 		UsePocketBaseJSON:    cfg.LogJSONPB,
 	})
-	logAuthConfig(cfg)
-	if err := server.Run(cfg); err != nil {
+	logAuthConfig(&cfg)
+	if err := server.Run(&cfg); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -89,7 +89,10 @@ func loadEnvFilesFromList(loadList []string) {
 	}
 }
 
-func logAuthConfig(cfg config.Config) {
+func logAuthConfig(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
 	switch cfg.AuthBackend {
 	case "eve":
 		log.Printf(

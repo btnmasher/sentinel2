@@ -37,7 +37,7 @@ func newFakeTracker() *fakeTracker {
 	}
 }
 
-func (f *fakeTracker) IsRunning(_ string, _ string) (bool, error) {
+func (f *fakeTracker) IsRunning(_, _ string) (bool, error) {
 	return false, nil
 }
 
@@ -99,7 +99,7 @@ func (f *fakeTracker) parentFinish() (finishCall, bool) {
 }
 
 func newRunnerWithFakeTracker(ft *fakeTracker) *Runner {
-	r := NewRunner(nil, RunOptions{
+	r := NewRunner(nil, &RunOptions{
 		JobOptions: JobOptions{
 			Kind: JobUploaderReleases,
 		},

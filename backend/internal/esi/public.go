@@ -29,10 +29,18 @@ type esiNameCache struct {
 	expires time.Time
 }
 
+const (
+	defaultPublicCacheTTL      = 6 * time.Hour
+	publicBackoffBase          = 200 * time.Millisecond
+	publicBackoffJitter        = 100 * time.Millisecond
+	publicBackoffCap           = 2 * time.Second
+	publicBackoffMaxRetryCount = 3
+)
+
 func NewESIPublicClient(userAgent string) *ESIPublicClient {
 	return &ESIPublicClient{
 		client:   goesi.NewPublicESIClient(userAgent),
-		cacheTTL: 6 * time.Hour,
+		cacheTTL: defaultPublicCacheTTL,
 		cache:    make(map[string]esiNameCache),
 		throttle: newESIThrottle(nil),
 		limiter:  globalESILimiter,
@@ -40,87 +48,39 @@ func NewESIPublicClient(userAgent string) *ESIPublicClient {
 }
 
 func (c *ESIPublicClient) AllianceName(ctx context.Context, allianceID int) (string, error) {
-	if c == nil || c.client == nil {
-		return "", fmt.Errorf("esi public client not configured")
-	}
-	if name, ok := c.getCached(allianceCacheKey(allianceID)); ok {
-		return name, nil
-	}
-
-	var name string
-	retryErr := retry.Do(ctx, c.retryBackoff(), func(ctx context.Context) error {
-		c.limiter.wait(ctx)
-		c.throttle.wait(ctx)
+	key := allianceCacheKey(allianceID)
+	name, err := c.fetchName(ctx, key, "alliance_id", allianceID, func(ctx context.Context, etag string) (string, *http.Response, error) {
 		request := c.client.AllianceAPI.GetAlliancesAllianceId(ctx, int64(allianceID))
-		if entry, ok := c.getAny(allianceCacheKey(allianceID)); ok && entry.etag != "" {
-			request = request.IfNoneMatch(entry.etag)
+		if etag != "" {
+			request = request.IfNoneMatch(etag)
 		}
 		resp, httpResp, respErr := request.Execute()
-		if httpResp != nil {
-			c.throttle.update(httpResp)
+		if resp == nil {
+			return "", httpResp, respErr
 		}
-		if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
-			if entry, ok := c.getAny(allianceCacheKey(allianceID)); ok {
-				c.refreshExpiry(allianceCacheKey(allianceID), httpResp)
-				name = entry.value
-				return nil
-			}
-		}
-		if respErr != nil {
-			if shouldRetryPublicESI(httpResp, respErr) {
-				return retry.RetryableError(fmt.Errorf("esi public alliance name fetch failed (alliance_id=%d): %w", allianceID, respErr))
-			}
-			return fmt.Errorf("esi public alliance name fetch failed (alliance_id=%d): %w", allianceID, respErr)
-		}
-		name = resp.Name
-		c.setCached(allianceCacheKey(allianceID), name, httpResp)
-		return nil
+		return resp.Name, httpResp, respErr
 	})
-	if retryErr != nil {
-		return "", retryErr
+	if err != nil {
+		return "", err
 	}
 	return name, nil
 }
 
 func (c *ESIPublicClient) CorporationName(ctx context.Context, corpID int) (string, error) {
-	if c == nil || c.client == nil {
-		return "", fmt.Errorf("esi public client not configured")
-	}
-	if name, ok := c.getCached(corporationCacheKey(corpID)); ok {
-		return name, nil
-	}
-
-	var name string
-	retryErr := retry.Do(ctx, c.retryBackoff(), func(ctx context.Context) error {
-		c.limiter.wait(ctx)
-		c.throttle.wait(ctx)
+	key := corporationCacheKey(corpID)
+	name, err := c.fetchName(ctx, key, "corp_id", corpID, func(ctx context.Context, etag string) (string, *http.Response, error) {
 		request := c.client.CorporationAPI.GetCorporationsCorporationId(ctx, int64(corpID))
-		if entry, ok := c.getAny(corporationCacheKey(corpID)); ok && entry.etag != "" {
-			request = request.IfNoneMatch(entry.etag)
+		if etag != "" {
+			request = request.IfNoneMatch(etag)
 		}
 		resp, httpResp, respErr := request.Execute()
-		if httpResp != nil {
-			c.throttle.update(httpResp)
+		if resp == nil {
+			return "", httpResp, respErr
 		}
-		if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
-			if entry, ok := c.getAny(corporationCacheKey(corpID)); ok {
-				c.refreshExpiry(corporationCacheKey(corpID), httpResp)
-				name = entry.value
-				return nil
-			}
-		}
-		if respErr != nil {
-			if shouldRetryPublicESI(httpResp, respErr) {
-				return retry.RetryableError(fmt.Errorf("esi public corporation name fetch failed (corp_id=%d): %w", corpID, respErr))
-			}
-			return fmt.Errorf("esi public corporation name fetch failed (corp_id=%d): %w", corpID, respErr)
-		}
-		name = resp.Name
-		c.setCached(corporationCacheKey(corpID), name, httpResp)
-		return nil
+		return resp.Name, httpResp, respErr
 	})
-	if retryErr != nil {
-		return "", retryErr
+	if err != nil {
+		return "", err
 	}
 	return name, nil
 }
@@ -133,10 +93,10 @@ func (c *ESIPublicClient) ThrottleDelay() time.Duration {
 }
 
 func (c *ESIPublicClient) retryBackoff() retry.Backoff {
-	backoff := retry.NewExponential(200 * time.Millisecond)
-	backoff = retry.WithJitter(100*time.Millisecond, backoff)
-	backoff = retry.WithCappedDuration(2*time.Second, backoff)
-	backoff = retry.WithMaxRetries(3, backoff)
+	backoff := retry.NewExponential(publicBackoffBase)
+	backoff = retry.WithJitter(publicBackoffJitter, backoff)
+	backoff = retry.WithCappedDuration(publicBackoffCap, backoff)
+	backoff = retry.WithMaxRetries(publicBackoffMaxRetryCount, backoff)
 	return backoff
 }
 
@@ -145,7 +105,7 @@ func shouldRetryPublicESI(resp *http.Response, err error) bool {
 		return false
 	}
 	var netErr net.Error
-	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
 	}
 	if resp == nil {
@@ -194,7 +154,7 @@ func (c *ESIPublicClient) refreshExpiry(key string, resp *http.Response) {
 	c.mu.Unlock()
 }
 
-func (c *ESIPublicClient) setCached(key string, value string, resp *http.Response) {
+func (c *ESIPublicClient) setCached(key, value string, resp *http.Response) {
 	c.mu.Lock()
 	entry := esiNameCache{
 		value:   value,
@@ -207,6 +167,81 @@ func (c *ESIPublicClient) setCached(key string, value string, resp *http.Respons
 	}
 	c.cache[key] = entry
 	c.mu.Unlock()
+}
+
+func (c *ESIPublicClient) fetchName(
+	ctx context.Context,
+	key string,
+	idLabel string,
+	idValue int,
+	call func(context.Context, string) (string, *http.Response, error),
+) (string, error) {
+	if c == nil || c.client == nil {
+		return "", fmt.Errorf("esi public client not configured")
+	}
+	if name, ok := c.getCached(key); ok {
+		return name, nil
+	}
+
+	var name string
+	retryErr := retry.Do(ctx, c.retryBackoff(), func(ctx context.Context) error {
+		c.limiter.wait(ctx)
+		c.throttle.wait(ctx)
+		nextName, httpResp, respErr := c.fetchNameResponse(ctx, key, call)
+		if httpResp != nil && httpResp.Body != nil {
+			defer func() { _ = httpResp.Body.Close() }()
+		}
+		if httpResp != nil {
+			c.throttle.update(httpResp)
+		}
+		cachedName, handled := c.cachedNameFromNotModified(key, httpResp)
+		if handled {
+			name = cachedName
+			return nil
+		}
+		if respErr != nil {
+			return wrapPublicNameError(idLabel, idValue, httpResp, respErr)
+		}
+		name = nextName
+		c.setCached(key, name, httpResp)
+		return nil
+	})
+	if retryErr != nil {
+		return "", retryErr
+	}
+	return name, nil
+}
+
+func (c *ESIPublicClient) fetchNameResponse(
+	ctx context.Context,
+	key string,
+	call func(context.Context, string) (string, *http.Response, error),
+) (string, *http.Response, error) {
+	etag := ""
+	if entry, ok := c.getAny(key); ok && entry.etag != "" {
+		etag = entry.etag
+	}
+	return call(ctx, etag)
+}
+
+func (c *ESIPublicClient) cachedNameFromNotModified(key string, httpResp *http.Response) (string, bool) {
+	if httpResp == nil || httpResp.StatusCode != http.StatusNotModified {
+		return "", false
+	}
+	entry, ok := c.getAny(key)
+	if !ok {
+		return "", false
+	}
+	c.refreshExpiry(key, httpResp)
+	return entry.value, true
+}
+
+func wrapPublicNameError(idLabel string, idValue int, httpResp *http.Response, respErr error) error {
+	err := fmt.Errorf("esi public name fetch failed (%s=%d): %w", idLabel, idValue, respErr)
+	if shouldRetryPublicESI(httpResp, respErr) {
+		return retry.RetryableError(err)
+	}
+	return err
 }
 
 func coalesceExpiry(expires time.Time, fallback time.Duration) time.Time {

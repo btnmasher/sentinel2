@@ -9,7 +9,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-func registerCrons(app *pocketbase.PocketBase, cfg config.Config, deps dependencies) {
+func registerCrons(app *pocketbase.PocketBase, cfg *config.Config, deps *dependencies) {
 	registerCleanupCron(app, deps)
 	if cfg.AuthBackend == "eve" {
 		registerCharacterRefreshCron(app, deps)
@@ -20,13 +20,13 @@ func registerCrons(app *pocketbase.PocketBase, cfg config.Config, deps dependenc
 	registerSDECron(app)
 }
 
-func registerCleanupCron(app *pocketbase.PocketBase, deps dependencies) {
+func registerCleanupCron(app *pocketbase.PocketBase, deps *dependencies) {
 	app.Cron().MustAdd("cleanup", "30 * * * *", func() {
 		runCleanupJob(app, deps)
 	})
 }
 
-func registerCharacterRefreshCron(app *pocketbase.PocketBase, deps dependencies) {
+func registerCharacterRefreshCron(app *pocketbase.PocketBase, deps *dependencies) {
 	app.Cron().MustAdd("character_refresh", "0 * * * *", func() {
 		runCharacterRefreshJob(app, deps)
 	})
@@ -51,7 +51,7 @@ func registerSDECron(app *pocketbase.PocketBase) {
 	})
 }
 
-func registerUploaderReleaseBootstrap(app *pocketbase.PocketBase, deps dependencies) {
+func registerUploaderReleaseBootstrap(app *pocketbase.PocketBase, deps *dependencies) {
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
 		if err := e.Next(); err != nil {
 			return err
@@ -61,7 +61,7 @@ func registerUploaderReleaseBootstrap(app *pocketbase.PocketBase, deps dependenc
 	})
 }
 
-func registerUploaderReleaseCron(app *pocketbase.PocketBase, deps dependencies) {
+func registerUploaderReleaseCron(app *pocketbase.PocketBase, deps *dependencies) {
 	app.Cron().MustAdd("uploader_releases", "*/15 * * * *", func() {
 		runUploaderReleaseRefresh(app, deps, jobs.TriggerCronSchedule)
 	})

@@ -2,7 +2,7 @@ package pbutils
 
 import "github.com/pocketbase/pocketbase/core"
 
-func SetRules(app core.App, name string, list, view, create, update, del string) error {
+func SetRules(app core.App, name, list, view, create, update, del string) error {
 	collection, err := app.FindCollectionByNameOrId(name)
 	if err != nil {
 		return err

@@ -11,8 +11,8 @@ import (
 	"sentinel2/internal/store"
 )
 
-func runCleanupJob(app *pocketbase.PocketBase, deps dependencies) {
-	runner := jobs.NewRunner(app, jobs.RunOptions{
+func runCleanupJob(app *pocketbase.PocketBase, deps *dependencies) {
+	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: jobs.JobCleanup,
 		JobOptions: jobs.JobOptions{
 			Kind:    jobs.JobCleanup,

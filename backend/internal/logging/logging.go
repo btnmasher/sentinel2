@@ -16,6 +16,9 @@ import (
 
 const (
 	RequestIDKey = "request_id"
+	callersDepth = 16
+	logCallSkip  = 3
+	requestIDLen = 16
 )
 
 func EnsureRequestID(c *core.RequestEvent) string {
@@ -72,7 +75,7 @@ type Fields map[string]any
 
 func (l *Logger) With(attrs ...slog.Attr) *Logger {
 	if l == nil {
-		return l
+		return nil
 	}
 	out := &Logger{
 		logger: l.logger,
@@ -138,8 +141,8 @@ func (l *Logger) log(level slog.Level, msg string, attrs ...slog.Attr) {
 }
 
 func callerAttrs() []slog.Attr {
-	pcs := make([]uintptr, 16)
-	n := runtime.Callers(3, pcs) // skip runtime.Callers, callerAttrs, and Logger.log
+	pcs := make([]uintptr, callersDepth)
+	n := runtime.Callers(logCallSkip, pcs) // skip runtime.Callers, callerAttrs, and Logger.log
 	frames := runtime.CallersFrames(pcs[:n])
 
 	var file string
@@ -214,7 +217,7 @@ func clientIP(req *http.Request, c *core.RequestEvent) string {
 }
 
 func newRequestID() string {
-	buf := make([]byte, 16)
+	buf := make([]byte, requestIDLen)
 	if _, err := rand.Read(buf); err != nil {
 		return "unknown"
 	}

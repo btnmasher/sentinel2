@@ -10,12 +10,12 @@ var (
 	errAnnouncementMessageRequired = errors.New("announcement message is required")
 )
 
-func normalizeAnnouncementPayload(payload siteAnnouncementPayload) (string, string, error) {
-	variant := strings.TrimSpace(strings.ToLower(payload.Variant))
+func normalizeAnnouncementPayload(payload siteAnnouncementPayload) (variant, message string, err error) {
+	variant = strings.TrimSpace(strings.ToLower(payload.Variant))
 	if variant != "banner" && variant != "modal" {
 		return "", "", errInvalidAnnouncementVariant
 	}
-	message := strings.TrimSpace(payload.Message)
+	message = strings.TrimSpace(payload.Message)
 	if message == "" {
 		return "", "", errAnnouncementMessageRequired
 	}

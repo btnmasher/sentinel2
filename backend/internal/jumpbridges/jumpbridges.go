@@ -23,6 +23,7 @@ var jumpbridgePattern = regexp.MustCompile(`^(?:(?P<structure_id>\d+)\s+)?(?P<fr
 const (
 	maxJumpbridgeDistanceLY = 5.0
 	metersPerLightYear      = 9.4607304725808e15
+	pairDirectionCount      = 2
 )
 
 type JumpbridgeService struct {
@@ -79,7 +80,7 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 	for _, pair := range resolvedPairs {
 		saved, savedErr := s.savePair(coll, pair.structureID, pair.fromSystem, pair.toSystem)
 		if savedErr != nil {
-			saveFailed += 2 - saved
+			saveFailed += pairDirectionCount - saved
 			continue
 		}
 		count += saved
@@ -92,10 +93,10 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 			Warn("jumpbridge save failures")
 	}
 
-	return count / 2, nil
+	return count / pairDirectionCount, nil
 }
 
-func (s *JumpbridgeService) AddPair(fromSystemID int, toSystemID int) (bool, error) {
+func (s *JumpbridgeService) AddPair(fromSystemID, toSystemID int) (bool, error) {
 	if fromSystemID <= 0 || toSystemID <= 0 {
 		return false, fmt.Errorf("invalid system id")
 	}
@@ -117,8 +118,8 @@ func (s *JumpbridgeService) AddPair(fromSystemID int, toSystemID int) (bool, err
 		return false, existingErr
 	}
 
-	a := int(fromSystem.GetInt("eve_id"))
-	b := int(toSystem.GetInt("eve_id"))
+	a := fromSystem.GetInt("eve_id")
+	b := toSystem.GetInt("eve_id")
 	key := pairKey(strconv.Itoa(a), strconv.Itoa(b))
 	if _, exists := existingPairs[key]; exists {
 		return false, nil
@@ -145,7 +146,7 @@ func (s *JumpbridgeService) AddPair(fromSystemID int, toSystemID int) (bool, err
 	return true, nil
 }
 
-func (s *JumpbridgeService) RemovePair(fromSystemID int, toSystemID int) (int, error) {
+func (s *JumpbridgeService) RemovePair(fromSystemID, toSystemID int) (int, error) {
 	if fromSystemID <= 0 || toSystemID <= 0 {
 		return 0, fmt.Errorf("invalid system id")
 	}
@@ -172,28 +173,48 @@ func (s *JumpbridgeService) RemovePair(fromSystemID int, toSystemID int) (int, e
 	return deleted, nil
 }
 
-func (s *JumpbridgeService) UpdatePair(oldFromSystemID int, oldToSystemID int, newFromSystemID int, newToSystemID int) (bool, error) {
-	if oldFromSystemID <= 0 || oldToSystemID <= 0 || newFromSystemID <= 0 || newToSystemID <= 0 {
-		return false, fmt.Errorf("invalid system id")
+func (s *JumpbridgeService) UpdatePair(oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID int) (bool, error) {
+	oldKey, newKey, validateErr := validateUpdatePairInput(oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID)
+	if validateErr != nil || oldKey == newKey {
+		return false, validateErr
 	}
-	if newFromSystemID == newToSystemID {
-		return false, fmt.Errorf("jumpbridge endpoints must be different systems")
+	existingBySystem, existingPairs, stateErr := s.updatePairState(oldFromSystemID, oldToSystemID, oldKey)
+	if stateErr != nil {
+		return false, stateErr
 	}
-
-	oldKey := pairKey(strconv.Itoa(oldFromSystemID), strconv.Itoa(oldToSystemID))
-	newKey := pairKey(strconv.Itoa(newFromSystemID), strconv.Itoa(newToSystemID))
-	if oldKey == newKey {
+	if _, exists := existingPairs[newKey]; exists {
 		return false, nil
 	}
+	fromSystem, toSystem, pairErr := s.resolveUpdatePairEndpoints(existingBySystem, newFromSystemID, newToSystemID)
+	if pairErr != nil {
+		return false, pairErr
+	}
+	if saveErr := s.replacePair(oldFromSystemID, oldToSystemID, fromSystem, toSystem); saveErr != nil {
+		return false, saveErr
+	}
+	return true, nil
+}
 
+func validateUpdatePairInput(oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID int) (oldKey, newKey string, err error) {
+	if oldFromSystemID <= 0 || oldToSystemID <= 0 || newFromSystemID <= 0 || newToSystemID <= 0 {
+		return "", "", fmt.Errorf("invalid system id")
+	}
+	if newFromSystemID == newToSystemID {
+		return "", "", fmt.Errorf("jumpbridge endpoints must be different systems")
+	}
+	oldKey = pairKey(strconv.Itoa(oldFromSystemID), strconv.Itoa(oldToSystemID))
+	newKey = pairKey(strconv.Itoa(newFromSystemID), strconv.Itoa(newToSystemID))
+	return oldKey, newKey, nil
+}
+
+func (s *JumpbridgeService) updatePairState(oldFromSystemID, oldToSystemID int, oldKey string) (existingBySystem map[int]int, existingPairs map[string]struct{}, err error) {
 	existingBySystem, existingPairs, existingErr := s.loadExistingPairState()
 	if existingErr != nil {
-		return false, existingErr
+		return nil, nil, existingErr
 	}
 	if _, exists := existingPairs[oldKey]; !exists {
-		return false, fmt.Errorf("original jumpbridge pair was not found")
+		return nil, nil, fmt.Errorf("original jumpbridge pair was not found")
 	}
-
 	// Exclude the old pair from uniqueness checks so one endpoint can be reassigned.
 	delete(existingPairs, oldKey)
 	if partner, ok := existingBySystem[oldFromSystemID]; ok && partner == oldToSystemID {
@@ -202,45 +223,42 @@ func (s *JumpbridgeService) UpdatePair(oldFromSystemID int, oldToSystemID int, n
 	if partner, ok := existingBySystem[oldToSystemID]; ok && partner == oldFromSystemID {
 		delete(existingBySystem, oldToSystemID)
 	}
+	return existingBySystem, existingPairs, nil
+}
 
-	if _, exists := existingPairs[newKey]; exists {
-		return false, nil
-	}
-
+func (s *JumpbridgeService) resolveUpdatePairEndpoints(existingBySystem map[int]int, newFromSystemID, newToSystemID int) (fromSystem, toSystem *core.Record, err error) {
 	fromSystem, fromErr := s.findSystemByEveID(newFromSystemID)
 	if fromErr != nil {
-		return false, fmt.Errorf("unknown from system: %d", newFromSystemID)
+		return nil, nil, fmt.Errorf("unknown from system: %d", newFromSystemID)
 	}
 	toSystem, toErr := s.findSystemByEveID(newToSystemID)
 	if toErr != nil {
-		return false, fmt.Errorf("unknown to system: %d", newToSystemID)
+		return nil, nil, fmt.Errorf("unknown to system: %d", newToSystemID)
 	}
-
-	a := int(fromSystem.GetInt("eve_id"))
-	b := int(toSystem.GetInt("eve_id"))
+	a := fromSystem.GetInt("eve_id")
+	b := toSystem.GetInt("eve_id")
 	if partner, ok := existingBySystem[a]; ok && partner != b {
-		return false, fmt.Errorf("system already linked: %s", fromSystem.GetString("name"))
+		return nil, nil, fmt.Errorf("system already linked: %s", fromSystem.GetString("name"))
 	}
 	if partner, ok := existingBySystem[b]; ok && partner != a {
-		return false, fmt.Errorf("system already linked: %s", toSystem.GetString("name"))
+		return nil, nil, fmt.Errorf("system already linked: %s", toSystem.GetString("name"))
 	}
 	if !withinMaxDistance(fromSystem, toSystem) {
-		return false, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears", maxJumpbridgeDistanceLY)
+		return nil, nil, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears", maxJumpbridgeDistanceLY)
 	}
+	return fromSystem, toSystem, nil
+}
 
+func (s *JumpbridgeService) replacePair(oldFromSystemID, oldToSystemID int, fromSystem, toSystem *core.Record) error {
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionJumpbridges)
 	if collErr != nil {
-		return false, collErr
+		return collErr
 	}
-
 	if _, saveErr := s.savePair(coll, "", fromSystem, toSystem); saveErr != nil {
-		return false, saveErr
+		return saveErr
 	}
-
-	if _, removeErr := s.RemovePair(oldFromSystemID, oldToSystemID); removeErr != nil {
-		return false, removeErr
-	}
-	return true, nil
+	_, removeErr := s.RemovePair(oldFromSystemID, oldToSystemID)
+	return removeErr
 }
 
 type jumpbridgeEntry struct {
@@ -327,7 +345,7 @@ func (s *JumpbridgeService) resolvePairs(entries []jumpbridgeEntry) ([]resolvedJ
 		if toErr != nil {
 			return nil, fmt.Errorf("unknown to system: %s", entry.to)
 		}
-		if int(fromSystem.GetInt("eve_id")) == int(toSystem.GetInt("eve_id")) {
+		if fromSystem.GetInt("eve_id") == toSystem.GetInt("eve_id") {
 			return nil, fmt.Errorf("jumpbridge endpoints must be different systems: %s", entry.from)
 		}
 		if !withinMaxDistance(fromSystem, toSystem) {
@@ -342,14 +360,14 @@ func (s *JumpbridgeService) resolvePairs(entries []jumpbridgeEntry) ([]resolvedJ
 	return resolved, nil
 }
 
-func pairKey(a string, b string) string {
+func pairKey(a, b string) string {
 	if a < b {
 		return a + "|" + b
 	}
 	return b + "|" + a
 }
 
-func parseStructureID(raw string, from string, to string) int64 {
+func parseStructureID(raw, from, to string) int64 {
 	if raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed != 0 {
 			return parsed
@@ -358,14 +376,18 @@ func parseStructureID(raw string, from string, to string) int64 {
 	if from == "" || to == "" {
 		return 0
 	}
-	hasher := fnv.New64a()
+	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(strings.ToLower(from)))
 	_, _ = hasher.Write([]byte("->"))
 	_, _ = hasher.Write([]byte(strings.ToLower(to)))
-	return -int64(hasher.Sum64())
+	hash := int64(hasher.Sum32())
+	if hash == 0 {
+		return -1
+	}
+	return -hash
 }
 
-func withinMaxDistance(from *core.Record, to *core.Record) bool {
+func withinMaxDistance(from, to *core.Record) bool {
 	dx := from.GetFloat("raw_x") - to.GetFloat("raw_x")
 	dy := from.GetFloat("raw_y") - to.GetFloat("raw_y")
 	dz := from.GetFloat("raw_z") - to.GetFloat("raw_z")
@@ -374,7 +396,7 @@ func withinMaxDistance(from *core.Record, to *core.Record) bool {
 	return lightyears <= maxJumpbridgeDistanceLY
 }
 
-func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, fromSystem *core.Record, toSystem *core.Record) (int, error) {
+func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, fromSystem, toSystem *core.Record) (int, error) {
 	saved := 0
 	directions := []struct {
 		fromName   string
@@ -414,17 +436,17 @@ func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, 
 	return saved, nil
 }
 
-func (s *JumpbridgeService) loadExistingPairState() (map[int]int, map[string]struct{}, error) {
+func (s *JumpbridgeService) loadExistingPairState() (bySystem map[int]int, pairs map[string]struct{}, err error) {
 	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionJumpbridges, "", "", 0, 0, nil)
 	if recordsErr != nil {
 		return nil, nil, recordsErr
 	}
 
-	bySystem := make(map[int]int)
-	pairs := make(map[string]struct{})
+	bySystem = make(map[int]int)
+	pairs = make(map[string]struct{})
 	for _, rec := range records {
-		from := int(rec.GetInt("from_solarsystem"))
-		to := int(rec.GetInt("to_solarsystem"))
+		from := rec.GetInt("from_solarsystem")
+		to := rec.GetInt("to_solarsystem")
 		if from <= 0 || to <= 0 || from == to {
 			continue
 		}
@@ -444,15 +466,15 @@ func (s *JumpbridgeService) removeSingles() int {
 
 	pairs := map[string]*core.Record{}
 	for _, bridge := range bridges {
-		key := bridgeKey(int(bridge.GetInt("from_solarsystem")), int(bridge.GetInt("to_solarsystem")))
+		key := bridgeKey(bridge.GetInt("from_solarsystem"), bridge.GetInt("to_solarsystem"))
 		pairs[key] = bridge
 	}
 
 	deleted := 0
 	deleteFailed := 0
 	for _, bridge := range bridges {
-		from := int(bridge.GetInt("from_solarsystem"))
-		to := int(bridge.GetInt("to_solarsystem"))
+		from := bridge.GetInt("from_solarsystem")
+		to := bridge.GetInt("to_solarsystem")
 		if _, ok := pairs[bridgeKey(to, from)]; !ok {
 			if deleteErr := s.App.Delete(bridge); deleteErr != nil {
 				deleteFailed++
@@ -479,7 +501,7 @@ func (s *JumpbridgeService) removeSingles() int {
 	return deleted
 }
 
-func bridgeKey(from int, to int) string {
+func bridgeKey(from, to int) string {
 	return strconv.Itoa(from) + "->" + strconv.Itoa(to)
 }
 

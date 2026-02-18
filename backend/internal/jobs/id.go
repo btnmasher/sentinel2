@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 )
 
+const jobIDBytesLen = 16
+
 func newJobID(prefix string) string {
 	id := newID()
 	if prefix == "" {
@@ -14,7 +16,7 @@ func newJobID(prefix string) string {
 }
 
 func newID() string {
-	buf := make([]byte, 16)
+	buf := make([]byte, jobIDBytesLen)
 	if _, err := rand.Read(buf); err != nil {
 		return "unknown"
 	}

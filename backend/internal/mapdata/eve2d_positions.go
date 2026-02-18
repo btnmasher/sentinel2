@@ -8,16 +8,15 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"sentinel2/internal/logging"
+	"sentinel2/internal/shared/geom"
 	"sentinel2/internal/store"
 )
 
-type regionBounds struct {
-	minX  float64
-	minY  float64
-	maxX  float64
-	maxY  float64
-	count int
-}
+const boundsMidpointDivisor = 2.0
+const (
+	normalizedRegionTarget = 10000.0
+	eve2dSpacingFactor     = 1.25
+)
 
 func UpdateRegionPositionsFromSystems(app core.App) error {
 	regions, regionsErr := app.FindRecordsByFilter(store.CollectionRegions, "eve_id < 11000000", "name", 0, 0, nil)
@@ -43,88 +42,20 @@ func UpdateRegionPositionsFromSystems(app core.App) error {
 		}).
 		Debug("region positions from systems started")
 
-	regionSet := map[int]struct{}{}
-	for _, region := range regions {
-		regionSet[int(region.GetInt("eve_id"))] = struct{}{}
-	}
-
-	eve2dBounds := map[int]*regionBounds{}
-	var systemsWithPos2D int
-
-	for _, system := range systems {
-		regionID := int(system.GetInt("region_id"))
-		if _, ok := regionSet[regionID]; !ok {
-			continue
-		}
-
-		eve2dX := system.GetFloat("eve2d_x")
-		eve2dY := -system.GetFloat("eve2d_y")
-		if eve2dX != 0 || eve2dY != 0 {
-			updateRegionBounds(eve2dBounds, regionID, eve2dX, eve2dY)
-			systemsWithPos2D++
-		}
-	}
-
-	centers := map[int][2]float64{}
-	minX, minY := 0.0, 0.0
-	maxX, maxY := 0.0, 0.0
-	first := true
-	for regionID, b := range eve2dBounds {
-		if b.count == 0 {
-			continue
-		}
-		x := b.minX + (b.maxX-b.minX)/2
-		y := b.minY + (b.maxY-b.minY)/2
-		centers[regionID] = [2]float64{x, y}
-		if first {
-			minX, maxX = x, x
-			minY, maxY = y, y
-			first = false
-			continue
-		}
-		if x < minX {
-			minX = x
-		}
-		if x > maxX {
-			maxX = x
-		}
-		if y < minY {
-			minY = y
-		}
-		if y > maxY {
-			maxY = y
-		}
-	}
-
-	scale := 1.0
-	dx := maxX - minX
-	dy := maxY - minY
-	const target = 10000.0
-	const spacingFactor = 1.25
-	if dx > 0 || dy > 0 {
-		if dx > dy {
-			scale = target / dx
-		} else {
-			scale = target / dy
-		}
-	}
-
-	for _, region := range regions {
-		regionID := int(region.GetInt("eve_id"))
-		if center, ok := centers[regionID]; ok {
-			region.Set("eve2d_x", int(math.Round((center[0]-minX)*scale*spacingFactor)))
-			region.Set("eve2d_y", int(math.Round((center[1]-minY)*scale*spacingFactor)))
-		}
-		if saveErr := app.Save(region); saveErr != nil {
-			logger.
-				WithFields(logging.Fields{
-					"region_id":   regionID,
-					"region_name": region.GetString("name"),
-				}).
-				WithErr(saveErr).
-				Debug("region position save failed")
-		}
-	}
+	regionSet := regionIDSet(regions)
+	eve2dBounds, systemsWithPos2D := collectEve2DBounds(systems, regionSet)
+	centers, minX, minY, maxX, maxY := centerPointsFromBounds(eve2dBounds)
+	scale := normalizeScale(minX, minY, maxX, maxY, normalizedRegionTarget)
+	saveEve2DRegionCenters(&eve2DRegionSaveInput{
+		app:           app,
+		regions:       regions,
+		centers:       centers,
+		minX:          minX,
+		minY:          minY,
+		scale:         scale,
+		spacingFactor: eve2dSpacingFactor,
+		logger:        logger,
+	})
 
 	logger.
 		WithFields(logging.Fields{
@@ -137,29 +68,71 @@ func UpdateRegionPositionsFromSystems(app core.App) error {
 	return nil
 }
 
-func updateRegionBounds(bounds map[int]*regionBounds, regionID int, x float64, y float64) {
-	b, exists := bounds[regionID]
-	if !exists {
-		bounds[regionID] = &regionBounds{
-			minX:  x,
-			minY:  y,
-			maxX:  x,
-			maxY:  y,
-			count: 1,
+func collectEve2DBounds(systems []*core.Record, regionSet map[int]struct{}) (eve2dBounds map[int]*geom.Bounds[float64], systemsWithPos2D int) {
+	eve2dBounds = map[int]*geom.Bounds[float64]{}
+	for _, system := range systems {
+		regionID := system.GetInt("region_id")
+		if _, ok := regionSet[regionID]; !ok {
+			continue
 		}
-		return
+		eve2dX := system.GetFloat("eve2d_x")
+		eve2dY := -system.GetFloat("eve2d_y")
+		if eve2dX == 0 && eve2dY == 0 {
+			continue
+		}
+		b := eve2dBounds[regionID]
+		if b == nil {
+			b = &geom.Bounds[float64]{}
+			eve2dBounds[regionID] = b
+		}
+		b.Add(eve2dX, eve2dY)
+		systemsWithPos2D++
 	}
-	if x < b.minX {
-		b.minX = x
+	return eve2dBounds, systemsWithPos2D
+}
+
+func centerPointsFromBounds(bounds map[int]*geom.Bounds[float64]) (centers map[int][2]float64, minX, minY, maxX, maxY float64) {
+	centers = map[int][2]float64{}
+	first := true
+	for regionID, b := range bounds {
+		if b == nil || b.Count == 0 {
+			continue
+		}
+		x := b.MinX + (b.MaxX-b.MinX)/boundsMidpointDivisor
+		y := b.MinY + (b.MaxY-b.MinY)/boundsMidpointDivisor
+		centers[regionID] = [2]float64{x, y}
+		minX, minY, maxX, maxY = extendFloatBounds(x, y, minX, minY, maxX, maxY, first)
+		first = false
 	}
-	if y < b.minY {
-		b.minY = y
+	return centers, minX, minY, maxX, maxY
+}
+
+type eve2DRegionSaveInput struct {
+	app           core.App
+	regions       []*core.Record
+	centers       map[int][2]float64
+	minX          float64
+	minY          float64
+	scale         float64
+	spacingFactor float64
+	logger        *logging.Logger
+}
+
+func saveEve2DRegionCenters(input *eve2DRegionSaveInput) {
+	for _, region := range input.regions {
+		regionID := region.GetInt("eve_id")
+		if center, ok := input.centers[regionID]; ok {
+			region.Set("eve2d_x", int(math.Round((center[0]-input.minX)*input.scale*input.spacingFactor)))
+			region.Set("eve2d_y", int(math.Round((center[1]-input.minY)*input.scale*input.spacingFactor)))
+		}
+		if saveErr := input.app.Save(region); saveErr != nil {
+			input.logger.
+				WithFields(logging.Fields{
+					"region_id":   regionID,
+					"region_name": region.GetString("name"),
+				}).
+				WithErr(saveErr).
+				Debug("region position save failed")
+		}
 	}
-	if x > b.maxX {
-		b.maxX = x
-	}
-	if y > b.maxY {
-		b.maxY = y
-	}
-	b.count++
 }

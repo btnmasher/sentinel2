@@ -26,42 +26,13 @@ func registerRealtime(app *pocketbase.PocketBase, intelService *intel.IntelServi
 
 func registerUploaderConfigTopicAuth(app *pocketbase.PocketBase, intelService *intel.IntelService) {
 	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
-		requiresUploaderSession := false
-		for _, subscription := range e.Subscriptions {
-			name := strings.TrimSpace(subscription)
-			if idx := strings.Index(name, "?"); idx >= 0 {
-				name = name[:idx]
-			}
-			if name == realtime.TopicUploaderConfig {
-				requiresUploaderSession = true
-				break
-			}
-		}
-		if !requiresUploaderSession {
+		if !subscriptionContainsTopic(e.Subscriptions, realtime.TopicUploaderConfig) {
 			return e.Next()
 		}
 
-		authRecord := e.Auth
-		if authRecord == nil || authRecord.Collection() == nil || authRecord.Collection().Name != store.CollectionUploaderSessions {
-			return e.ForbiddenError("Uploader realtime subscription requires uploader session auth.", nil)
+		if forbiddenMessage := uploaderConfigForbiddenReason(e.Auth, intelService); forbiddenMessage != "" {
+			return e.ForbiddenError(forbiddenMessage, nil)
 		}
-		if authRecord.GetString("scope") != intel.UploaderSessionScopeConfig {
-			return e.ForbiddenError("Invalid uploader session scope.", nil)
-		}
-		expiresAt := authRecord.GetDateTime("expires_at")
-		if expiresAt.IsZero() || expiresAt.Time().Before(time.Now()) {
-			return e.ForbiddenError("Uploader realtime session expired.", nil)
-		}
-		if intelService != nil {
-			uploaderTokenID := strings.TrimSpace(authRecord.GetString("uploader_token"))
-			if uploaderTokenID == "" {
-				return e.ForbiddenError("Uploader realtime session missing token linkage.", nil)
-			}
-			if _, tokenErr := intelService.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
-				return e.ForbiddenError("Uploader token revoked.", nil)
-			}
-		}
-
 		return e.Next()
 	})
 }
@@ -103,18 +74,7 @@ func registerUploaderConfigBroadcasts(app *pocketbase.PocketBase, intelService *
 
 func registerIntelUploadersTopic(app *pocketbase.PocketBase, intelService *intel.IntelService) {
 	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
-		requiresAuth := false
-		for _, subscription := range e.Subscriptions {
-			name := strings.TrimSpace(subscription)
-			if idx := strings.Index(name, "?"); idx >= 0 {
-				name = name[:idx]
-			}
-			if name == realtime.TopicIntelUploaders {
-				requiresAuth = true
-				break
-			}
-		}
-		if !requiresAuth {
+		if !subscriptionContainsTopic(e.Subscriptions, realtime.TopicIntelUploaders) {
 			return e.Next()
 		}
 
@@ -123,16 +83,7 @@ func registerIntelUploadersTopic(app *pocketbase.PocketBase, intelService *intel
 		}
 
 		if intelService != nil {
-			count, countErr := intelService.UploaderCount()
-			if countErr == nil {
-				payload, marshalErr := json.Marshal(map[string]any{"uploaders": count})
-				if marshalErr == nil {
-					e.Client.Send(subscriptions.Message{
-						Name: realtime.TopicIntelUploaders,
-						Data: payload,
-					})
-				}
-			}
+			sendIntelUploaderCountSnapshot(e, intelService)
 		}
 
 		return e.Next()
@@ -152,31 +103,90 @@ func startIntelUploaderHeartbeatCountBroadcasts(app *pocketbase.PocketBase, inte
 		ticker := time.NewTicker(uploaderCountRecomputeInterval)
 		go func() {
 			defer ticker.Stop()
-
-			lastCount := -1
-			for range ticker.C {
-				count, countErr := intelService.UploaderCount()
-				if countErr != nil {
-					logging.New(app).
-						WithErr(countErr).
-						Warn("intel uploader heartbeat count build failed")
-					continue
-				}
-				if count == lastCount {
-					continue
-				}
-				if publishErr := publishIntelUploaderCount(publisher, count); publishErr != nil {
-					logging.New(app).
-						WithErr(publishErr).
-						Warn("intel uploader heartbeat count publish failed")
-					continue
-				}
-				lastCount = count
-			}
+			runIntelUploaderHeartbeatLoop(app, intelService, publisher, ticker.C)
 		}()
 
 		return nil
 	})
+}
+
+func subscriptionContainsTopic(topicSubs []string, topic string) bool {
+	for _, subscription := range topicSubs {
+		if normalizeSubscriptionName(subscription) == topic {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSubscriptionName(subscription string) string {
+	name := strings.TrimSpace(subscription)
+	if idx := strings.Index(name, "?"); idx >= 0 {
+		name = name[:idx]
+	}
+	return name
+}
+
+func uploaderConfigForbiddenReason(authRecord *core.Record, intelService *intel.IntelService) string {
+	if authRecord == nil || authRecord.Collection() == nil || authRecord.Collection().Name != store.CollectionUploaderSessions {
+		return "Uploader realtime subscription requires uploader session auth."
+	}
+	if authRecord.GetString("scope") != intel.UploaderSessionScopeConfig {
+		return "Invalid uploader session scope."
+	}
+	expiresAt := authRecord.GetDateTime("expires_at")
+	if expiresAt.IsZero() || expiresAt.Time().Before(time.Now()) {
+		return "Uploader realtime session expired."
+	}
+	if intelService == nil {
+		return ""
+	}
+	uploaderTokenID := strings.TrimSpace(authRecord.GetString("uploader_token"))
+	if uploaderTokenID == "" {
+		return "Uploader realtime session missing token linkage."
+	}
+	if _, tokenErr := intelService.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
+		return "Uploader token revoked."
+	}
+	return ""
+}
+
+func sendIntelUploaderCountSnapshot(e *core.RealtimeSubscribeRequestEvent, intelService *intel.IntelService) {
+	count, countErr := intelService.UploaderCount()
+	if countErr != nil {
+		return
+	}
+	payload, marshalErr := json.Marshal(map[string]any{"uploaders": count})
+	if marshalErr != nil {
+		return
+	}
+	e.Client.Send(subscriptions.Message{
+		Name: realtime.TopicIntelUploaders,
+		Data: payload,
+	})
+}
+
+func runIntelUploaderHeartbeatLoop(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher, ticks <-chan time.Time) {
+	lastCount := -1
+	for range ticks {
+		count, countErr := intelService.UploaderCount()
+		if countErr != nil {
+			logging.New(app).
+				WithErr(countErr).
+				Warn("intel uploader heartbeat count build failed")
+			continue
+		}
+		if count == lastCount {
+			continue
+		}
+		if publishErr := publishIntelUploaderCount(publisher, count); publishErr != nil {
+			logging.New(app).
+				WithErr(publishErr).
+				Warn("intel uploader heartbeat count publish failed")
+			continue
+		}
+		lastCount = count
+	}
 }
 
 func publishIntelUploaderCount(publisher *realtime.Publisher, count int) error {

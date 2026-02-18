@@ -26,10 +26,12 @@ type CharactersResponse struct {
 	Characters []int `json:"characters"`
 }
 
+const defaultESIProxyTimeout = 30 * time.Second
+
 func NewESIProxyClient(baseURL string, logger *logging.Logger) *ESIProxyClient {
 	return &ESIProxyClient{
 		BaseURL: baseURL,
-		Client:  &http.Client{Timeout: 30 * time.Second},
+		Client:  &http.Client{Timeout: defaultESIProxyTimeout},
 		Logger:  logger,
 		limiter: globalESILimiter,
 	}
@@ -47,7 +49,7 @@ func (e *ESIProxyClient) Characters(ctx context.Context, user *core.Record, toke
 	return resp.Characters, nil
 }
 
-func (e *ESIProxyClient) CharacterLocation(ctx context.Context, character string, token string) (CharacterLocation, error) {
+func (e *ESIProxyClient) CharacterLocation(ctx context.Context, character, token string) (CharacterLocation, error) {
 	var resp CharacterLocation
 	if fetchErr := e.getJSON(ctx, "v2/characters/"+character+"/location/", token, &resp, character); fetchErr != nil {
 		return CharacterLocation{}, fetchErr
@@ -55,7 +57,7 @@ func (e *ESIProxyClient) CharacterLocation(ctx context.Context, character string
 	return resp, nil
 }
 
-func (e *ESIProxyClient) CharacterAffiliation(ctx context.Context, characterID int) (int, int, error) {
+func (e *ESIProxyClient) CharacterAffiliation(ctx context.Context, characterID int) (corporationID, allianceID int, err error) {
 	_ = ctx
 	_ = characterID
 	return 0, 0, ErrAffiliationUnsupported
@@ -67,9 +69,9 @@ func (e *ESIProxyClient) SetAutopilotWaypoint(ctx context.Context, req Autopilot
 	params.Set("add_to_beginning", strconv.FormatBool(req.AddToBeginning))
 	params.Set("clear_other_waypoints", strconv.FormatBool(req.ClearOtherWaypoints))
 	params.Set("destination_id", strconv.Itoa(req.DestinationID))
-	url := e.BaseURL + "v2/ui/autopilot/waypoint/?" + params.Encode()
+	requestURL := e.BaseURL + "v2/ui/autopilot/waypoint/?" + params.Encode()
 
-	httpReq, reqErr := http.NewRequestWithContext(ctx, "POST", url, nil)
+	httpReq, reqErr := http.NewRequestWithContext(ctx, "POST", requestURL, http.NoBody)
 	if reqErr != nil {
 		e.logRequest("v2/ui/autopilot/waypoint", "POST", req.CharacterID, 0, start, reqErr)
 		return reqErr
@@ -83,10 +85,10 @@ func (e *ESIProxyClient) SetAutopilotWaypoint(ctx context.Context, req Autopilot
 		e.logRequest("v2/ui/autopilot/waypoint", "POST", req.CharacterID, 0, start, respErr)
 		return respErr
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	status := resp.StatusCode
-	if resp.StatusCode >= 500 {
+	if resp.StatusCode >= http.StatusInternalServerError {
 		payload, _ := io.ReadAll(resp.Body)
 		if string(payload) == "Character token does not have required scopes" {
 			e.logRequest("v2/ui/autopilot/waypoint", "POST", req.CharacterID, status, start, ErrScopeRequired)
@@ -94,7 +96,7 @@ func (e *ESIProxyClient) SetAutopilotWaypoint(ctx context.Context, req Autopilot
 		}
 	}
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		err := errors.New(resp.Status)
 		e.logRequest("v2/ui/autopilot/waypoint", "POST", req.CharacterID, status, start, err)
 		return err
@@ -103,9 +105,9 @@ func (e *ESIProxyClient) SetAutopilotWaypoint(ctx context.Context, req Autopilot
 	return nil
 }
 
-func (e *ESIProxyClient) getJSON(ctx context.Context, path string, token string, out interface{}, characterID string) error {
+func (e *ESIProxyClient) getJSON(ctx context.Context, path, token string, out any, characterID string) error {
 	start := time.Now()
-	req, reqErr := http.NewRequestWithContext(ctx, "GET", e.BaseURL+path, nil)
+	req, reqErr := http.NewRequestWithContext(ctx, "GET", e.BaseURL+path, http.NoBody)
 	if reqErr != nil {
 		e.logRequest(path, "GET", characterID, 0, start, reqErr)
 		return reqErr
@@ -118,10 +120,10 @@ func (e *ESIProxyClient) getJSON(ctx context.Context, path string, token string,
 		e.logRequest(path, "GET", characterID, 0, start, respErr)
 		return respErr
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	status := resp.StatusCode
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		err := errors.New(resp.Status)
 		e.logRequest(path, "GET", characterID, status, start, err)
 		return err
@@ -137,7 +139,7 @@ func (e *ESIProxyClient) getJSON(ctx context.Context, path string, token string,
 	return decodeErr
 }
 
-func (e *ESIProxyClient) logRequest(endpoint string, method string, characterID string, status int, start time.Time, err error) {
+func (e *ESIProxyClient) logRequest(endpoint, method, characterID string, status int, start time.Time, err error) {
 	if e == nil || e.Logger == nil {
 		return
 	}

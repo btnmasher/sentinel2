@@ -13,13 +13,15 @@ import (
 const (
 	SentinelVersion = "2.0.1"
 
-	DefaultOIDCIssuer    = "https://sso.pleaseignore.com/auth/realms/auth-ng"
-	DefaultAuthEndpoint  = "https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/auth"
+	DefaultOIDCIssuer   = "https://sso.pleaseignore.com/auth/realms/auth-ng"
+	DefaultAuthEndpoint = "https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/auth"
+	//nolint:gosec // endpoint URL, not a credential
 	DefaultTokenEndpoint = "https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/token"
 
 	DefaultAuthBackend = "eve"
 
-	DefaultEVEAuthURL  = "https://login.eveonline.com/v2/oauth/authorize"
+	DefaultEVEAuthURL = "https://login.eveonline.com/v2/oauth/authorize"
+	//nolint:gosec // endpoint URL, not a credential
 	DefaultEVETokenURL = "https://login.eveonline.com/v2/oauth/token"
 )
 
@@ -96,19 +98,19 @@ func normalizeAuthBackend(value string) string {
 	return value
 }
 
-func (c Config) RequiredRoles() []string {
+func (c *Config) RequiredRoles() []string {
 	return splitCSV(c.OIDCRequiredRoles)
 }
 
-func (c Config) StaffRoles() []string {
+func (c *Config) StaffRoles() []string {
 	return splitCSV(c.OIDCStaffRoles)
 }
 
-func (c Config) EVEScopeList() []string {
+func (c *Config) EVEScopeList() []string {
 	return splitScopes(c.EVEScopes)
 }
 
-func (c Config) DefaultRegions() []string {
+func (c *Config) DefaultRegions() []string {
 	return splitRegions(c.DefaultMapRegions)
 }
 

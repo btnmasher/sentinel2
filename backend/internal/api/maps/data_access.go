@@ -11,11 +11,15 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 
 	"sentinel2/internal/format"
+	"sentinel2/internal/shared/collections"
+	"sentinel2/internal/shared/queryhelpers"
 	"sentinel2/internal/store"
 )
 
+const findByNameCandidatesLimit = 50
+
 func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]RegionDTO, error) {
-	filter, params := buildFilter("eve_id", regionIDs)
+	filter, params := queryhelpers.BuildOrEqualsFilter("eve_id", regionIDs)
 	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionRegions, filter, "name", 0, 0, params)
 	if recordsErr != nil {
 		return nil, recordsErr
@@ -23,7 +27,7 @@ func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]RegionD
 
 	out := map[int]RegionDTO{}
 	for _, rec := range records {
-		id := int(rec.GetInt("eve_id"))
+		id := rec.GetInt("eve_id")
 		dto := RegionDTO{
 			Region: id,
 			Name:   rec.GetString("name"),
@@ -59,7 +63,7 @@ func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]RegionD
 }
 
 func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]SystemDTO, error) {
-	filter, params := buildFilter("region_id", regionIDs)
+	filter, params := queryhelpers.BuildOrEqualsFilter("region_id", regionIDs)
 	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionSolarSystems, filter, "", 0, 0, params)
 	if recordsErr != nil {
 		return nil, recordsErr
@@ -67,7 +71,7 @@ func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]SystemD
 
 	out := map[int]SystemDTO{}
 	for _, rec := range records {
-		id := int(rec.GetInt("eve_id"))
+		id := rec.GetInt("eve_id")
 		dto := SystemDTO{
 			Name:           rec.GetString("name"),
 			SecurityStatus: rec.GetFloat("security_status"),
@@ -77,9 +81,13 @@ func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]SystemD
 		}
 		switch mode {
 		case "real":
+			hasRealX := rec.Get("real_x") != nil
+			hasRealY := rec.Get("real_y") != nil
 			dto.Position.X = rec.GetInt("real_x")
 			dto.Position.Y = rec.GetInt("real_y")
-			if dto.Position.X == 0 && dto.Position.Y == 0 {
+			// A real position of (0,0) is valid after normalization.
+			// Fall back only when the real coordinates are missing in storage.
+			if !hasRealX && !hasRealY {
 				dto.Position.X = rec.GetInt("raw_x")
 				dto.Position.Y = -rec.GetInt("raw_z")
 			}
@@ -102,8 +110,8 @@ func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]SystemD
 }
 
 func (h *MapHandler) fetchGates(regionIDs []int) ([]GateDTO, error) {
-	filter, params := buildFilter("from_region", regionIDs)
-	filterTo, paramsTo := buildFilter("to_region", regionIDs)
+	filter, params := queryhelpers.BuildOrEqualsFilter("from_region", regionIDs)
+	filterTo, paramsTo := queryhelpers.BuildOrEqualsFilter("to_region", regionIDs)
 	stdmaps.Copy(params, paramsTo)
 
 	combinedFilter := "(" + filter + ") || (" + filterTo + ")"
@@ -145,8 +153,8 @@ func (h *MapHandler) fetchGates(regionIDs []int) ([]GateDTO, error) {
 }
 
 func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]JumpbridgeDTO, error) {
-	filter, params := buildFilter("from_region", regionIDs)
-	filterTo, paramsTo := buildFilter("to_region", regionIDs)
+	filter, params := queryhelpers.BuildOrEqualsFilter("from_region", regionIDs)
+	filterTo, paramsTo := queryhelpers.BuildOrEqualsFilter("to_region", regionIDs)
 	stdmaps.Copy(params, paramsTo)
 
 	combinedFilter := "(" + filter + ") || (" + filterTo + ")"
@@ -168,10 +176,9 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]JumpbridgeDTO, error) 
 			fromRegion, toRegion = toRegion, fromRegion
 		}
 		key := strconv.Itoa(from) + "-" + strconv.Itoa(to)
-		if _, ok := seen[key]; ok {
+		if !collections.MarkSeen(seen, key) {
 			continue
 		}
-		seen[key] = struct{}{}
 
 		out = append(out, JumpbridgeDTO{
 			From:       from,
@@ -192,7 +199,7 @@ func (h *MapHandler) parseSystemIDs(value string) ([]int, error) {
 	return h.parseIDsByName(value, store.CollectionSolarSystems)
 }
 
-func (h *MapHandler) parseIDsByName(value string, collection string) ([]int, error) {
+func (h *MapHandler) parseIDsByName(value, collection string) ([]int, error) {
 	parts := format.SplitTokens(value)
 	out := []int{}
 	for _, part := range parts {
@@ -209,12 +216,12 @@ func (h *MapHandler) parseIDsByName(value string, collection string) ([]int, err
 		if recordErr != nil {
 			return nil, recordErr
 		}
-		out = append(out, int(record.GetInt("eve_id")))
+		out = append(out, record.GetInt("eve_id"))
 	}
 	return out, nil
 }
 
-func (h *MapHandler) findRecordByName(collection string, name string) (*core.Record, error) {
+func (h *MapHandler) findRecordByName(collection, name string) (*core.Record, error) {
 	records, recordsErr := h.App.FindRecordsByFilter(
 		collection,
 		"name = {:name}",
@@ -229,7 +236,7 @@ func (h *MapHandler) findRecordByName(collection string, name string) (*core.Rec
 		collection,
 		"name ~ {:name}",
 		"",
-		50,
+		findByNameCandidatesLimit,
 		0, dbx.Params{"name": "%" + name + "%"},
 	)
 	if recordsErr != nil {

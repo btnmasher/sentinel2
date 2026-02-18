@@ -12,8 +12,8 @@ import (
 
 const uploaderReleasesTimeout = 30 * time.Second
 
-func runUploaderReleaseRefresh(app *pocketbase.PocketBase, deps dependencies, trigger string) {
-	runner := jobs.NewRunner(app, jobs.RunOptions{
+func runUploaderReleaseRefresh(app *pocketbase.PocketBase, deps *dependencies, trigger string) {
+	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: jobs.JobUploaderReleases,
 		JobOptions: jobs.JobOptions{
 			Kind:    jobs.JobUploaderReleases,

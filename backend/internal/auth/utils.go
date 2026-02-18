@@ -15,7 +15,7 @@ func tokenExpiry(token *oauth2.Token) int64 {
 	return time.Now().Add(time.Hour).Unix()
 }
 
-func absoluteURL(c *core.RequestEvent, path string) string {
+func absoluteURL(c *core.RequestEvent) string {
 	req := c.Request
 	scheme := "http"
 	if rawProto := req.Header.Get("X-Forwarded-Proto"); rawProto != "" {
@@ -28,5 +28,5 @@ func absoluteURL(c *core.RequestEvent, path string) string {
 	if req.TLS != nil {
 		scheme = "https"
 	}
-	return scheme + "://" + req.Host + path
+	return scheme + "://" + req.Host + "/api/auth/callback"
 }

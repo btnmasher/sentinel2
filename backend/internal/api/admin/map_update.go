@@ -23,7 +23,7 @@ func (h *MapUpdateHandler) RunAll(c *core.RequestEvent) error {
 	if c.Auth != nil {
 		actorID = c.Auth.Id
 	}
-	runner := jobs.NewRunner(h.App, jobs.RunOptions{
+	runner := jobs.NewRunner(h.App, &jobs.RunOptions{
 		JobName: mapdata.JobMapDataUpdate,
 		JobOptions: jobs.JobOptions{
 			Kind:    "map_data_update",
@@ -47,7 +47,7 @@ func (h *MapUpdateHandler) RunAll(c *core.RequestEvent) error {
 	go func(jobID string, actorID string) {
 		baseCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		localRunner := jobs.NewRunner(h.App, jobs.RunOptions{
+		localRunner := jobs.NewRunner(h.App, &jobs.RunOptions{
 			JobID: jobID,
 			JobOptions: jobs.JobOptions{
 				Kind:    "map_data_update",
@@ -60,7 +60,7 @@ func (h *MapUpdateHandler) RunAll(c *core.RequestEvent) error {
 		mapdata.RunMapDataUpdateWithContext(baseCtx, h.App, localRunner, jobs.TriggerAdminManual, true)
 	}(jobID, actorID)
 	if h.Audit != nil {
-		h.Audit.LogRequest(c, audit.Event{
+		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionAdminMapDataRunAll,
 			Summary:     "Triggered full map data update",
 			TargetType:  audit.TargetTypeJob,
@@ -120,7 +120,7 @@ func (h *MapUpdateHandler) runStep(c *core.RequestEvent, step string) error {
 		Logger:  logging.WithRequest(h.App, c),
 	})
 	if h.Audit != nil {
-		h.Audit.LogRequest(c, audit.Event{
+		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionAdminMapDataRunStep,
 			Summary:     fmt.Sprintf("Triggered map data step %s", step),
 			TargetType:  audit.TargetTypeJob,

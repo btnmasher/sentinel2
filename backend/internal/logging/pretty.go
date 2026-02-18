@@ -22,6 +22,8 @@ var (
 	jsonViaPB     = false
 )
 
+const prettyFieldIndent = 2
+
 type Options struct {
 	MinLevel             slog.Level
 	PrettyEnabled        bool
@@ -98,7 +100,7 @@ func prettyPrintFromPB(log *pblogger.Log) {
 	if !shouldPrettyPrint() || log == nil {
 		return
 	}
-	level := slog.Level(log.Level)
+	level := log.Level
 	attrs := attrsFromMap(log.Data)
 	prettyPrint(level, log.Message, attrs)
 }
@@ -107,7 +109,7 @@ func writeJSONFromPB(log *pblogger.Log) {
 	if !jsonEnabled || log == nil {
 		return
 	}
-	level := slog.Level(log.Level)
+	level := log.Level
 	attrs := attrsFromMap(log.Data)
 	writeJSONLog(level, log.Message, attrs)
 }
@@ -158,18 +160,18 @@ func renderAttrs(attrs []slog.Attr) string {
 		parts = append(parts, keyStyle.Render(k)+sepStyle.Render("=")+valStyle.Render(fmt.Sprintf("%v", values[k])))
 	}
 
-	return lipgloss.NewStyle().MarginLeft(2).Render(strings.Join(parts, " "))
+	return lipgloss.NewStyle().MarginLeft(prettyFieldIndent).Render(strings.Join(parts, " "))
 }
 
-func resolveAttr(attr slog.Attr) (string, any) {
+func resolveAttr(attr slog.Attr) (key string, value any) {
 	if attr.Key == "" {
 		return "", nil
 	}
-	value := attr.Value.Resolve()
-	switch value.Kind() {
+	resolvedValue := attr.Value.Resolve()
+	switch resolvedValue.Kind() {
 	case slog.KindGroup:
 		inner := map[string]any{}
-		for _, groupAttr := range value.Group() {
+		for _, groupAttr := range resolvedValue.Group() {
 			key, val := resolveAttr(groupAttr)
 			if key != "" {
 				inner[key] = val
@@ -177,7 +179,7 @@ func resolveAttr(attr slog.Attr) (string, any) {
 		}
 		return attr.Key, inner
 	default:
-		return attr.Key, value.Any()
+		return attr.Key, resolvedValue.Any()
 	}
 }
 

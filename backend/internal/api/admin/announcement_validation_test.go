@@ -1,6 +1,9 @@
 package admin
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestNormalizeAnnouncementPayload_Valid(t *testing.T) {
 	variant, message, err := normalizeAnnouncementPayload(siteAnnouncementPayload{
@@ -23,7 +26,7 @@ func TestNormalizeAnnouncementPayload_InvalidVariant(t *testing.T) {
 		Variant: "toast",
 		Message: "hello",
 	})
-	if err != errInvalidAnnouncementVariant {
+	if !errors.Is(err, errInvalidAnnouncementVariant) {
 		t.Fatalf("err = %v, want %v", err, errInvalidAnnouncementVariant)
 	}
 }
@@ -33,7 +36,7 @@ func TestNormalizeAnnouncementPayload_EmptyMessage(t *testing.T) {
 		Variant: "banner",
 		Message: "   ",
 	})
-	if err != errAnnouncementMessageRequired {
+	if !errors.Is(err, errAnnouncementMessageRequired) {
 		t.Fatalf("err = %v, want %v", err, errAnnouncementMessageRequired)
 	}
 }
@@ -59,7 +62,7 @@ func TestNormalizeAnnouncementPayload_InvalidVariantCheckedFirst(t *testing.T) {
 		Variant: "invalid",
 		Message: "   ",
 	})
-	if err != errInvalidAnnouncementVariant {
+	if !errors.Is(err, errInvalidAnnouncementVariant) {
 		t.Fatalf("err = %v, want %v", err, errInvalidAnnouncementVariant)
 	}
 }

@@ -49,7 +49,10 @@ type dependencies struct {
 	uploaderHandler    *uploaderapi.Handler
 }
 
-func Run(cfg config.Config) error {
+func Run(cfg *config.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("missing config")
+	}
 	app := pocketbase.NewWithConfig(pocketbase.Config{
 		DefaultDev: cfg.DebugEnabled,
 	})
@@ -87,12 +90,12 @@ func Run(cfg config.Config) error {
 		intel.NewTopRoutesService(app),
 	)
 	authHandler := authapi.NewAuthHandler(authManager, auditSvc)
-	cleanup := cleanup.New(app)
+	cleanupSvc := cleanup.New(app)
 	staffChannels := staffapi.NewChannelsHandler(app, auditSvc)
 	staffJumpbridges := staffapi.NewJumpbridgeHandler(app, jumpbridgeService, auditSvc)
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
-	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanup, intelService, auditSvc)
+	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, auditSvc)
 	uploaderReleases := uploaderrelease.New(app, cfg)
 	uploaderHandler := uploaderapi.NewHandler(uploaderReleases)
 
@@ -107,7 +110,7 @@ func Run(cfg config.Config) error {
 		intelHandler:       intelHandler,
 		mapHandler:         mapHandler,
 		authHandler:        authHandler,
-		cleanup:            cleanup,
+		cleanup:            cleanupSvc,
 		staffChannels:      staffChannels,
 		staffJumpbridges:   staffJumpbridges,
 		adminMapDataUpdate: adminMapDataUpdate,
@@ -117,8 +120,8 @@ func Run(cfg config.Config) error {
 		uploaderHandler:    uploaderHandler,
 	}
 
-	registerRoutes(app, cfg, deps)
-	registerCrons(app, cfg, deps)
+	registerRoutes(app, cfg, &deps)
+	registerCrons(app, cfg, &deps)
 	registerRealtime(app, intelService, realtimePublisher)
 
 	if startErr := app.Start(); startErr != nil {
@@ -130,7 +133,10 @@ func Run(cfg config.Config) error {
 	return nil
 }
 
-func buildAuthProvider(cfg config.Config, app *pocketbase.PocketBase, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (auth.Provider, error) {
+func buildAuthProvider(cfg *config.Config, app *pocketbase.PocketBase, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (auth.Provider, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("missing config")
+	}
 	switch cfg.AuthBackend {
 	case "eve":
 		oauthConfig := oauth2.Config{
@@ -143,7 +149,7 @@ func buildAuthProvider(cfg config.Config, app *pocketbase.PocketBase, publicESI 
 			Scopes: cfg.EVEScopeList(),
 		}
 		esiClient := esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
-		return auth.NewEVEProvider(app, oauthConfig, esiClient, publicESI, intelService), nil
+		return auth.NewEVEProvider(app, &oauthConfig, esiClient, publicESI, intelService), nil
 	default:
 		oidcClient, oidcErr := oidc.New(context.Background(), cfg)
 		if oidcErr != nil {
@@ -153,7 +159,10 @@ func buildAuthProvider(cfg config.Config, app *pocketbase.PocketBase, publicESI 
 	}
 }
 
-func buildESIClient(app *pocketbase.PocketBase, cfg config.Config) esi.ESIClient {
+func buildESIClient(app *pocketbase.PocketBase, cfg *config.Config) esi.ESIClient {
+	if cfg == nil {
+		return esi.NewESIDirectClient("", logging.New(app))
+	}
 	if cfg.AuthBackend == "eve" {
 		return esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
 	}

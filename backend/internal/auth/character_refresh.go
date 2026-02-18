@@ -2,9 +2,10 @@ package auth
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -39,7 +40,15 @@ type refreshJobMeta struct {
 
 type refreshJobMetaKey struct{}
 
-func WithRefreshJobMeta(ctx context.Context, trigger string, actorID string) context.Context {
+const (
+	defaultRefreshBatchSize        = 25
+	defaultRefreshPause            = 350 * time.Millisecond
+	defaultRefreshRetries          = 2
+	defaultRefreshBackoffMs        = 250
+	maxRefreshJitterMs      uint32 = 800
+)
+
+func WithRefreshJobMeta(ctx context.Context, trigger, actorID string) context.Context {
 	return context.WithValue(ctx, refreshJobMetaKey{}, refreshJobMeta{
 		Trigger: trigger,
 		ActorID: actorID,
@@ -55,11 +64,11 @@ func getRefreshJobMeta(ctx context.Context) refreshJobMeta {
 	return meta
 }
 
-func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esi esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, auditSvc *audit.Service) *CharacterRefresher {
-	return &CharacterRefresher{App: app, EVE: eve, ESI: esi, PublicESI: publicESI, Intel: intelService, Audit: auditSvc}
+func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, auditSvc *audit.Service) *CharacterRefresher {
+	return &CharacterRefresher{App: app, EVE: eve, ESI: esiClient, PublicESI: publicESI, Intel: intelService, Audit: auditSvc}
 }
 
-func (r *CharacterRefresher) RefreshAll(ctx context.Context) (int, int) {
+func (r *CharacterRefresher) RefreshAll(ctx context.Context) (success, failed int) {
 	if r.App == nil {
 		return 0, 0
 	}
@@ -76,15 +85,13 @@ func (r *CharacterRefresher) RefreshAll(ctx context.Context) (int, int) {
 	if meta.Trigger == "" {
 		ctx = WithRefreshJobMeta(ctx, jobs.TriggerCronSchedule, "")
 	}
-	jitter := time.Duration(rand.New(rand.NewSource(time.Now().UnixNano())).Intn(800)) * time.Millisecond
-	return r.RefreshAllBatched(ctx, records, 25, 350*time.Millisecond+jitter)
+	jitter := refreshJitter()
+	return r.RefreshAllBatched(ctx, records, defaultRefreshBatchSize, defaultRefreshPause+jitter)
 }
 
-func (r *CharacterRefresher) RefreshAllBatched(ctx context.Context, records []*core.Record, batchSize int, pause time.Duration) (int, int) {
-	success := 0
-	failed := 0
+func (r *CharacterRefresher) RefreshAllBatched(ctx context.Context, records []*core.Record, batchSize int, pause time.Duration) (success, failed int) {
 	if batchSize <= 0 {
-		batchSize = 25
+		batchSize = defaultRefreshBatchSize
 	}
 	if pause < 0 {
 		pause = 0
@@ -95,43 +102,86 @@ func (r *CharacterRefresher) RefreshAllBatched(ctx context.Context, records []*c
 			return success, failed
 		}
 
-		runner, started := r.tryStartRefreshJob(ctx, record)
-		if !started {
-			continue
-		}
-
-		var refreshErr error
-		if runner != nil {
-			_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
-				refreshErr = r.refreshWithRetry(ctx, record, 2)
-				return refreshErr
-			})
-		} else {
-			refreshErr = r.refreshWithRetry(ctx, record, 2)
-		}
-		if refreshErr != nil {
+		if err := r.refreshOneRecord(ctx, record); err != nil {
 			failed++
 		} else {
 			success++
 		}
 
-		if (i+1)%batchSize == 0 {
-			waitFor := pause
-			if provider, ok := r.ESI.(throttleDelayProvider); ok {
-				if delay := provider.ThrottleDelay(); delay > waitFor {
-					waitFor = delay
-				}
-			}
-			if waitFor > 0 {
-				select {
-				case <-ctx.Done():
-					return success, failed
-				case <-time.After(waitFor):
-				}
-			}
+		waitErr := r.waitAtBatchBoundary(ctx, i+1, batchSize, pause)
+		if waitErr != nil {
+			return success, failed
 		}
 	}
 	return success, failed
+}
+
+func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *core.Record) error {
+	if character == nil {
+		return fmt.Errorf("missing character")
+	}
+
+	if r.EVE == nil {
+		return fmt.Errorf("eve provider unavailable")
+	}
+
+	userID, user := r.findCharacterUser(character)
+
+	refreshToken := character.GetString("oauth_refresh_token")
+	if refreshToken == "" {
+		logging.New(r.App).
+			WithFields(logging.Fields{
+				"character_record_id": character.Id,
+				"character_id":        character.GetInt("eve_character_id"),
+			}).
+			Warn("character refresh missing refresh token")
+		return r.refreshAffiliationOnly(ctx, character, fmt.Errorf("missing refresh token"))
+	}
+
+	_, refreshErr := r.EVE.RefreshCharacter(ctx, user, character)
+	if refreshErr != nil {
+		r.handleRefreshDenied(userID, character, refreshErr)
+		return r.refreshAffiliationOnly(ctx, character, refreshErr)
+	}
+	return nil
+}
+
+func (r *CharacterRefresher) refreshOneRecord(ctx context.Context, record *core.Record) error {
+	runner, started := r.tryStartRefreshJob(ctx, record)
+	if !started {
+		return nil
+	}
+	if runner == nil {
+		return r.refreshWithRetry(ctx, record, defaultRefreshRetries)
+	}
+	var refreshErr error
+	//nolint:contextcheck // runner supplies run context through callback and manages cancellation.
+	_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
+		refreshErr = r.refreshWithRetry(ctx, record, defaultRefreshRetries)
+		return refreshErr
+	})
+	return refreshErr
+}
+
+func (r *CharacterRefresher) waitAtBatchBoundary(ctx context.Context, index, batchSize int, pause time.Duration) error {
+	if index%batchSize != 0 {
+		return nil
+	}
+	waitFor := pause
+	if provider, ok := r.ESI.(throttleDelayProvider); ok {
+		if delay := provider.ThrottleDelay(); delay > waitFor {
+			waitFor = delay
+		}
+	}
+	if waitFor <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(waitFor):
+		return nil
+	}
 }
 
 func (r *CharacterRefresher) tryStartRefreshJob(ctx context.Context, record *core.Record) (*jobs.Runner, bool) {
@@ -152,7 +202,7 @@ func (r *CharacterRefresher) tryStartRefreshJob(ctx context.Context, record *cor
 	}
 
 	meta := getRefreshJobMeta(ctx)
-	runner := jobs.NewRunner(r.App, jobs.RunOptions{
+	runner := jobs.NewRunner(r.App, &jobs.RunOptions{
 		JobName: jobs.JobCharacterRefresh,
 		JobOptions: jobs.JobOptions{
 			Kind:    jobs.JobCharacterRefresh,
@@ -178,7 +228,7 @@ func (r *CharacterRefresher) refreshWithRetry(ctx context.Context, record *core.
 
 		lastErr = refreshErr
 		if attempt < retries {
-			backoff := time.Duration(250*(1<<attempt)) * time.Millisecond
+			backoff := time.Duration(defaultRefreshBackoffMs*(1<<attempt)) * time.Millisecond
 			select {
 			case <-ctx.Done():
 				logging.New(r.App).
@@ -203,62 +253,52 @@ func (r *CharacterRefresher) refreshWithRetry(ctx context.Context, record *core.
 	return lastErr
 }
 
-func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *core.Record) error {
+func refreshJitter() time.Duration {
+	var buf [4]byte
+	if _, err := cryptorand.Read(buf[:]); err != nil {
+		return 0
+	}
+	jitterMs := binary.LittleEndian.Uint32(buf[:]) % maxRefreshJitterMs
+	return time.Duration(jitterMs) * time.Millisecond
+}
+
+func (r *CharacterRefresher) findCharacterUser(character *core.Record) (string, *core.Record) {
 	if character == nil {
-		return fmt.Errorf("missing character")
+		return "", nil
 	}
-
-	if r.EVE == nil {
-		return fmt.Errorf("eve provider unavailable")
-	}
-
 	userID := character.GetString("user")
-	var user *core.Record
-	if userID != "" {
-		u, userErr := r.App.FindRecordById(store.CollectionUsers, userID)
-		if userErr == nil {
-			user = u
-		}
+	if userID == "" {
+		return "", nil
 	}
-
-	refreshToken := character.GetString("oauth_refresh_token")
-	if refreshToken == "" {
-		logging.New(r.App).
-			WithFields(logging.Fields{
-				"character_record_id": character.Id,
-				"character_id":        character.GetInt("eve_character_id"),
-			}).
-			Warn("character refresh missing refresh token")
-		return r.refreshAffiliationOnly(ctx, character, fmt.Errorf("missing refresh token"))
+	user, userErr := r.App.FindRecordById(store.CollectionUsers, userID)
+	if userErr != nil {
+		return userID, nil
 	}
+	return userID, user
+}
 
-	_, refreshErr := r.EVE.RefreshCharacter(ctx, user, character)
-	if refreshErr != nil {
-		accessDenied := errors.Is(refreshErr, ErrAccessDenied)
-		if accessDenied && userID != "" {
-			if r.Intel != nil {
-				_ = r.Intel.RevokeUploaderTokensForUser(userID)
-			}
-			if r.Audit != nil {
-				r.Audit.LogEvent(audit.Event{
-					Action:          audit.ActionUserRevokeUploadTokens,
-					Summary:         "Revoked uploader tokens (allowlist)",
-					TargetUserID:    userID,
-					TargetCharacter: character,
-				})
-			}
-			logging.New(r.App).
-				WithFields(logging.Fields{
-					"user_id":             userID,
-					"character_record_id": character.Id,
-					"character_id":        character.GetInt("eve_character_id"),
-				}).
-				Info("revoked uploader tokens due to access denied")
-		}
-
-		return r.refreshAffiliationOnly(ctx, character, refreshErr)
+func (r *CharacterRefresher) handleRefreshDenied(userID string, character *core.Record, refreshErr error) {
+	if userID == "" || !errors.Is(refreshErr, ErrAccessDenied) {
+		return
 	}
-	return nil
+	if r.Intel != nil {
+		_ = r.Intel.RevokeUploaderTokensForUser(userID)
+	}
+	if r.Audit != nil {
+		r.Audit.LogEvent(&audit.Event{
+			Action:          audit.ActionUserRevokeUploadTokens,
+			Summary:         "Revoked uploader tokens (allowlist)",
+			TargetUserID:    userID,
+			TargetCharacter: character,
+		})
+	}
+	logging.New(r.App).
+		WithFields(logging.Fields{
+			"user_id":             userID,
+			"character_record_id": character.Id,
+			"character_id":        character.GetInt("eve_character_id"),
+		}).
+		Info("revoked uploader tokens due to access denied")
 }
 
 func (r *CharacterRefresher) refreshAffiliationOnly(ctx context.Context, character *core.Record, refreshErr error) error {

@@ -35,7 +35,10 @@ type Event struct {
 	ResolveTargetCharacter bool
 }
 
-func (s *Service) LogRequest(c *core.RequestEvent, event Event) {
+func (s *Service) LogRequest(c *core.RequestEvent, event *Event) {
+	if event == nil {
+		return
+	}
 	if c == nil {
 		s.LogEvent(event)
 		return
@@ -51,7 +54,10 @@ func (s *Service) LogRequest(c *core.RequestEvent, event Event) {
 	s.LogEvent(event)
 }
 
-func (s *Service) LogEvent(event Event) {
+func (s *Service) LogEvent(event *Event) {
+	if event == nil {
+		return
+	}
 	if s.App == nil {
 		return
 	}
@@ -71,23 +77,11 @@ func (s *Service) LogEvent(event Event) {
 	record.Set("summary", event.Summary)
 	record.Set("target_user_id", strings.TrimSpace(event.TargetUserID))
 
-	targetCharacter := event.TargetCharacter
-	if targetCharacter == nil && event.ResolveTargetCharacter && event.TargetUserID != "" {
-		targetCharacter = s.resolveTargetCharacter(event.TargetUserID)
-	}
-	if targetCharacter != nil {
-		record.Set("target_character_id", targetCharacter.GetInt("eve_character_id"))
-		record.Set("target_character_name", targetCharacter.GetString("eve_character_name"))
-	}
-
-	targetUserName := strings.TrimSpace(event.TargetUserName)
+	targetCharacter := s.resolveEventTargetCharacter(event)
+	applyTargetCharacterRecord(record, targetCharacter)
+	targetUserName := s.resolveTargetUserName(event)
 	if targetUserName != "" {
 		record.Set("target_user_name", targetUserName)
-	} else if event.TargetUserID != "" {
-		user, userErr := s.App.FindRecordById(store.CollectionUsers, event.TargetUserID)
-		if userErr == nil {
-			record.Set("target_user_name", user.GetString("eve_character_name"))
-		}
 	}
 
 	targetType := strings.TrimSpace(event.TargetType)
@@ -139,6 +133,40 @@ func (s *Service) LogEvent(event Event) {
 	}
 }
 
+func (s *Service) resolveEventTargetCharacter(event *Event) *core.Record {
+	if event == nil {
+		return nil
+	}
+	targetCharacter := event.TargetCharacter
+	if targetCharacter == nil && event.ResolveTargetCharacter && event.TargetUserID != "" {
+		targetCharacter = s.resolveTargetCharacter(event.TargetUserID)
+	}
+	return targetCharacter
+}
+
+func applyTargetCharacterRecord(record, targetCharacter *core.Record) {
+	if record == nil || targetCharacter == nil {
+		return
+	}
+	record.Set("target_character_id", targetCharacter.GetInt("eve_character_id"))
+	record.Set("target_character_name", targetCharacter.GetString("eve_character_name"))
+}
+
+func (s *Service) resolveTargetUserName(event *Event) string {
+	if event == nil {
+		return ""
+	}
+	targetUserName := strings.TrimSpace(event.TargetUserName)
+	if targetUserName != "" || event.TargetUserID == "" {
+		return targetUserName
+	}
+	user, userErr := s.App.FindRecordById(store.CollectionUsers, event.TargetUserID)
+	if userErr != nil {
+		return ""
+	}
+	return user.GetString("eve_character_name")
+}
+
 func (s *Service) resolveTargetCharacter(userID string) *core.Record {
 	if strings.TrimSpace(userID) == "" {
 		return nil
@@ -158,51 +186,70 @@ func (s *Service) resolveTargetCharacter(userID string) *core.Record {
 }
 
 func normalizeTargetFields(
-	event Event,
+	event *Event,
 	targetCharacter *core.Record,
 	targetUserName string,
 	targetType string,
 	targetID string,
 	targetLabel string,
 	targetMeta any,
-) (string, string, string, any) {
-	if targetType == "" {
-		if targetCharacter != nil {
-			targetType = TargetTypeCharacter
-			if targetID == "" {
-				targetID = targetCharacter.Id
-			}
-			if targetLabel == "" {
-				targetLabel = targetCharacter.GetString("eve_character_name")
-			}
-			if targetMeta == nil {
-				targetMeta = map[string]any{
-					"eve_character_id": targetCharacter.GetInt("eve_character_id"),
-				}
-			}
-		} else if event.TargetUserID != "" {
-			targetType = TargetTypeUser
-			if targetID == "" {
-				targetID = event.TargetUserID
-			}
-			if targetLabel == "" {
-				targetLabel = targetUserName
-			}
-		}
+) (normalizedType, normalizedID, normalizedLabel string, normalizedMeta any) {
+	if targetType != "" {
+		return targetType, targetID, targetLabel, targetMeta
+	}
+	if targetCharacter != nil {
+		return normalizeCharacterTarget(targetCharacter, targetID, targetLabel, targetMeta)
+	}
+	if event != nil && event.TargetUserID != "" {
+		return normalizeUserTarget(event.TargetUserID, targetUserName, targetID, targetLabel, targetMeta)
 	}
 	return targetType, targetID, targetLabel, targetMeta
 }
 
-func normalizeActorFields(actorID string, actorDisplayName string, actorRecord *core.Record) (string, string) {
-	if actorRecord != nil {
-		if actorID == "" {
-			actorID = actorRecord.Id
+func normalizeCharacterTarget(targetCharacter *core.Record, targetID, targetLabel string, targetMeta any) (normalizedType, normalizedID, normalizedLabel string, normalizedMeta any) {
+	normalizedType = TargetTypeCharacter
+	normalizedID = targetID
+	normalizedLabel = targetLabel
+	normalizedMeta = targetMeta
+	if targetID == "" {
+		normalizedID = targetCharacter.Id
+	}
+	if targetLabel == "" {
+		normalizedLabel = targetCharacter.GetString("eve_character_name")
+	}
+	if normalizedMeta == nil {
+		normalizedMeta = map[string]any{
+			"eve_character_id": targetCharacter.GetInt("eve_character_id"),
 		}
+	}
+	return normalizedType, normalizedID, normalizedLabel, normalizedMeta
+}
+
+func normalizeUserTarget(targetUserID, targetUserName, targetID, targetLabel string, targetMeta any) (normalizedType, normalizedID, normalizedLabel string, normalizedMeta any) {
+	normalizedType = TargetTypeUser
+	normalizedID = targetID
+	normalizedLabel = targetLabel
+	normalizedMeta = targetMeta
+	if targetID == "" {
+		normalizedID = targetUserID
+	}
+	if targetLabel == "" {
+		normalizedLabel = targetUserName
+	}
+	return normalizedType, normalizedID, normalizedLabel, normalizedMeta
+}
+
+func normalizeActorFields(actorID, actorDisplayName string, actorRecord *core.Record) (normalizedID, normalizedDisplayName string) {
+	if actorRecord == nil {
+		return actorID, actorDisplayName
+	}
+	if actorID == "" {
+		actorID = actorRecord.Id
+	}
+	if actorDisplayName == "" {
+		actorDisplayName = actorRecord.GetString("eve_character_name")
 		if actorDisplayName == "" {
-			actorDisplayName = actorRecord.GetString("eve_character_name")
-			if actorDisplayName == "" {
-				actorDisplayName = actorRecord.Id
-			}
+			actorDisplayName = actorRecord.Id
 		}
 	}
 	return actorID, actorDisplayName

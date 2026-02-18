@@ -79,7 +79,7 @@ func (h *ChannelsHandler) Create(c *core.RequestEvent) error {
 		WithFields(logFields).
 		Info("channel created")
 	if h.Audit != nil {
-		h.Audit.LogRequest(c, audit.Event{
+		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionStaffChannelCreate,
 			Summary:     "Created channel " + payload.ChannelName,
 			TargetType:  audit.TargetTypeChannel,
@@ -128,7 +128,7 @@ func (h *ChannelsHandler) Delete(c *core.RequestEvent) error {
 		WithFields(logFields).
 		Info("channel deleted")
 	if h.Audit != nil {
-		h.Audit.LogRequest(c, audit.Event{
+		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionStaffChannelDelete,
 			Summary:     "Deleted channel " + record.GetString("channel_name"),
 			TargetType:  audit.TargetTypeChannel,

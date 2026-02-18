@@ -24,10 +24,12 @@ type ESIDirectClient struct {
 	Logger    *logging.Logger
 }
 
+const defaultESIDirectTimeout = 30 * time.Second
+
 func NewESIDirectClient(userAgent string, logger *logging.Logger) *ESIDirectClient {
 	return &ESIDirectClient{
 		UserAgent: userAgent,
-		Timeout:   30 * time.Second,
+		Timeout:   defaultESIDirectTimeout,
 		throttle:  newESIThrottle(logger),
 		limiter:   globalESILimiter,
 		cache:     newAffiliationCache(),
@@ -47,7 +49,7 @@ func (e *ESIDirectClient) Characters(ctx context.Context, user *core.Record, tok
 	return []int{id}, nil
 }
 
-func (e *ESIDirectClient) CharacterLocation(ctx context.Context, characterID string, token string) (CharacterLocation, error) {
+func (e *ESIDirectClient) CharacterLocation(ctx context.Context, characterID, token string) (CharacterLocation, error) {
 	start := time.Now()
 	client := e.authenticatedClient(token)
 	charID, charIDErr := strconv.Atoi(characterID)
@@ -59,6 +61,9 @@ func (e *ESIDirectClient) CharacterLocation(ctx context.Context, characterID str
 	e.limiter.wait(ctx)
 	e.throttle.wait(ctx)
 	resp, httpResp, respErr := client.LocationAPI.GetCharactersCharacterIdLocation(ctx, int64(charID)).Execute()
+	if httpResp != nil && httpResp.Body != nil {
+		defer func() { _ = httpResp.Body.Close() }()
+	}
 	if respErr != nil {
 		status := httpStatus(httpResp)
 		e.logRequest("characters.location", "GET", characterID, status, start, respErr)
@@ -72,11 +77,11 @@ func (e *ESIDirectClient) CharacterLocation(ctx context.Context, characterID str
 	return CharacterLocation{
 		SolarSystemID: int(resp.GetSolarSystemId()),
 		StationID:     int(resp.GetStationId()),
-		StructureID:   int64(resp.GetStructureId()),
+		StructureID:   resp.GetStructureId(),
 	}, nil
 }
 
-func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID int) (int, int, error) {
+func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID int) (corporationID, allianceID int, err error) {
 	if cached, ok := e.cache.get(characterID); ok {
 		return cached.CorporationID, cached.AllianceID, nil
 	}
@@ -89,6 +94,9 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 		request = request.IfNoneMatch(etag)
 	}
 	resp, httpResp, respErr := request.Execute()
+	if httpResp != nil && httpResp.Body != nil {
+		defer func() { _ = httpResp.Body.Close() }()
+	}
 	if respErr != nil {
 		e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpStatus(httpResp), start, respErr)
 		return 0, 0, respErr
@@ -108,14 +116,14 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 			return cached.CorporationID, cached.AllianceID, nil
 		}
 	}
-	if httpResp.StatusCode >= 400 {
+	if httpResp.StatusCode >= http.StatusBadRequest {
 		err := fmt.Errorf("character fetch failed: %s", httpResp.Status)
 		e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpResp.StatusCode, start, err)
 		return 0, 0, err
 	}
 
 	corpID := int(resp.GetCorporationId())
-	allianceID := int(resp.GetAllianceId())
+	allianceID = int(resp.GetAllianceId())
 	e.cache.set(characterID, corpID, allianceID, httpResp)
 	e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpResp.StatusCode, start, nil)
 	return corpID, allianceID, nil
@@ -133,6 +141,9 @@ func (e *ESIDirectClient) SetAutopilotWaypoint(ctx context.Context, req Autopilo
 	e.limiter.wait(ctx)
 	e.throttle.wait(ctx)
 	httpResp, execErr := request.Execute()
+	if httpResp != nil && httpResp.Body != nil {
+		defer func() { _ = httpResp.Body.Close() }()
+	}
 	if httpResp != nil {
 		e.throttle.update(httpResp)
 	}
@@ -161,7 +172,7 @@ func (e *ESIDirectClient) authenticatedClient(accessToken string) *esi.APIClient
 	return goesi.NewESIClientWithOptions(httpClient, options)
 }
 
-func (e *ESIDirectClient) logRequest(endpoint string, method string, characterID string, status int, start time.Time, err error) {
+func (e *ESIDirectClient) logRequest(endpoint, method, characterID string, status int, start time.Time, err error) {
 	if e == nil || e.Logger == nil {
 		return
 	}

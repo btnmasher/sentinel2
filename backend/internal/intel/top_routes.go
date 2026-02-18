@@ -86,8 +86,8 @@ func (s *TopRoutesService) Top() ([]int, error) {
 
 	tally := map[int]int{}
 	for _, rec := range records {
-		system := int(rec.GetInt("system_id"))
-		tally[system] += int(rec.GetInt("count"))
+		system := rec.GetInt("system_id")
+		tally[system] += rec.GetInt("count")
 	}
 
 	type pair struct {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -33,13 +34,28 @@ func NewRoutePlanner(app *pocketbase.PocketBase) *RoutePlanner {
 	return &RoutePlanner{App: app}
 }
 
-func (r *RoutePlanner) GenerateRoute(source int, destination int, avoid []int) ([]int, []int, error) {
-	if r.graph == nil || time.Since(r.lastRebuild) > RebuildExpiry*time.Second {
-		if populateErr := r.populateGraph(); populateErr != nil {
-			return nil, nil, populateErr
-		}
+func (r *RoutePlanner) GenerateRoute(source, destination int, avoid []int) (path, jumpgatePath []int, err error) {
+	if populateErr := r.ensureGraph(); populateErr != nil {
+		return nil, nil, populateErr
+	}
+	graph := r.graphWithoutAvoid(avoid)
+
+	path = bfsShortestPath(graph, source, destination)
+	if len(path) == 0 {
+		return nil, nil, sql.ErrNoRows
 	}
 
+	return path, r.jumpgatePath(graph, path, destination), nil
+}
+
+func (r *RoutePlanner) ensureGraph() error {
+	if r.graph != nil && time.Since(r.lastRebuild) <= RebuildExpiry*time.Second {
+		return nil
+	}
+	return r.populateGraph()
+}
+
+func (r *RoutePlanner) graphWithoutAvoid(avoid []int) map[int][]edge {
 	graph := r.copyGraph()
 	for _, node := range avoid {
 		delete(graph, node)
@@ -47,28 +63,24 @@ func (r *RoutePlanner) GenerateRoute(source int, destination int, avoid []int) (
 			graph[k] = filterEdges(graph[k], node)
 		}
 	}
+	return graph
+}
 
-	path := bfsShortestPath(graph, source, destination)
-	if len(path) == 0 {
-		return nil, nil, sql.ErrNoRows
-	}
-
+func (r *RoutePlanner) jumpgatePath(graph map[int][]edge, path []int, destination int) []int {
 	jumpgatePath := []int{}
-	for i := 0; i < len(path)-1; i++ {
-		edgeType := edgeTypeBetween(graph, path[i], path[i+1])
-		if edgeType == "bridge" {
-			gate, gateErr := r.findLatestJumpbridge(path[i], path[i+1])
-			if gateErr == nil && gate != 0 {
-				jumpgatePath = append(jumpgatePath, gate)
-			}
+	for i := range len(path) - 1 {
+		if edgeTypeBetween(graph, path[i], path[i+1]) != "bridge" {
+			continue
+		}
+		gate, gateErr := r.findLatestJumpbridge(path[i], path[i+1])
+		if gateErr == nil && gate != 0 {
+			jumpgatePath = append(jumpgatePath, gate)
 		}
 	}
-
 	if len(jumpgatePath) == 0 || jumpgatePath[len(jumpgatePath)-1] != destination {
 		jumpgatePath = append(jumpgatePath, destination)
 	}
-
-	return path, jumpgatePath, nil
+	return jumpgatePath
 }
 
 func (r *RoutePlanner) populateGraph() error {
@@ -101,15 +113,15 @@ func (r *RoutePlanner) populateGraph() error {
 	graph := map[int][]edge{}
 
 	for _, gate := range gates {
-		from := int(gate.GetInt("from_solarsystem"))
-		to := int(gate.GetInt("to_solarsystem"))
+		from := gate.GetInt("from_solarsystem")
+		to := gate.GetInt("to_solarsystem")
 		graph[from] = append(graph[from], edge{to: to, kind: "gate"})
 		graph[to] = append(graph[to], edge{to: from, kind: "gate"})
 	}
 
 	for _, jb := range jumpbridges {
-		from := int(jb.GetInt("from_solarsystem"))
-		to := int(jb.GetInt("to_solarsystem"))
+		from := jb.GetInt("from_solarsystem")
+		to := jb.GetInt("to_solarsystem")
 		graph[from] = append(graph[from], edge{to: to, kind: "bridge"})
 		graph[to] = append(graph[to], edge{to: from, kind: "bridge"})
 	}
@@ -127,7 +139,7 @@ func (r *RoutePlanner) populateGraph() error {
 	return nil
 }
 
-func (r *RoutePlanner) findLatestJumpbridge(from int, to int) (int, error) {
+func (r *RoutePlanner) findLatestJumpbridge(from, to int) (int, error) {
 	records, recordsErr := r.App.FindRecordsByFilter(
 		store.CollectionJumpbridges,
 		"from_solarsystem = {:from} && to_solarsystem = {:to}",
@@ -142,7 +154,7 @@ func (r *RoutePlanner) findLatestJumpbridge(from int, to int) (int, error) {
 	if len(records) == 0 {
 		return 0, nil
 	}
-	return int(records[0].GetInt("structure_id")), nil
+	return records[0].GetInt("structure_id"), nil
 }
 
 func hashJumpbridges(records []*core.Record) string {
@@ -151,14 +163,15 @@ func hashJumpbridges(records []*core.Record) string {
 	}
 	ids := make([]int, 0, len(records))
 	for _, rec := range records {
-		ids = append(ids, int(rec.GetInt("structure_id")))
+		ids = append(ids, rec.GetInt("structure_id"))
 	}
 	sort.Ints(ids)
-	payload := ""
+	var payload strings.Builder
 	for _, id := range ids {
-		payload += strconv.Itoa(id) + ","
+		payload.WriteString(strconv.Itoa(id))
+		payload.WriteByte(',')
 	}
-	sum := sha256.Sum256([]byte(payload))
+	sum := sha256.Sum256([]byte(payload.String()))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -182,7 +195,7 @@ func filterEdges(edges []edge, remove int) []edge {
 	return out
 }
 
-func bfsShortestPath(graph map[int][]edge, source int, destination int) []int {
+func bfsShortestPath(graph map[int][]edge, source, destination int) []int {
 	if source == destination {
 		return []int{source}
 	}
@@ -210,7 +223,7 @@ func bfsShortestPath(graph map[int][]edge, source int, destination int) []int {
 	return nil
 }
 
-func buildPath(parent map[int]int, source int, destination int) []int {
+func buildPath(parent map[int]int, source, destination int) []int {
 	path := []int{destination}
 	for current := destination; current != source; {
 		p, ok := parent[current]
@@ -226,7 +239,7 @@ func buildPath(parent map[int]int, source int, destination int) []int {
 	return path
 }
 
-func edgeTypeBetween(graph map[int][]edge, from int, to int) string {
+func edgeTypeBetween(graph map[int][]edge, from, to int) string {
 	for _, e := range graph[from] {
 		if e.to == to {
 			return e.kind

@@ -64,7 +64,7 @@ func (p *TestAuthProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (st
 
 	saveAuthFlow(p.App, state, flow)
 
-	redirectURL := absoluteURL(c, "/api/auth/callback")
+	redirectURL := absoluteURL(c)
 	p.OIDC.OAuth2Config.RedirectURL = redirectURL
 
 	authURL := p.OIDC.OAuth2Config.AuthCodeURL(state, oauth2.SetAuthURLParam("nonce", nonce))
@@ -87,7 +87,7 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 		return nil, AuthFlow{}, ErrMissingCode
 	}
 
-	redirectURL := absoluteURL(c, "/api/auth/callback")
+	redirectURL := absoluteURL(c)
 	p.OIDC.OAuth2Config.RedirectURL = redirectURL
 
 	token, tokenErr := p.OIDC.OAuth2Config.Exchange(c.Request.Context(), code)
@@ -145,23 +145,7 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 		return nil, AuthFlow{}, ErrFailedPersistUser
 	}
 
-	accessLevel := user.GetString("access_level")
-	staffRoles := p.OIDC.Config.StaffRoles()
-	if len(staffRoles) > 0 {
-		staffOK, staffErr := oidc.VerifyRoles(accessToken, staffRoles)
-		if staffErr != nil {
-			logging.WithRequest(p.App, c).
-				WithErr(staffErr).
-				Warn("oidc staff role check failed")
-		}
-		if accessLevel != "admin" {
-			if staffOK {
-				accessLevel = "staff"
-			} else {
-				accessLevel = "user"
-			}
-		}
-	}
+	accessLevel := p.resolveAccessLevel(c, user.GetString("access_level"), accessToken)
 
 	accessExpiry := tokenExpiry(token)
 	refreshExpiry := refreshExpiry(token)
@@ -233,20 +217,8 @@ func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (Auth
 
 	accessExpiry := tokenExpiry(token)
 	refreshExpiry := refreshExpiry(token)
-	if staffRoles := p.OIDC.Config.StaffRoles(); len(staffRoles) > 0 {
-		if staffOK, staffErr := oidc.VerifyRoles(token.AccessToken, staffRoles); staffErr != nil {
-			logging.New(p.App).
-				WithFields(logging.Fields{"user_id": user.Id}).
-				WithErr(staffErr).
-				Warn("oidc staff role check failed on refresh")
-		} else if user.GetString("access_level") != "admin" {
-			if staffOK {
-				user.Set("access_level", "staff")
-			} else {
-				user.Set("access_level", "user")
-			}
-		}
-	}
+	accessLevel := p.resolveAccessLevel(nil, user.GetString("access_level"), token.AccessToken)
+	user.Set("access_level", accessLevel)
 	user.Set("oauth_access_token", token.AccessToken)
 	accessExpiresAt, _ := types.ParseDateTime(time.Unix(accessExpiry, 0))
 	user.Set("oauth_access_expires_at", accessExpiresAt)
@@ -274,6 +246,34 @@ func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (Auth
 
 func (p *TestAuthProvider) Logout(c *core.RequestEvent) error {
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (p *TestAuthProvider) resolveAccessLevel(c *core.RequestEvent, currentLevel, accessToken string) string {
+	if currentLevel == "admin" {
+		return currentLevel
+	}
+	staffRoles := p.OIDC.Config.StaffRoles()
+	if len(staffRoles) == 0 {
+		return currentLevel
+	}
+	staffOK, staffErr := oidc.VerifyRoles(accessToken, staffRoles)
+	if staffErr != nil {
+		if c != nil {
+			logging.WithRequest(p.App, c).
+				WithErr(staffErr).
+				Warn("oidc staff role check failed")
+		} else {
+			logging.New(p.App).
+				WithFields(logging.Fields{"reason": "refresh"}).
+				WithErr(staffErr).
+				Warn("oidc staff role check failed on refresh")
+		}
+		return currentLevel
+	}
+	if staffOK {
+		return "staff"
+	}
+	return "user"
 }
 
 func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {

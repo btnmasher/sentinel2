@@ -11,7 +11,19 @@ import (
 	"sentinel2/internal/web"
 )
 
-func registerRoutes(app *pocketbase.PocketBase, cfg config.Config, deps dependencies) {
+const (
+	intelRetrievePerHour  = 40
+	mapRoutePerMinute     = 30
+	mapCharactersPerHour  = 30
+	mapLocationPerHour    = 180
+	mapSearchPerMinute    = 100
+	mapTopRoutesPerMinute = 10
+	defaultLimiterBurst   = 5
+	locationLimiterBurst  = 10
+	searchLimiterBurst    = 20
+)
+
+func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *dependencies) {
 	userKey := func(c *core.RequestEvent) string {
 		if c.Auth != nil {
 			return c.Auth.Id
@@ -19,12 +31,12 @@ func registerRoutes(app *pocketbase.PocketBase, cfg config.Config, deps dependen
 		return ""
 	}
 
-	intelRetrieveLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(40), 5)
-	mapRouteLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(30), 5)
-	mapCharactersLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(30), 5)
-	mapLocationLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(180), 10)
-	mapSearchLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(100), 20)
-	mapTopRoutesLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(10), 5)
+	intelRetrieveLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(intelRetrievePerHour), defaultLimiterBurst)
+	mapRouteLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(mapRoutePerMinute), defaultLimiterBurst)
+	mapCharactersLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(mapCharactersPerHour), defaultLimiterBurst)
+	mapLocationLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(mapLocationPerHour), locationLimiterBurst)
+	mapSearchLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(mapSearchPerMinute), searchLimiterBurst)
+	mapTopRoutesLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(mapTopRoutesPerMinute), defaultLimiterBurst)
 
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		e.Router.Unbind(apis.DefaultActivityLoggerMiddlewareId)

@@ -17,13 +17,21 @@ import (
 	"sentinel2/internal/esi"
 	"sentinel2/internal/intel"
 	"sentinel2/internal/logging"
+	"sentinel2/internal/shared/queryhelpers"
 	"sentinel2/internal/store"
 
 	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-func NewMapHandler(app *pocketbase.PocketBase, cfg config.Config, esi esi.ESIClient, provider auth.Provider, eveProvider *auth.EVEProvider, planner *intel.RoutePlanner, topRoutes *intel.TopRoutesService) *MapHandler {
-	return &MapHandler{App: app, Config: cfg, ESI: esi, Provider: provider, EVE: eveProvider, Routes: planner, TopRoutesSvc: topRoutes}
+const (
+	regionNormalizeWidth  = 1000
+	regionNormalizeHeight = 1000
+	tokenRefreshLeeway    = 15 * time.Second
+	searchSystemsLimit    = 50
+)
+
+func NewMapHandler(app *pocketbase.PocketBase, cfg *config.Config, esiClient esi.ESIClient, provider auth.Provider, eveProvider *auth.EVEProvider, planner *intel.RoutePlanner, topRoutes *intel.TopRoutesService) *MapHandler {
+	return &MapHandler{App: app, Config: cfg, ESI: esiClient, Provider: provider, EVE: eveProvider, Routes: planner, TopRoutesSvc: topRoutes}
 }
 
 func (h *MapHandler) RegionsDotlan(c *core.RequestEvent) error { return h.regions(c, "dotlan") }
@@ -61,7 +69,7 @@ func (h *MapHandler) regions(c *core.RequestEvent, mode string) error {
 			"region_ids": regionIDs,
 		})
 	}
-	normalizeSystemsByRegion(systems, regionIDs, 1000, 1000)
+	normalizeSystemsByRegion(systems, regionIDs, regionNormalizeWidth, regionNormalizeHeight)
 	normalizeRegions(regions)
 
 	jumpbridges, jumpbridgesErr := h.fetchJumpbridges(regionIDs)
@@ -85,40 +93,55 @@ func (h *MapHandler) Characters(c *core.RequestEvent) error {
 		return userErr
 	}
 
-	ids := []int{}
-	if h.Config.AuthBackend == "eve" {
-		records, recordsErr := h.App.FindRecordsByFilter(
-			store.CollectionCharacters,
-			"user = {:user}",
-			"-is_main",
-			0,
-			0, dbx.Params{"user": user.Id},
-		)
-		if recordsErr != nil {
-			return router.NewInternalServerError("Failed to fetch characters.", logging.Fields{
-				"user_id": user.Id,
-				"error":   recordsErr.Error(),
-			})
-		}
-		for _, rec := range records {
-			ids = append(ids, rec.GetInt("eve_character_id"))
-		}
-	} else {
-		accessToken, tokenErr := h.userAccessToken(c.Request.Context(), user)
-		if tokenErr != nil {
-			return tokenErr
-		}
-		var charsErr error
-		ids, charsErr = h.ESI.Characters(c.Request.Context(), user, accessToken)
-		if charsErr != nil {
-			return router.NewInternalServerError("Failed to fetch characters.", logging.Fields{
-				"user_id": user.Id,
-				"error":   charsErr.Error(),
-			})
-		}
+	ids, idsErr := h.characterIDs(c, user)
+	if idsErr != nil {
+		return idsErr
 	}
 
 	return c.JSON(http.StatusOK, CharactersResponse{Characters: ids})
+}
+
+func (h *MapHandler) characterIDs(c *core.RequestEvent, user *core.Record) ([]int, error) {
+	if h.Config != nil && h.Config.AuthBackend == "eve" {
+		return h.characterIDsFromRecords(user)
+	}
+	return h.characterIDsFromESI(c, user)
+}
+
+func (h *MapHandler) characterIDsFromRecords(user *core.Record) ([]int, error) {
+	records, recordsErr := h.App.FindRecordsByFilter(
+		store.CollectionCharacters,
+		"user = {:user}",
+		"-is_main",
+		0,
+		0, dbx.Params{"user": user.Id},
+	)
+	if recordsErr != nil {
+		return nil, router.NewInternalServerError("Failed to fetch characters.", logging.Fields{
+			"user_id": user.Id,
+			"error":   recordsErr.Error(),
+		})
+	}
+	ids := make([]int, 0, len(records))
+	for _, rec := range records {
+		ids = append(ids, rec.GetInt("eve_character_id"))
+	}
+	return ids, nil
+}
+
+func (h *MapHandler) characterIDsFromESI(c *core.RequestEvent, user *core.Record) ([]int, error) {
+	accessToken, tokenErr := h.userAccessToken(c.Request.Context(), user)
+	if tokenErr != nil {
+		return nil, tokenErr
+	}
+	ids, charsErr := h.ESI.Characters(c.Request.Context(), user, accessToken)
+	if charsErr != nil {
+		return nil, router.NewInternalServerError("Failed to fetch characters.", logging.Fields{
+			"user_id": user.Id,
+			"error":   charsErr.Error(),
+		})
+	}
+	return ids, nil
 }
 
 func (h *MapHandler) CharacterLocations(c *core.RequestEvent) error {
@@ -181,28 +204,9 @@ func (h *MapHandler) Route(c *core.RequestEvent) error {
 		return tokenErr
 	}
 
-	payload := struct {
-		Waypoints []int `json:"waypoints"`
-		Avoid     []int `json:"avoid"`
-	}{}
-	if bindErr := c.BindBody(&payload); bindErr != nil {
-		return router.NewBadRequestError("Missing required data.", logging.Fields{
-			"character_id": character,
-			"error":        bindErr.Error(),
-		})
-	}
-
-	if len(payload.Waypoints) == 0 {
-		return router.NewBadRequestError("Missing required data.", logging.Fields{
-			"waypoints": payload.Waypoints,
-		})
-	}
-
-	if overlap(payload.Waypoints, payload.Avoid) {
-		return router.NewBadRequestError("Route contains avoided system.", logging.Fields{
-			"waypoints": payload.Waypoints,
-			"avoid":     payload.Avoid,
-		})
+	payload, payloadErr := parseRoutePayload(c, character)
+	if payloadErr != nil {
+		return payloadErr
 	}
 
 	_ = h.TopRoutesSvc.Add(payload.Waypoints)
@@ -215,57 +219,17 @@ func (h *MapHandler) Route(c *core.RequestEvent) error {
 		})
 	}
 
-	source := location.SolarSystemID
-	fullRoute := []int{}
-	fullJBRoute := []int{}
-	for _, destination := range payload.Waypoints {
-		route, jbRoute, routeErr := h.Routes.GenerateRoute(source, destination, payload.Avoid)
-		if routeErr != nil {
-			return router.NewBadRequestError("Cannot find route to system.", logging.Fields{
-				"source":      source,
-				"destination": destination,
-				"error":       routeErr.Error(),
-			})
-		}
-		fullRoute = append(fullRoute, route...)
-		fullJBRoute = append(fullJBRoute, jbRoute...)
-		source = destination
+	fullRoute, fullJBRoute, routeErr := h.buildWaypointRoute(location.SolarSystemID, payload.Waypoints, payload.Avoid)
+	if routeErr != nil {
+		return routeErr
 	}
 
 	if len(fullJBRoute) == 0 {
 		return c.JSON(http.StatusOK, RouteResponse{Route: fullRoute})
 	}
 
-	setErr := h.ESI.SetAutopilotWaypoint(c.Request.Context(), esi.AutopilotRequest{
-		CharacterID:         character,
-		DestinationID:       fullJBRoute[0],
-		ClearOtherWaypoints: true,
-		AddToBeginning:      false,
-	}, accessToken)
-	if errors.Is(setErr, esi.ErrScopeRequired) {
-		return router.NewForbiddenError("Missing required ESI scopes.", logging.Fields{
-			"character_id": character,
-		})
-	}
-	if setErr != nil {
-		return router.NewInternalServerError("Failed to set route.", logging.Fields{
-			"character_id": character,
-			"destination":  fullJBRoute[0],
-			"error":        setErr.Error(),
-		})
-	}
-
-	if len(fullJBRoute) > 1 {
-		go func(points []int) {
-			for _, point := range points {
-				_ = h.ESI.SetAutopilotWaypoint(context.Background(), esi.AutopilotRequest{
-					CharacterID:         character,
-					DestinationID:       point,
-					ClearOtherWaypoints: false,
-					AddToBeginning:      false,
-				}, accessToken)
-			}
-		}(fullJBRoute[1:])
+	if waypointErr := h.setRouteWaypoints(c, character, accessToken, fullJBRoute); waypointErr != nil {
+		return waypointErr
 	}
 
 	return c.JSON(http.StatusOK, RouteResponse{Route: fullRoute})
@@ -320,7 +284,7 @@ func (h *MapHandler) resolveCharacterToken(c *core.RequestEvent, user *core.Reco
 			"reason": "missing user context",
 		})
 	}
-	if h.Config.AuthBackend != "eve" || h.EVE == nil {
+	if h.Config == nil || h.Config.AuthBackend != "eve" || h.EVE == nil {
 		return h.userAccessToken(c.Request.Context(), user)
 	}
 
@@ -331,25 +295,35 @@ func (h *MapHandler) resolveCharacterToken(c *core.RequestEvent, user *core.Reco
 		})
 	}
 
+	charRecord, charErr := h.findLinkedCharacter(user.Id, charID)
+	if charErr != nil {
+		return "", charErr
+	}
+	return h.resolveLinkedCharacterToken(c, user, character, charRecord)
+}
+
+func (h *MapHandler) findLinkedCharacter(userID string, charID int) (*core.Record, error) {
 	records, recordsErr := h.App.FindRecordsByFilter(
 		store.CollectionCharacters,
 		"user = {:user} && eve_character_id = {:id}",
 		"",
 		1,
-		0, dbx.Params{"user": user.Id, "id": charID},
+		0, dbx.Params{"user": userID, "id": charID},
 	)
 	if recordsErr != nil || len(records) == 0 {
 		rawData := logging.Fields{
-			"user_id":      user.Id,
+			"user_id":      userID,
 			"character_id": charID,
 		}
 		if recordsErr != nil {
 			rawData["error"] = recordsErr.Error()
 		}
-		return "", router.NewForbiddenError("Character not linked.", rawData)
+		return nil, router.NewForbiddenError("Character not linked.", rawData)
 	}
-	charRecord := records[0]
+	return records[0], nil
+}
 
+func (h *MapHandler) resolveLinkedCharacterToken(c *core.RequestEvent, user *core.Record, character string, charRecord *core.Record) (string, error) {
 	accessToken := charRecord.GetString("oauth_access_token")
 	exp := charRecord.GetDateTime("oauth_access_expires_at")
 	if accessToken == "" {
@@ -358,7 +332,7 @@ func (h *MapHandler) resolveCharacterToken(c *core.RequestEvent, user *core.Reco
 		})
 	}
 
-	if exp.IsZero() || exp.Time().Before(time.Now().Add(15*time.Second)) {
+	if exp.IsZero() || exp.Time().Before(time.Now().Add(tokenRefreshLeeway)) {
 		_, refreshErr := h.EVE.RefreshCharacter(c.Request.Context(), user, charRecord)
 		if errors.Is(refreshErr, auth.ErrAccessDenied) {
 			return "", router.NewForbiddenError("Access revoked.", logging.Fields{
@@ -374,14 +348,7 @@ func (h *MapHandler) resolveCharacterToken(c *core.RequestEvent, user *core.Reco
 
 		accessToken = charRecord.GetString("oauth_access_token")
 	}
-
-	if accessToken == "" {
-		return "", router.NewForbiddenError("Missing character token.", logging.Fields{
-			"character_id": character,
-		})
-	}
-
-	return accessToken, nil
+	return ensureCharacterToken(accessToken, character)
 }
 
 func (h *MapHandler) userAccessToken(ctx context.Context, user *core.Record) (string, error) {
@@ -398,7 +365,7 @@ func (h *MapHandler) userAccessToken(ctx context.Context, user *core.Record) (st
 			"reason":  "missing oauth_access_token",
 		})
 	}
-	if exp.IsZero() || exp.Time().Before(time.Now().Add(15*time.Second)) {
+	if exp.IsZero() || exp.Time().Before(time.Now().Add(tokenRefreshLeeway)) {
 		if h.Provider == nil {
 			return "", router.NewUnauthorizedError("Unauthorized", logging.Fields{
 				"user_id": user.Id,
@@ -429,6 +396,99 @@ func (h *MapHandler) userAccessToken(ctx context.Context, user *core.Record) (st
 	return accessToken, nil
 }
 
+func parseRoutePayload(c *core.RequestEvent, character string) (struct {
+	Waypoints []int `json:"waypoints"`
+	Avoid     []int `json:"avoid"`
+}, error) {
+	payload := struct {
+		Waypoints []int `json:"waypoints"`
+		Avoid     []int `json:"avoid"`
+	}{}
+	if bindErr := c.BindBody(&payload); bindErr != nil {
+		return payload, router.NewBadRequestError("Missing required data.", logging.Fields{
+			"character_id": character,
+			"error":        bindErr.Error(),
+		})
+	}
+	if len(payload.Waypoints) == 0 {
+		return payload, router.NewBadRequestError("Missing required data.", logging.Fields{
+			"waypoints": payload.Waypoints,
+		})
+	}
+	if overlap(payload.Waypoints, payload.Avoid) {
+		return payload, router.NewBadRequestError("Route contains avoided system.", logging.Fields{
+			"waypoints": payload.Waypoints,
+			"avoid":     payload.Avoid,
+		})
+	}
+	return payload, nil
+}
+
+func (h *MapHandler) buildWaypointRoute(source int, waypoints, avoid []int) (fullRoute, fullJBRoute []int, err error) {
+	fullRoute = []int{}
+	fullJBRoute = []int{}
+	for _, destination := range waypoints {
+		route, jbRoute, routeErr := h.Routes.GenerateRoute(source, destination, avoid)
+		if routeErr != nil {
+			return nil, nil, router.NewBadRequestError("Cannot find route to system.", logging.Fields{
+				"source":      source,
+				"destination": destination,
+				"error":       routeErr.Error(),
+			})
+		}
+		fullRoute = append(fullRoute, route...)
+		fullJBRoute = append(fullJBRoute, jbRoute...)
+		source = destination
+	}
+	return fullRoute, fullJBRoute, nil
+}
+
+func (h *MapHandler) setRouteWaypoints(c *core.RequestEvent, character, accessToken string, route []int) error {
+	setErr := h.ESI.SetAutopilotWaypoint(c.Request.Context(), esi.AutopilotRequest{
+		CharacterID:         character,
+		DestinationID:       route[0],
+		ClearOtherWaypoints: true,
+		AddToBeginning:      false,
+	}, accessToken)
+	if errors.Is(setErr, esi.ErrScopeRequired) {
+		return router.NewForbiddenError("Missing required ESI scopes.", logging.Fields{
+			"character_id": character,
+		})
+	}
+	if setErr != nil {
+		return router.NewInternalServerError("Failed to set route.", logging.Fields{
+			"character_id": character,
+			"destination":  route[0],
+			"error":        setErr.Error(),
+		})
+	}
+	if len(route) <= 1 {
+		return nil
+	}
+	go appendRouteWaypoints(context.Background(), h, character, accessToken, route[1:])
+	return nil
+}
+
+func appendRouteWaypoints(ctx context.Context, h *MapHandler, character, accessToken string, points []int) {
+	for _, point := range points {
+		_ = h.ESI.SetAutopilotWaypoint(ctx, esi.AutopilotRequest{
+			CharacterID:         character,
+			DestinationID:       point,
+			ClearOtherWaypoints: false,
+			AddToBeginning:      false,
+		}, accessToken)
+	}
+}
+
+func ensureCharacterToken(accessToken, character string) (string, error) {
+	if accessToken == "" {
+		return "", router.NewForbiddenError("Missing character token.", logging.Fields{
+			"character_id": character,
+		})
+	}
+	return accessToken, nil
+}
+
 func (h *MapHandler) Search(c *core.RequestEvent) error {
 	query := c.Request.URL.Query().Get("q")
 	systems := c.Request.URL.Query().Get("systems")
@@ -449,10 +509,10 @@ func (h *MapHandler) Search(c *core.RequestEvent) error {
 				"systems": systems,
 			})
 		}
-		filter, params := buildFilter("eve_id", ids)
-		records, recordsErr = h.App.FindRecordsByFilter(store.CollectionSolarSystems, filter, "name", 50, 0, params)
+		filter, params := queryhelpers.BuildOrEqualsFilter("eve_id", ids)
+		records, recordsErr = h.App.FindRecordsByFilter(store.CollectionSolarSystems, filter, "name", searchSystemsLimit, 0, params)
 	} else {
-		records, recordsErr = h.App.FindRecordsByFilter(store.CollectionSolarSystems, "name ~ {:q}", "name", 50, 0, dbx.Params{"q": "%" + query + "%"})
+		records, recordsErr = h.App.FindRecordsByFilter(store.CollectionSolarSystems, "name ~ {:q}", "name", searchSystemsLimit, 0, dbx.Params{"q": "%" + query + "%"})
 	}
 	if recordsErr != nil {
 		return router.NewInternalServerError("Failed to search systems.", logging.Fields{
@@ -487,7 +547,7 @@ func (h *MapHandler) TopRoutes(c *core.RequestEvent) error {
 		return c.JSON(http.StatusOK, TopRoutesResponse{Routes: []SearchItem{}})
 	}
 
-	filter, params := buildFilter("eve_id", ids)
+	filter, params := queryhelpers.BuildOrEqualsFilter("eve_id", ids)
 
 	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionSolarSystems, filter, "name", 0, 0, params)
 	if recordsErr != nil {
