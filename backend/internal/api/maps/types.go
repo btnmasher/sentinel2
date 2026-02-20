@@ -7,6 +7,7 @@ import (
 	"sentinel2/internal/config"
 	"sentinel2/internal/esi"
 	"sentinel2/internal/intel"
+	timerssvc "sentinel2/internal/timers"
 )
 
 type MapHandler struct {
@@ -17,9 +18,10 @@ type MapHandler struct {
 	EVE          *auth.EVEProvider
 	Routes       *intel.RoutePlanner
 	TopRoutesSvc *intel.TopRoutesService
+	Timers       *timerssvc.Service
 }
 
-type RegionDTO struct {
+type Region struct {
 	Region   int    `json:"region"`
 	Name     string `json:"name"`
 	Position struct {
@@ -28,7 +30,7 @@ type RegionDTO struct {
 	} `json:"position"`
 }
 
-type SystemDTO struct {
+type System struct {
 	Name           string  `json:"name"`
 	SecurityStatus float64 `json:"security_status"`
 	Region         int     `json:"region"`
@@ -45,7 +47,7 @@ type SystemDTO struct {
 	} `json:"absolute"`
 }
 
-type GateDTO struct {
+type Gate struct {
 	To          int    `json:"to"`
 	From        int    `json:"from"`
 	Type        string `json:"type"`
@@ -61,19 +63,56 @@ type GateDTO struct {
 	FromMetroY  int    `json:"from_metro_y"`
 }
 
-type JumpbridgeDTO struct {
+type Jumpbridge struct {
 	From       int  `json:"from"`
 	To         int  `json:"to"`
 	FromRegion int  `json:"from_region"`
 	ToRegion   int  `json:"to_region"`
 	Friendly   bool `json:"friendly"`
+	Disabled   bool `json:"disabled"`
+}
+
+type TimerSignal struct {
+	SystemID           int            `json:"system_id"`
+	Count              int            `json:"count"`
+	RemainingCount     int            `json:"remaining_count"`
+	NextExpiresAt      string         `json:"next_expires_at"`
+	Severity           string         `json:"severity"`
+	StandingType       string         `json:"standing_type"`
+	TimerKind          string         `json:"timer_kind"`
+	Title              string         `json:"title"`
+	StructureType      string         `json:"structure_type"`
+	StageLabel         string         `json:"stage_label"`
+	PlanetName         string         `json:"planet_name"`
+	MoonName           string         `json:"moon_name"`
+	SkyhookFullnessPct *int           `json:"skyhook_fullness_pct"`
+	Timers             []TimerPreview `json:"timers"`
+}
+
+type TimerPreview struct {
+	Title              string `json:"title"`
+	NextExpiresAt      string `json:"next_expires_at"`
+	Severity           string `json:"severity"`
+	StandingType       string `json:"standing_type"`
+	TimerKind          string `json:"timer_kind"`
+	StructureType      string `json:"structure_type"`
+	StageLabel         string `json:"stage_label"`
+	PlanetName         string `json:"planet_name"`
+	MoonName           string `json:"moon_name"`
+	SkyhookFullnessPct *int   `json:"skyhook_fullness_pct"`
 }
 
 type MapResponse struct {
-	Regions     map[int]RegionDTO `json:"regions"`
-	Systems     map[int]SystemDTO `json:"systems"`
-	Gates       []GateDTO         `json:"gates"`
-	Jumpbridges []JumpbridgeDTO   `json:"jumpbridges"`
+	Regions      map[int]Region      `json:"regions"`
+	Systems      map[int]System      `json:"systems"`
+	Gates        []Gate              `json:"gates"`
+	Jumpbridges  []Jumpbridge        `json:"jumpbridges"`
+	TimerSignals map[int]TimerSignal `json:"timer_signals"`
+}
+
+type MapOverlaysResponse struct {
+	Jumpbridges  []Jumpbridge        `json:"jumpbridges"`
+	TimerSignals map[int]TimerSignal `json:"timer_signals"`
 }
 
 type CharactersResponse struct {

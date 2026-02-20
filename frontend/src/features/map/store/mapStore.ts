@@ -14,6 +14,7 @@ import type {
   MapLayout,
   Region,
   System,
+  TimerSignal,
 } from "../types";
 
 type Jumpranges = {
@@ -33,6 +34,7 @@ type MapState = {
   mapScale: number;
   systemSearch?: number;
   displayJumpbridges: boolean;
+  displayTimers: boolean;
   jumpranges: Jumpranges;
   mapControls: {
     fit?: () => void;
@@ -45,6 +47,7 @@ type MapState = {
   systems: Record<number, System>;
   gates: Gate[];
   jumpbridges: Jumpbridge[];
+  timerSignals: Record<number, TimerSignal>;
   route: number[];
   routeWaypointsByCharacter: Record<number, number[]>;
   lastJumpgateUpdate: number;
@@ -63,6 +66,7 @@ type MapState = {
     zoomOut?: () => void;
   }) => void;
   toggleJumpbridges: () => void;
+  toggleTimers: () => void;
   setJumpranges: (data: Partial<Jumpranges>) => void;
   updateMapConfig: (
     data: Partial<Pick<MapState, "mapRegions" | "mapLayout">>,
@@ -72,7 +76,10 @@ type MapState = {
     systems: Record<number, System>;
     gates: Gate[];
     jumpbridges: Jumpbridge[];
+    timerSignals?: Record<number, TimerSignal>;
   }) => void;
+  fetchMapTopology: () => Promise<void>;
+  fetchMapOverlays: () => Promise<void>;
   fetchMapData: () => Promise<void>;
   loadCharacters: () => Promise<void>;
   setVisibleCharacters: (ids: number[]) => void;
@@ -152,6 +159,7 @@ export const useMapStore = create<MapState>()(
       mapScale: 1,
       systemSearch: undefined,
       displayJumpbridges: true,
+      displayTimers: true,
       jumpranges: {
         enabled: false,
         selectedSystem: undefined,
@@ -165,6 +173,7 @@ export const useMapStore = create<MapState>()(
       systems: {},
       gates: [],
       jumpbridges: [],
+      timerSignals: {},
       route: [],
       routeWaypointsByCharacter: {},
       lastJumpgateUpdate: Date.now(),
@@ -180,6 +189,8 @@ export const useMapStore = create<MapState>()(
       setMapControls: (controls) => set({ mapControls: controls }),
       toggleJumpbridges: () =>
         set((state) => ({ displayJumpbridges: !state.displayJumpbridges })),
+      toggleTimers: () =>
+        set((state) => ({ displayTimers: !state.displayTimers })),
       setJumpranges: (data) =>
         set((state) => ({ jumpranges: { ...state.jumpranges, ...data } })),
       updateMapConfig: (data) => set((state) => ({ ...state, ...data })),
@@ -189,9 +200,10 @@ export const useMapStore = create<MapState>()(
           systems: data.systems,
           gates: data.gates,
           jumpbridges: data.jumpbridges,
+          timerSignals: data.timerSignals ?? {},
           lastJumpgateUpdate: Date.now(),
         }),
-      fetchMapData: async () => {
+      fetchMapTopology: async () => {
         const { mapRegions, mapLayout } = get();
         if (!mapRegions || mapRegions.length === 0) {
           return;
@@ -204,8 +216,6 @@ export const useMapStore = create<MapState>()(
             regions: response.data.regions,
             systems: response.data.systems,
             gates: response.data.gates,
-            jumpbridges: response.data.jumpbridges,
-            lastJumpgateUpdate: Date.now(),
           });
         } catch (error: unknown) {
           useUIStore.getState().setToast({
@@ -213,7 +223,7 @@ export const useMapStore = create<MapState>()(
             color: "error",
             meta: {
               scope: "map-data",
-              operation: "fetch_map_data",
+              operation: "fetch_map_topology",
               mapRegions,
               mapLayout,
               status: getHttpStatus(error),
@@ -221,6 +231,38 @@ export const useMapStore = create<MapState>()(
             },
           });
         }
+      },
+      fetchMapOverlays: async () => {
+        const { mapRegions } = get();
+        if (!mapRegions || mapRegions.length === 0) {
+          return;
+        }
+        try {
+          const response = await api.get(
+            `/map/regions/${mapRegions.join("+")}/overlays`,
+          );
+          set({
+            jumpbridges: response.data.jumpbridges ?? [],
+            timerSignals: response.data.timer_signals ?? {},
+            lastJumpgateUpdate: Date.now(),
+          });
+        } catch (error: unknown) {
+          useUIStore.getState().setToast({
+            text: "Error loading map overlays",
+            color: "error",
+            meta: {
+              scope: "map-data",
+              operation: "fetch_map_overlays",
+              mapRegions,
+              status: getHttpStatus(error),
+              data: getHttpData(error),
+            },
+          });
+        }
+      },
+      fetchMapData: async () => {
+        await get().fetchMapTopology();
+        await get().fetchMapOverlays();
       },
       loadCharacters: async () => {
         const { standaloneAuth } = useAppConfigStore.getState();
@@ -501,6 +543,7 @@ export const useMapStore = create<MapState>()(
         mapRegions: state.mapRegions,
         mapLayout: state.mapLayout,
         displayJumpbridges: state.displayJumpbridges,
+        displayTimers: state.displayTimers,
         jumpranges: state.jumpranges,
         favoriteCharacters: state.favoriteCharacters,
         visibleCharacterIds: state.visibleCharacterIds,

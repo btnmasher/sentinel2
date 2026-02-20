@@ -1,5 +1,6 @@
 export { useIntelStore } from "./store/intelStore";
 export { default as useIntelRealtime } from "./hooks/useIntelRealtime";
+export { default as useTimerThresholdIntelAlerts } from "./hooks/useTimerThresholdIntelAlerts";
 export { normalizeIntelReport } from "./utils/intelReportUtils";
 export { default as IntelPanel } from "./components/IntelPanel";
 export { default as ReportItem } from "./components/ReportItem";

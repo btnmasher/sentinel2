@@ -137,6 +137,12 @@ function HelpDialogBody() {
                   </span>{" "}
                   show or hide jumpbridge lines.
                 </li>
+                <li>
+                  <span className="font-semibold text-slate-100">
+                    Timers toggle:
+                  </span>{" "}
+                  show or hide timer signal dots and timer hover details.
+                </li>
               </ul>
             </div>
             <div>
@@ -387,6 +393,18 @@ function HelpDialogBody() {
             </div>
             <div className="flex items-center gap-2">
               <svg width="32" height="10">
+                <line
+                  x1="4"
+                  y1="5"
+                  x2="28"
+                  y2="5"
+                  className="map-gate jumpbridge jumpbridge-disabled"
+                />
+              </svg>
+              Disabled jumpbridge
+            </div>
+            <div className="flex items-center gap-2">
+              <svg width="32" height="10">
                 <line x1="4" y1="5" x2="28" y2="5" className="map-gate route" />
                 <line
                   x1="4"
@@ -400,6 +418,82 @@ function HelpDialogBody() {
                 />
               </svg>
               Navigation route
+            </div>
+          </div>
+          <h5 className="pt-1 text-sm font-medium text-slate-200">
+            Timer signal dot
+          </h5>
+          <div className="space-y-1 text-sm">
+            <div className="flex items-center gap-2">
+              <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden>
+                <rect
+                  x="5"
+                  y="5"
+                  width="30"
+                  height="30"
+                  rx="4"
+                  ry="4"
+                  fill="#38bdf8"
+                  stroke="#38bdf8"
+                  strokeWidth="1.5"
+                />
+                <circle cx="31" cy="9" r="6.5" fill="#f97316" />
+              </svg>
+              Timer present on system (dot color shows urgency)
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ background: "#ef4444" }}
+                />
+                Critical
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ background: "#f59e0b" }}
+                />
+                High
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ background: "#22c55e" }}
+                />
+                Medium
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ background: "#0ea5e9" }}
+                />
+                Low
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden>
+                <rect
+                  x="5"
+                  y="5"
+                  width="30"
+                  height="30"
+                  rx="4"
+                  ry="4"
+                  fill="#38bdf8"
+                  stroke="#38bdf8"
+                  strokeWidth="1.5"
+                />
+                <circle
+                  cx="31"
+                  cy="9"
+                  r="6.5"
+                  className="map-system-timer-badge map-system-timer-badge-imminent map-system-timer-badge-demo-critical"
+                  fill="#ef4444"
+                />
+              </svg>
+              Dot flashes with a matching glow when a timer has less than 30
+              minutes remaining.
             </div>
           </div>
           <h5 className="pt-1 text-sm font-medium text-slate-200">

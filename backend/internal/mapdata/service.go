@@ -34,6 +34,12 @@ func (s *MapDataService) RunStep(ctx context.Context, step string) error {
 		return UpdateRegionPositionsFromSystems(s.App)
 	case StepDotlanImport:
 		return DownloadDotlan(ctx, s.App)
+	case StepPlanetsImport:
+		importer := NewSDEImporter(s.App)
+		return importer.ImportPlanetsFromLatest(ctx)
+	case StepMoonsImport:
+		importer := NewSDEImporter(s.App)
+		return importer.ImportMoonsFromLatest(ctx)
 	case StepMetroPositions:
 		if err := CalculateSystemGraphs(ctx, s.App); err != nil {
 			return err

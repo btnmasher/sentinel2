@@ -136,7 +136,7 @@ export default function Modal({
         <div
           ref={bodyRef}
           onScroll={updateScrollState}
-          className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4"
         >
           <div className="space-y-3 text-sm text-slate-300">{children}</div>
         </div>

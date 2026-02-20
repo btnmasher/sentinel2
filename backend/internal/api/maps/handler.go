@@ -19,6 +19,7 @@ import (
 	"sentinel2/internal/logging"
 	"sentinel2/internal/shared/queryhelpers"
 	"sentinel2/internal/store"
+	timerssvc "sentinel2/internal/timers"
 
 	"github.com/pocketbase/pocketbase/tools/router"
 )
@@ -30,14 +31,47 @@ const (
 	searchSystemsLimit    = 50
 )
 
-func NewMapHandler(app *pocketbase.PocketBase, cfg *config.Config, esiClient esi.ESIClient, provider auth.Provider, eveProvider *auth.EVEProvider, planner *intel.RoutePlanner, topRoutes *intel.TopRoutesService) *MapHandler {
-	return &MapHandler{App: app, Config: cfg, ESI: esiClient, Provider: provider, EVE: eveProvider, Routes: planner, TopRoutesSvc: topRoutes}
+func NewMapHandler(app *pocketbase.PocketBase, cfg *config.Config, esiClient esi.ESIClient, provider auth.Provider, eveProvider *auth.EVEProvider, planner *intel.RoutePlanner, topRoutes *intel.TopRoutesService, timerService *timerssvc.Service) *MapHandler {
+	return &MapHandler{
+		App:          app,
+		Config:       cfg,
+		ESI:          esiClient,
+		Provider:     provider,
+		EVE:          eveProvider,
+		Routes:       planner,
+		TopRoutesSvc: topRoutes,
+		Timers:       timerService,
+	}
 }
 
 func (h *MapHandler) RegionsDotlan(c *core.RequestEvent) error { return h.regions(c, "dotlan") }
 func (h *MapHandler) RegionsMetro(c *core.RequestEvent) error  { return h.regions(c, "metro") }
 func (h *MapHandler) RegionsReal(c *core.RequestEvent) error   { return h.regions(c, "real") }
 func (h *MapHandler) RegionsEve2D(c *core.RequestEvent) error  { return h.regions(c, "eve2d") }
+func (h *MapHandler) RegionOverlays(c *core.RequestEvent) error {
+	regionIDs, parseErr := h.parseRegionIDs(c.Request.PathValue("regions"))
+	if parseErr != nil {
+		return router.NewBadRequestError("Invalid region list.", logging.Fields{
+			"regions": c.Request.PathValue("regions"),
+		})
+	}
+
+	jumpbridges, jumpbridgesErr := h.fetchJumpbridges(regionIDs)
+	if jumpbridgesErr != nil {
+		return router.NewInternalServerError("Failed to load jumpbridges.", logging.Fields{
+			"region_ids": regionIDs,
+		})
+	}
+	timerSignals, timerSignalsErr := h.fetchTimerSignals(regionIDs)
+	if timerSignalsErr != nil {
+		timerSignals = map[int]TimerSignal{}
+	}
+
+	return c.JSON(http.StatusOK, MapOverlaysResponse{
+		Jumpbridges:  jumpbridges,
+		TimerSignals: timerSignals,
+	})
+}
 
 func (h *MapHandler) regions(c *core.RequestEvent, mode string) error {
 	regionIDs, parseErr := h.parseRegionIDs(c.Request.PathValue("regions"))
@@ -72,18 +106,12 @@ func (h *MapHandler) regions(c *core.RequestEvent, mode string) error {
 	normalizeSystemsByRegion(systems, regionIDs, regionNormalizeWidth, regionNormalizeHeight)
 	normalizeRegions(regions)
 
-	jumpbridges, jumpbridgesErr := h.fetchJumpbridges(regionIDs)
-	if jumpbridgesErr != nil {
-		return router.NewInternalServerError("Failed to load jumpbridges.", logging.Fields{
-			"region_ids": regionIDs,
-		})
-	}
-
 	return c.JSON(http.StatusOK, MapResponse{
-		Regions:     regions,
-		Systems:     systems,
-		Gates:       gates,
-		Jumpbridges: jumpbridges,
+		Regions:      regions,
+		Systems:      systems,
+		Gates:        gates,
+		Jumpbridges:  []Jumpbridge{},
+		TimerSignals: map[int]TimerSignal{},
 	})
 }
 
@@ -425,10 +453,27 @@ func parseRoutePayload(c *core.RequestEvent, character string) (struct {
 }
 
 func (h *MapHandler) buildWaypointRoute(source int, waypoints, avoid []int) (fullRoute, fullJBRoute []int, err error) {
+	blockedBridgeSystems := []int{}
+	if h.Timers != nil {
+		disabledSystems, disabledErr := h.Timers.ActiveSystemsByStructureTypes(
+			[]string{ansiblexJumpBridgeStructureType},
+			time.Now().UTC(),
+			nil,
+		)
+		if disabledErr == nil {
+			blockedBridgeSystems = keysFromSet(disabledSystems)
+		}
+	}
+
 	fullRoute = []int{}
 	fullJBRoute = []int{}
 	for _, destination := range waypoints {
-		route, jbRoute, routeErr := h.Routes.GenerateRoute(source, destination, avoid)
+		route, jbRoute, routeErr := h.Routes.GenerateRouteWithBridgeAvoid(
+			source,
+			destination,
+			avoid,
+			blockedBridgeSystems,
+		)
 		if routeErr != nil {
 			return nil, nil, router.NewBadRequestError("Cannot find route to system.", logging.Fields{
 				"source":      source,
@@ -441,6 +486,17 @@ func (h *MapHandler) buildWaypointRoute(source int, waypoints, avoid []int) (ful
 		source = destination
 	}
 	return fullRoute, fullJBRoute, nil
+}
+
+func keysFromSet(set map[int]struct{}) []int {
+	if len(set) == 0 {
+		return nil
+	}
+	keys := make([]int, 0, len(set))
+	for key := range set {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func (h *MapHandler) setRouteWaypoints(c *core.RequestEvent, character, accessToken string, route []int) error {

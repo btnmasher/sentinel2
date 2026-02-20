@@ -35,10 +35,15 @@ func NewRoutePlanner(app *pocketbase.PocketBase) *RoutePlanner {
 }
 
 func (r *RoutePlanner) GenerateRoute(source, destination int, avoid []int) (path, jumpgatePath []int, err error) {
+	return r.GenerateRouteWithBridgeAvoid(source, destination, avoid, nil)
+}
+
+func (r *RoutePlanner) GenerateRouteWithBridgeAvoid(source, destination int, avoid, blockedBridgeSystems []int) (path, jumpgatePath []int, err error) {
 	if populateErr := r.ensureGraph(); populateErr != nil {
 		return nil, nil, populateErr
 	}
 	graph := r.graphWithoutAvoid(avoid)
+	graph = graphWithoutBlockedBridges(graph, blockedBridgeSystems)
 
 	path = bfsShortestPath(graph, source, destination)
 	if len(path) == 0 {
@@ -193,6 +198,29 @@ func filterEdges(edges []edge, remove int) []edge {
 		}
 	}
 	return out
+}
+
+func graphWithoutBlockedBridges(graph map[int][]edge, blockedSystems []int) map[int][]edge {
+	if len(blockedSystems) == 0 {
+		return graph
+	}
+	blocked := make(map[int]struct{}, len(blockedSystems))
+	for _, systemID := range blockedSystems {
+		blocked[systemID] = struct{}{}
+	}
+	for from := range graph {
+		_, fromBlocked := blocked[from]
+		filtered := graph[from][:0]
+		for _, edge := range graph[from] {
+			_, toBlocked := blocked[edge.to]
+			if edge.kind == "bridge" && (fromBlocked || toBlocked) {
+				continue
+			}
+			filtered = append(filtered, edge)
+		}
+		graph[from] = filtered
+	}
+	return graph
 }
 
 func bfsShortestPath(graph map[int][]edge, source, destination int) []int {

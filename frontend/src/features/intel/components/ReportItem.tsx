@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { IntelReport } from "../types";
 import {
-  REGION_MAP,
   colorForAge,
+  useRegionNames,
   useMapStore,
   useOpenSystemContextMenu,
 } from "@/features/map";
@@ -29,6 +29,7 @@ export default function ReportItem({
   const setSystemSearch = useMapStore((s) => s.setSystemSearch);
   const setContextMenu = useUIStore((s) => s.setContextMenu);
   const openSystemContextMenu = useOpenSystemContextMenu();
+  const { getRegionName } = useRegionNames();
   const threatTimings = useSettingsStore((s) => s.settings.intel.threatTimings);
 
   const [timePassed, setTimePassed] = useState(0);
@@ -176,7 +177,7 @@ export default function ReportItem({
           }
           const regionId = String(system.region);
           if (!regionIds.has(regionId)) {
-            const regionName = REGION_MAP[regionId] || `Region ${regionId}`;
+            const regionName = getRegionName(regionId, `Region ${regionId}`);
             return (
               <span key={idx}>
                 {idx > 0 ? " " : ""}

@@ -81,6 +81,18 @@ func runMapDataPipeline(stepper jobs.Stepper, importer *SDEImporter, service *Ma
 		return err
 	}
 
+	if err := stepper.Run(StepPlanetsImport, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, StepPlanetsImport)
+	}); err != nil {
+		return err
+	}
+
+	if err := stepper.Run(StepMoonsImport, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, StepMoonsImport)
+	}); err != nil {
+		return err
+	}
+
 	if err := stepper.Run(StepMetroPositions, true, func(ctx context.Context) error {
 		return service.RunStep(ctx, StepMetroPositions)
 	}); err != nil {

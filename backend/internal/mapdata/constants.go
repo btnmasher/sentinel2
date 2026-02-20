@@ -5,6 +5,8 @@ const (
 	StepRealPositions  = "real_positions"
 	StepEve2DPositions = "eve2d_positions"
 	StepDotlanImport   = "dotlan_import"
+	StepPlanetsImport  = "planets_import"
+	StepMoonsImport    = "moons_import"
 	StepBuildGraph     = "build_graph"
 	StepRegionLayout   = "region_layout"
 	StepMetroPositions = "metro_positions"

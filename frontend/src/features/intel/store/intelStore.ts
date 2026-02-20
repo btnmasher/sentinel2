@@ -1,7 +1,17 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { api } from "@/config/api";
+import { pb } from "@/config/pb";
+import { getHttpStatus } from "@/utils/httpError";
 import type { IntelReport } from "../types";
-import { isClearIntelReport } from "../utils/intelReportUtils";
+import {
+  isClearIntelReport,
+  normalizeIntelReport,
+} from "../utils/intelReportUtils";
+import {
+  INTEL_UPLOADER_COUNT_TOPIC,
+  normalizeUploaderCountMessage,
+} from "../utils/intelRealtimeUtils";
 
 export const INTEL_STORE_VERSION = 2;
 const MAX_REPORT_AGE_SECONDS = 30 * 60;
@@ -23,6 +33,8 @@ type IntelState = {
   uploaders: number;
   version: string;
   intelStatus: "connecting" | "connected" | "disconnected";
+  reportsRealtimeUnsubscribe?: () => Promise<void>;
+  uploadersRealtimeUnsubscribe?: () => Promise<void>;
   logFilters: IntelFilters;
   // Maps system_id -> latest report unix timestamp (seconds)
   lastIntelSystems: Record<number, number>;
@@ -34,6 +46,8 @@ type IntelState = {
   setLogFilters: (filters: Partial<IntelFilters>) => void;
   toggleSystemFilter: (systemId: number) => void;
   clearFilters: () => void;
+  connectRealtime: () => Promise<"ok" | "auth_error" | "error">;
+  disconnectRealtime: () => Promise<void>;
 };
 
 const computeLastIntelSystems = (reports: IntelReport[]) => {
@@ -80,6 +94,19 @@ const normalizeReports = (reports: IntelReport[], max = 100) => {
     .slice(0, max);
 };
 
+type IntelRecord = {
+  report_id?: number | string;
+  report_time?: number | string;
+  author?: string;
+  text?: string;
+  systems?: unknown;
+  regions?: unknown;
+  channel?: string;
+  channel_id?: string;
+  uploader_user?: string;
+  id?: string;
+};
+
 export const useIntelStore = create<IntelState>()(
   persist(
     (set, get) => ({
@@ -89,6 +116,8 @@ export const useIntelStore = create<IntelState>()(
       uploaders: 0,
       version: "",
       intelStatus: "connecting",
+      reportsRealtimeUnsubscribe: undefined,
+      uploadersRealtimeUnsubscribe: undefined,
       logFilters: {
         includeSystemLogs: true,
         includeSystemAlarm: true,
@@ -148,6 +177,86 @@ export const useIntelStore = create<IntelState>()(
             system: [],
           },
         }),
+      connectRealtime: async () => {
+        if (
+          get().reportsRealtimeUnsubscribe ||
+          get().uploadersRealtimeUnsubscribe
+        ) {
+          return "ok";
+        }
+        set({ intelStatus: "connecting" });
+        try {
+          if (!get().reportsFetchedAt) {
+            const res = await api.get("/intel/reports", {
+              headers: { "X-Auth-Check": "1" },
+            });
+            if (!get().reportsFetchedAt) {
+              const reports = Array.isArray(res.data.intel)
+                ? res.data.intel
+                    .map((report: unknown) => normalizeIntelReport(report))
+                    .filter(
+                      (report): report is NonNullable<typeof report> =>
+                        report !== null,
+                    )
+                : [];
+              get().setReports(reports);
+              get().setUploaders(res.data.uploaders ?? 0);
+              get().setVersion(res.data.version ?? "");
+            }
+          }
+          const reportsUnsubscribe = await pb
+            .collection("intel_reports")
+            .subscribe("*", (event) => {
+              if (event.action !== "create") return;
+              const record = event.record as IntelRecord;
+              const report = normalizeIntelReport({
+                ...record,
+                recordId: event.record?.id,
+              });
+              if (report) {
+                get().pushReport(report);
+              }
+            });
+          const uploadersUnsubscribe = await pb.realtime.subscribe(
+            INTEL_UPLOADER_COUNT_TOPIC,
+            (data) => {
+              const payload = normalizeUploaderCountMessage(data);
+              if (payload) {
+                get().setUploaders(payload.uploaders);
+              }
+            },
+          );
+          set({
+            reportsRealtimeUnsubscribe: reportsUnsubscribe,
+            uploadersRealtimeUnsubscribe: uploadersUnsubscribe,
+            intelStatus: "connected",
+          });
+          return "ok";
+        } catch (error: unknown) {
+          await get().disconnectRealtime();
+          const status = getHttpStatus(error);
+          if (status === 401 || status === 403) {
+            return "auth_error";
+          }
+          set({ intelStatus: "disconnected" });
+          return "error";
+        }
+      },
+      disconnectRealtime: async () => {
+        const reportsUnsubscribe = get().reportsRealtimeUnsubscribe;
+        const uploadersUnsubscribe = get().uploadersRealtimeUnsubscribe;
+        set({
+          reportsRealtimeUnsubscribe: undefined,
+          uploadersRealtimeUnsubscribe: undefined,
+          intelStatus: "disconnected",
+        });
+        if (reportsUnsubscribe) {
+          await reportsUnsubscribe().catch(() => undefined);
+        }
+        if (uploadersUnsubscribe) {
+          await uploadersUnsubscribe().catch(() => undefined);
+        }
+      },
     }),
     {
       name: "intel-map-config/intel",

@@ -15,6 +15,7 @@ type Service struct {
 }
 
 const IntelReportRetention = 30 * time.Minute
+const TimerInactiveRetention = 24 * time.Hour
 
 func New(app *pocketbase.PocketBase) *Service {
 	return &Service{App: app}
@@ -136,6 +137,52 @@ func (s *Service) RemoveOldIntelReports(maxAge time.Duration) (int, error) {
 		logging.New(s.App).
 			WithFields(logging.Fields{
 				"collection": store.CollectionIntelReports,
+				"failed":     failed,
+			}).
+			Warn("cleanup delete failures")
+	}
+	return removed, nil
+}
+
+func (s *Service) RemoveOldTimers(maxAge time.Duration) (int, error) {
+	if maxAge <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().UTC().Add(-maxAge).Format(time.RFC3339)
+	records, recordsErr := s.App.FindRecordsByFilter(
+		store.CollectionTimers,
+		"expires_at < {:cutoff}",
+		"",
+		0,
+		0,
+		map[string]any{
+			"cutoff": cutoff,
+		},
+	)
+	if recordsErr != nil {
+		return 0, recordsErr
+	}
+
+	removed := 0
+	failed := 0
+	for _, rec := range records {
+		if err := s.App.Delete(rec); err == nil {
+			removed++
+		} else {
+			failed++
+			logging.New(s.App).
+				WithFields(logging.Fields{
+					"collection": store.CollectionTimers,
+					"record_id":  rec.Id,
+				}).
+				WithErr(err).
+				Debug("cleanup delete failed")
+		}
+	}
+	if failed > 0 {
+		logging.New(s.App).
+			WithFields(logging.Fields{
+				"collection": store.CollectionTimers,
 				"failed":     failed,
 			}).
 			Warn("cleanup delete failures")

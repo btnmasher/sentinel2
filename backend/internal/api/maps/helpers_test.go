@@ -25,7 +25,7 @@ func TestOverlap(t *testing.T) {
 func TestNormalizeRegions(t *testing.T) {
 	t.Parallel()
 
-	regions := map[int]RegionDTO{
+	regions := map[int]Region{
 		1: {Position: struct {
 			X int `json:"x"`
 			Y int `json:"y"`
@@ -46,7 +46,7 @@ func TestNormalizeRegions(t *testing.T) {
 func TestCollectRegionBoundsAndScale(t *testing.T) {
 	t.Parallel()
 
-	systems := map[int]SystemDTO{
+	systems := map[int]System{
 		1: systemWithPos(1, 10, 10),
 		2: systemWithPos(1, 20, 30),
 		3: systemWithPos(2, 100, 100), // out-of-scope region
@@ -66,8 +66,8 @@ func TestCollectRegionBoundsAndScale(t *testing.T) {
 	}
 }
 
-func systemWithPos(regionID, x, y int) SystemDTO {
-	system := SystemDTO{Region: regionID}
+func systemWithPos(regionID, x, y int) System {
+	system := System{Region: regionID}
 	system.Position.X = x
 	system.Position.Y = y
 	return system

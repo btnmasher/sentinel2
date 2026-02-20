@@ -34,6 +34,7 @@ export default function MapJumpbridge({
     from_region?: number;
     to_region?: number;
     friendly: boolean;
+    disabled?: boolean;
   };
 }) {
   const systems = useMapStore((s) => s.systems);
@@ -79,7 +80,13 @@ export default function MapJumpbridge({
       regions,
     );
 
-    return <path className="map-gate jumpbridge" opacity={0.5} d={path} />;
+    return (
+      <path
+        className={`map-gate jumpbridge${jumpbridge.disabled ? " jumpbridge-disabled" : ""}`}
+        opacity={0.5}
+        d={path}
+      />
+    );
   }
 
   if (bridgedSystems.missing) {
@@ -123,7 +130,7 @@ export default function MapJumpbridge({
         position={pos}
         label={bridgedSystems.missing.name}
         mapScale={mapScale}
-        className="map-gate jumpbridge"
+        className={`map-gate jumpbridge${jumpbridge.disabled ? " jumpbridge-disabled" : ""}`}
         onClick={loadMissing}
       />
     );

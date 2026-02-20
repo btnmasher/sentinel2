@@ -21,7 +21,10 @@ export default function SystemCharacterTooltip({
     (max, label) => Math.max(max, label.length),
     0,
   );
-  const width = Math.min(280, Math.max(138, Math.ceil(longestLabel * 5.6 + 26)));
+  const width = Math.min(
+    280,
+    Math.max(138, Math.ceil(longestLabel * 5.6 + 26)),
+  );
   const rowHeight = 12;
   const padding = 6;
   const height = padding * 2 + rowHeight * characters.length;
@@ -42,17 +45,21 @@ export default function SystemCharacterTooltip({
         ry={4}
       />
       {characters.map((char, idx) => {
-        const y = padding + idx * rowHeight + 6;
+        const y = padding + idx * rowHeight + rowHeight / 2;
+        const stateLabel = char.inSpace ? "Undocked" : "Docked";
         return (
           <g key={char.id}>
             <circle
               cx={8}
-              cy={y - 2}
+              cy={y}
               r={2.4}
               fill={char.inSpace ? STATE_COLOR.undocked : STATE_COLOR.docked}
             />
-            <text x={14} y={y}>
-              {char.name} ({char.inSpace ? "Undocked" : "Docked"})
+            <text x={14} y={y} dominantBaseline="middle">
+              <tspan>{char.name}</tspan>
+              <tspan className="map-system-character-state">
+                {` (${stateLabel})`}
+              </tspan>
             </text>
           </g>
         );

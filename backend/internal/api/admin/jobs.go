@@ -39,6 +39,7 @@ type cleanupCounts struct {
 	intelUploaderCount int
 	uploaderTokenCount int
 	intelReportCount   int
+	timerCount         int
 }
 
 const (
@@ -744,6 +745,7 @@ func (h *Handler) runCleanupAsync(runner *jobs.Runner) {
 				"intel_uploaders_count":   counts.intelUploaderCount,
 				"uploader_tokens_count":   counts.uploaderTokenCount,
 				"intel_reports_count":     counts.intelReportCount,
+				"timers_count":            counts.timerCount,
 			})
 			return nil
 		})
@@ -778,6 +780,13 @@ func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	if err := stepper.Run("cleanup_intel_reports", false, func(ctx context.Context) error {
 		count, err := h.Cleanup.RemoveOldIntelReports(cleanup.IntelReportRetention)
 		counts.intelReportCount = count
+		return err
+	}); err != nil {
+		return counts, err
+	}
+	if err := stepper.Run("cleanup_timers", false, func(ctx context.Context) error {
+		count, err := h.Cleanup.RemoveOldTimers(cleanup.TimerInactiveRetention)
+		counts.timerCount = count
 		return err
 	}); err != nil {
 		return counts, err

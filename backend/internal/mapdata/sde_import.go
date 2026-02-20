@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -63,21 +64,10 @@ func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error 
 		}
 	}
 
-	data, dataErr := s.downloadZip(ctx, LatestJSONLZip)
-	if dataErr != nil {
-		return dataErr
+	files, loadErr := s.loadJSONLFiles(ctx, "mapRegions.jsonl", "mapConstellations.jsonl", "mapSolarSystems.jsonl", "mapStargates.jsonl")
+	if loadErr != nil {
+		return loadErr
 	}
-
-	files, unzipErr := unzipJSONL(data)
-	if unzipErr != nil {
-		return unzipErr
-	}
-	logging.New(s.App).
-		WithFields(logging.Fields{
-			"sde_zip_bytes": len(data),
-			"file_count":    len(files),
-		}).
-		Info("zip downloaded and unpacked")
 
 	if importErr := s.importRegions(ctx, files["mapRegions.jsonl"]); importErr != nil {
 		return importErr
@@ -105,12 +95,60 @@ func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error 
 	return nil
 }
 
+func (s *SDEImporter) ImportPlanetsFromLatest(ctx context.Context) error {
+	files, err := s.loadJSONLFiles(ctx, "mapPlanets.jsonl")
+	if err != nil {
+		return err
+	}
+	return s.importPlanets(ctx, files["mapPlanets.jsonl"])
+}
+
+func (s *SDEImporter) ImportMoonsFromLatest(ctx context.Context) error {
+	files, err := s.loadJSONLFiles(ctx, "mapMoons.jsonl")
+	if err != nil {
+		return err
+	}
+	return s.importMoons(ctx, files["mapMoons.jsonl"])
+}
+
+func (s *SDEImporter) loadJSONLFiles(ctx context.Context, names ...string) (map[string][]byte, error) {
+	data, dataErr := s.downloadZip(ctx, LatestJSONLZip)
+	if dataErr != nil {
+		return nil, dataErr
+	}
+	files, unzipErr := unzipJSONL(data)
+	if unzipErr != nil {
+		return nil, unzipErr
+	}
+	logging.New(s.App).
+		WithFields(logging.Fields{
+			"sde_zip_bytes": len(data),
+			"file_count":    len(files),
+		}).
+		Info("zip downloaded and unpacked")
+
+	if len(names) == 0 {
+		return files, nil
+	}
+	out := map[string][]byte{}
+	for _, name := range names {
+		fileData, ok := files[name]
+		if !ok {
+			return nil, ErrMapJSONLNotFound
+		}
+		out[name] = fileData
+	}
+	return out, nil
+}
+
 func (s *SDEImporter) logSDECollectionCounts() {
 	counts := map[string]int{}
 	for _, collection := range []string{
 		store.CollectionRegions,
 		store.CollectionConstellations,
 		store.CollectionSolarSystems,
+		store.CollectionPlanets,
+		store.CollectionMoons,
 		store.CollectionGates,
 	} {
 		records, recordsErr := s.App.FindRecordsByFilter(collection, "", "", 0, 0, nil)
@@ -428,6 +466,237 @@ func (row *systemRowData) payload() map[string]any {
 	return payload
 }
 
+const moonGroupID = 8
+
+func (s *SDEImporter) importPlanets(ctx context.Context, data []byte) error {
+	rows, rowsErr := parseJSONL(data)
+	if rowsErr != nil {
+		return rowsErr
+	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "planets",
+		"row_count": len(rows),
+	})
+	var saved, skippedMissingID, skippedMissingSystem, skippedUnchanged int
+
+	for i, row := range rows {
+		if i%1000 == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		planet := parsePlanetRow(row)
+		if planet.id == 0 {
+			skippedMissingID++
+			continue
+		}
+		if planet.systemID == 0 {
+			skippedMissingSystem++
+			continue
+		}
+		systemName := ""
+		if system, err := s.findSystem(planet.systemID); err == nil {
+			systemName = system.GetString("name")
+		}
+		name := planet.name
+		if strings.TrimSpace(name) == "" {
+			name = derivePlanetName(systemName, planet.celestialIndex, planet.id)
+		}
+		changed, upsertErr := s.upsertNumberRecordIfChanged(store.CollectionPlanets, planet.id, map[string]any{
+			"eve_id":          planet.id,
+			"name":            name,
+			"system_id":       planet.systemID,
+			"system_name":     systemName,
+			"celestial_index": planet.celestialIndex,
+		})
+		if upsertErr != nil {
+			log.WithErr(upsertErr).
+				WithFields(logging.Fields{"planet_id": planet.id, "system_id": planet.systemID}).
+				Error("planet upsert failed")
+			return upsertErr
+		}
+		if !changed {
+			skippedUnchanged++
+			continue
+		}
+		saved++
+	}
+	log.WithFields(logging.Fields{
+		"saved_count":                     saved,
+		"skipped_missing_id_count":        skippedMissingID,
+		"skipped_missing_system_id_count": skippedMissingSystem,
+		"skipped_unchanged_count":         skippedUnchanged,
+	}).Info("planets import complete")
+	return nil
+}
+
+func (s *SDEImporter) importMoons(ctx context.Context, data []byte) error {
+	rows, rowsErr := parseJSONL(data)
+	if rowsErr != nil {
+		return rowsErr
+	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "moons",
+		"row_count": len(rows),
+	})
+	var saved, skippedNotMoon, skippedMissingID, skippedMissingSystem, skippedUnchanged int
+
+	for i, row := range rows {
+		if i%1000 == 0 && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		moon, reason := parseValidMoonRow(row)
+		switch reason {
+		case "not_moon":
+			skippedNotMoon++
+			continue
+		case "missing_id":
+			skippedMissingID++
+			continue
+		case "missing_system":
+			skippedMissingSystem++
+			continue
+		}
+		payload := s.moonPayload(moon)
+		changed, upsertErr := s.upsertNumberRecordIfChanged(store.CollectionMoons, moon.id, payload)
+		if upsertErr != nil {
+			log.WithErr(upsertErr).
+				WithFields(logging.Fields{"moon_id": moon.id, "system_id": moon.systemID}).
+				Error("moon upsert failed")
+			return upsertErr
+		}
+		if !changed {
+			skippedUnchanged++
+			continue
+		}
+		saved++
+	}
+	log.WithFields(logging.Fields{
+		"saved_count":                     saved,
+		"skipped_not_moon_count":          skippedNotMoon,
+		"skipped_missing_id_count":        skippedMissingID,
+		"skipped_missing_system_id_count": skippedMissingSystem,
+		"skipped_unchanged_count":         skippedUnchanged,
+	}).Info("moons import complete")
+	return nil
+}
+
+func parseValidMoonRow(row map[string]any) (moon moonRowData, reason string) {
+	moon = parseMoonRow(row)
+	if moon.groupID != 0 && moon.groupID != moonGroupID {
+		return moon, "not_moon"
+	}
+	if moon.id == 0 {
+		return moon, "missing_id"
+	}
+	if moon.systemID == 0 {
+		return moon, "missing_system"
+	}
+	return moon, ""
+}
+
+func (s *SDEImporter) moonPayload(moon moonRowData) map[string]any {
+	systemName := ""
+	if system, err := s.findSystem(moon.systemID); err == nil {
+		systemName = system.GetString("name")
+	}
+	planetName := ""
+	if moon.planetID > 0 {
+		if planet, err := s.findPlanet(moon.planetID); err == nil {
+			planetName = planet.GetString("name")
+		}
+	}
+	name := moon.name
+	if strings.TrimSpace(name) == "" {
+		name = deriveMoonName(systemName, planetName, moon.orbitIndex, moon.id)
+	}
+	return map[string]any{
+		"eve_id":      moon.id,
+		"name":        name,
+		"system_id":   moon.systemID,
+		"system_name": systemName,
+		"planet_id":   moon.planetID,
+		"planet_name": planetName,
+	}
+}
+
+type moonRowData struct {
+	id         int
+	name       string
+	groupID    int
+	systemID   int
+	planetID   int
+	orbitIndex int
+}
+
+func parseMoonRow(row map[string]any) moonRowData {
+	return moonRowData{
+		id:         getInt(row, "moonID", "itemID", "id", "_key"),
+		name:       getString(row, "moonName", "itemName", "name"),
+		groupID:    getInt(row, "groupID"),
+		systemID:   getInt(row, "solarSystemID", "locationID"),
+		planetID:   getInt(row, "orbitID", "planetID"),
+		orbitIndex: getInt(row, "orbitIndex"),
+	}
+}
+
+type planetRowData struct {
+	id             int
+	name           string
+	systemID       int
+	celestialIndex int
+}
+
+func parsePlanetRow(row map[string]any) planetRowData {
+	return planetRowData{
+		id:             getInt(row, "planetID", "itemID", "id", "_key"),
+		name:           getString(row, "planetName", "itemName", "name"),
+		systemID:       getInt(row, "solarSystemID", "locationID"),
+		celestialIndex: getInt(row, "celestialIndex"),
+	}
+}
+
+func derivePlanetName(systemName string, celestialIndex, planetID int) string {
+	if systemName != "" && celestialIndex > 0 {
+		return systemName + " " + intToRoman(celestialIndex)
+	}
+	return "Planet " + strconv.Itoa(planetID)
+}
+
+func deriveMoonName(systemName, planetName string, orbitIndex, moonID int) string {
+	if planetName != "" {
+		base := planetName
+		if orbitIndex > 0 {
+			return base + " - Moon " + strconv.Itoa(orbitIndex)
+		}
+		return base + " - Moon"
+	}
+	if systemName != "" {
+		return systemName + " Moon " + strconv.Itoa(max(orbitIndex, 1))
+	}
+	return "Moon " + strconv.Itoa(moonID)
+}
+
+func intToRoman(value int) string {
+	if value <= 0 {
+		return strconv.Itoa(value)
+	}
+	var numerals = []struct {
+		value int
+		text  string
+	}{
+		{1000, "M"}, {900, "CM"}, {500, "D"}, {400, "CD"},
+		{100, "C"}, {90, "XC"}, {50, "L"}, {40, "XL"},
+		{10, "X"}, {9, "IX"}, {5, "V"}, {4, "IV"}, {1, "I"},
+	}
+	var out strings.Builder
+	for _, numeral := range numerals {
+		for value >= numeral.value {
+			out.WriteString(numeral.text)
+			value -= numeral.value
+		}
+	}
+	return out.String()
+}
+
 func (s *SDEImporter) importGates(ctx context.Context, data []byte) error {
 	rows, rowsErr := parseJSONL(data)
 	if rowsErr != nil {
@@ -614,6 +883,8 @@ func unzipJSONL(data []byte) (map[string][]byte, error) {
 		if file.Name != "mapRegions.jsonl" &&
 			file.Name != "mapConstellations.jsonl" &&
 			file.Name != "mapSolarSystems.jsonl" &&
+			file.Name != "mapPlanets.jsonl" &&
+			file.Name != "mapMoons.jsonl" &&
 			file.Name != "mapStargates.jsonl" {
 			continue
 		}
@@ -685,6 +956,17 @@ func (s *SDEImporter) findSystem(systemID int) (*core.Record, error) {
 	return records[0], nil
 }
 
+func (s *SDEImporter) findPlanet(planetID int) (*core.Record, error) {
+	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionPlanets, "eve_id = {:id}", "", 1, 0, map[string]any{"id": planetID})
+	if recordsErr != nil {
+		return nil, recordsErr
+	}
+	if len(records) == 0 {
+		return nil, ErrSystemNotFound
+	}
+	return records[0], nil
+}
+
 func (s *SDEImporter) gateExists(fromID, toID int) bool {
 	records, recordsErr := s.App.FindRecordsByFilter(
 		store.CollectionGates,
@@ -718,6 +1000,96 @@ func (s *SDEImporter) upsertNumberRecord(collection string, id int, data map[str
 		record.Set(key, value)
 	}
 	return s.App.Save(record)
+}
+
+func (s *SDEImporter) upsertNumberRecordIfChanged(collection string, id int, data map[string]any) (bool, error) {
+	records, recordsErr := s.App.FindRecordsByFilter(collection, "eve_id = {:id}", "", 1, 0, map[string]any{"id": id})
+	if recordsErr != nil {
+		return false, recordsErr
+	}
+
+	coll := s.collection(collection)
+	if len(records) == 0 {
+		record := core.NewRecord(coll)
+		for key, value := range data {
+			record.Set(key, value)
+		}
+		return true, s.App.Save(record)
+	}
+
+	record := records[0]
+	if !recordHasFieldChanges(record, data) {
+		return false, nil
+	}
+	for key, value := range data {
+		record.Set(key, value)
+	}
+	return true, s.App.Save(record)
+}
+
+func recordHasFieldChanges(record *core.Record, data map[string]any) bool {
+	for key, incoming := range data {
+		if !valuesEqual(record.Get(key), incoming) {
+			return true
+		}
+	}
+	return false
+}
+
+func valuesEqual(current, incoming any) bool {
+	if incoming == nil {
+		return current == nil
+	}
+	if current == nil {
+		return false
+	}
+
+	if incomingNumber, incomingIsNumber := toFloat64(incoming); incomingIsNumber {
+		currentNumber, currentIsNumber := toFloat64(current)
+		return currentIsNumber && math.Abs(currentNumber-incomingNumber) < 1e-9
+	}
+
+	switch v := incoming.(type) {
+	case string:
+		currentString, ok := current.(string)
+		return ok && currentString == v
+	case bool:
+		currentBool, ok := current.(bool)
+		return ok && currentBool == v
+	default:
+		return fmt.Sprintf("%v", current) == fmt.Sprintf("%v", incoming)
+	}
+}
+
+func toFloat64(value any) (float64, bool) {
+	switch n := value.(type) {
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case float32:
+		return float64(n), true
+	case float64:
+		return n, true
+	default:
+		return 0, false
+	}
 }
 
 func (s *SDEImporter) saveMeta(key, value string) error {

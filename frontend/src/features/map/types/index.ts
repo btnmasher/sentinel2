@@ -36,6 +36,61 @@ export type Jumpbridge = {
   from_region?: number;
   to_region?: number;
   friendly: boolean;
+  disabled?: boolean;
+};
+
+export type TimerSignal = {
+  system_id: number;
+  count: number;
+  remaining_count?: number;
+  next_expires_at: string;
+  severity: "low" | "medium" | "high" | "critical" | string;
+  standing_type:
+    | "ours"
+    | "friendly"
+    | "hostile"
+    | "neutral"
+    | "complicated"
+    | string;
+  timer_kind:
+    | "reinforcement"
+    | "anchoring"
+    | "moon_ore"
+    | "skyhook"
+    | "custom"
+    | string;
+  title?: string;
+  structure_type?: string;
+  stage_label?: string;
+  planet_name?: string;
+  moon_name?: string;
+  skyhook_fullness_pct?: number;
+  timers?: TimerSignalPreview[];
+};
+
+export type TimerSignalPreview = {
+  title?: string;
+  next_expires_at: string;
+  severity: "low" | "medium" | "high" | "critical" | string;
+  standing_type:
+    | "ours"
+    | "friendly"
+    | "hostile"
+    | "neutral"
+    | "complicated"
+    | string;
+  timer_kind:
+    | "reinforcement"
+    | "anchoring"
+    | "moon_ore"
+    | "skyhook"
+    | "custom"
+    | string;
+  structure_type?: string;
+  stage_label?: string;
+  planet_name?: string;
+  moon_name?: string;
+  skyhook_fullness_pct?: number;
 };
 
 export type Character = {

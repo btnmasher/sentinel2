@@ -12,16 +12,6 @@ import (
 	"sentinel2/internal/logging"
 )
 
-type esiThrottle struct {
-	mu           sync.Mutex
-	throttleTill time.Time
-	logger       *logging.Logger
-}
-
-type esiRateLimiter struct {
-	limiter *rate.Limiter
-}
-
 const (
 	defaultESIRate                   = 10
 	defaultESIBurst                  = 20
@@ -32,6 +22,16 @@ const (
 	remainingCriticalDelay           = 5 * time.Second
 	throttleWarnDelayMs        int64 = 5000
 )
+
+type esiThrottle struct {
+	mu           sync.Mutex
+	throttleTill time.Time
+	logger       *logging.Logger
+}
+
+type esiRateLimiter struct {
+	limiter *rate.Limiter
+}
 
 var globalESILimiter = newESIRateLimiter(defaultESIRate, defaultESIBurst)
 

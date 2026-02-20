@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
+import { createPortal } from "react-dom";
 import type { DateRange } from "react-day-picker";
 
 const formatRangeLabel = (range?: DateRange) => {
@@ -13,24 +14,37 @@ const formatRangeLabel = (range?: DateRange) => {
   return "All dates";
 };
 
+const formatSingleLabel = (value?: Date) => {
+  if (!value) return "Select date";
+  return value.toLocaleDateString();
+};
+
 type DateRangePickerProps = {
   value?: DateRange;
+  singleValue?: Date;
+  mode?: "range" | "single";
   startHour?: number;
   endHour?: number;
-  onApply: (range?: DateRange, startHour?: number, endHour?: number) => void;
+  onApply?: (range?: DateRange, startHour?: number, endHour?: number) => void;
+  onApplySingle?: (date?: Date, startHour?: number, endHour?: number) => void;
   onClear: () => void;
   disableFuture?: boolean;
+  disablePast?: boolean;
   buttonClassName?: string;
   showTimeSelect?: boolean;
 };
 
 export default function DateRangePicker({
   value,
+  singleValue,
+  mode = "range",
   startHour,
   endHour,
   onApply,
+  onApplySingle,
   onClear,
   disableFuture = true,
+  disablePast = false,
   buttonClassName = "btn btn-xs btn-ghost",
   showTimeSelect = false,
 }: DateRangePickerProps) {
@@ -38,6 +52,7 @@ export default function DateRangePicker({
   const [pendingRange, setPendingRange] = useState<DateRange | undefined>(
     undefined,
   );
+  const [pendingDate, setPendingDate] = useState<Date | undefined>(undefined);
   const [pendingStartHour, setPendingStartHour] = useState<number | undefined>(
     undefined,
   );
@@ -45,6 +60,8 @@ export default function DateRangePicker({
     undefined,
   );
   const pickerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
 
   const hourOptions = useMemo(
     () =>
@@ -58,18 +75,44 @@ export default function DateRangePicker({
   useEffect(() => {
     if (!open) return;
     setPendingRange(value);
+    setPendingDate(singleValue);
     setPendingStartHour(startHour);
     setPendingEndHour(endHour);
-  }, [open, value, startHour, endHour]);
+  }, [open, value, singleValue, startHour, endHour]);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      const margin = 8;
+      const top = rect.bottom + margin;
+      const left = Math.min(
+        Math.max(margin, rect.left),
+        window.innerWidth - 360,
+      );
+      setPosition({ top, left });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
+      if (buttonRef.current?.contains(target)) return;
       if (pickerRef.current?.contains(target)) return;
       setOpen(false);
       setPendingRange(value);
+      setPendingDate(singleValue);
       setPendingStartHour(startHour);
       setPendingEndHour(endHour);
     };
@@ -77,6 +120,7 @@ export default function DateRangePicker({
       if (event.key !== "Escape") return;
       setOpen(false);
       setPendingRange(value);
+      setPendingDate(singleValue);
       setPendingStartHour(startHour);
       setPendingEndHour(endHour);
     };
@@ -86,104 +130,142 @@ export default function DateRangePicker({
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [open, value, startHour, endHour]);
+  }, [open, value, singleValue, startHour, endHour]);
+
+  const disabled = useMemo(() => {
+    const result: { after?: Date; before?: Date } = {};
+    if (disableFuture) {
+      result.after = new Date();
+    }
+    if (disablePast) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      result.before = today;
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  }, [disableFuture, disablePast]);
+
+  const triggerLabel =
+    mode === "single"
+      ? formatSingleLabel(singleValue)
+      : formatRangeLabel(value);
 
   return (
-    <div className="relative">
+    <>
       <button
+        ref={buttonRef}
         className={buttonClassName}
         onClick={() => setOpen((prev) => !prev)}
         type="button"
       >
-        {formatRangeLabel(value)}
+        {triggerLabel}
       </button>
-      {open && (
-        <div
-          ref={pickerRef}
-          className="absolute z-30 mt-2 top-full left-0 rounded-lg border border-slate-800 bg-base-200 shadow-lg p-3"
-        >
-          <DayPicker
-            mode="range"
-            selected={pendingRange}
-            disabled={disableFuture ? { after: new Date() } : undefined}
-            captionLayout="dropdown"
-            endMonth={new Date()}
-            onSelect={(range) => {
-              setPendingRange(range);
-            }}
-            numberOfMonths={1}
-            weekStartsOn={0}
-            showOutsideDays
-          />
-          {showTimeSelect && (
-            <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                  Start hour
-                </span>
-                <select
-                  className="select select-xs select-bordered bg-base-300"
-                  value={pendingStartHour ?? ""}
-                  onChange={(event) => {
-                    const next =
-                      event.target.value === ""
-                        ? undefined
-                        : Number(event.target.value);
-                    setPendingStartHour(next);
+      {open &&
+        createPortal(
+          <div
+            ref={pickerRef}
+            className="fixed z-[10000] rounded-lg border border-slate-800 bg-base-200 p-3 shadow-lg"
+            style={{ top: position.top, left: position.left }}
+          >
+            <DayPicker
+              mode={mode}
+              selected={mode === "single" ? pendingDate : pendingRange}
+              disabled={disabled}
+              captionLayout="dropdown"
+              endMonth={new Date()}
+              onSelect={(next) => {
+                if (mode === "single") {
+                  setPendingDate(next as Date | undefined);
+                  return;
+                }
+                setPendingRange(next as DateRange | undefined);
+              }}
+              numberOfMonths={1}
+              weekStartsOn={0}
+              showOutsideDays
+            />
+            {showTimeSelect && (
+              <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                <label className="grid gap-1">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                    Start hour
+                  </span>
+                  <select
+                    className="select select-xs select-bordered bg-base-300"
+                    value={pendingStartHour ?? ""}
+                    onChange={(event) => {
+                      const next =
+                        event.target.value === ""
+                          ? undefined
+                          : Number(event.target.value);
+                      setPendingStartHour(next);
+                    }}
+                  >
+                    <option value="">All</option>
+                    {hourOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                    End hour
+                  </span>
+                  <select
+                    className="select select-xs select-bordered bg-base-300"
+                    value={pendingEndHour ?? ""}
+                    onChange={(event) => {
+                      const next =
+                        event.target.value === ""
+                          ? undefined
+                          : Number(event.target.value);
+                      setPendingEndHour(next);
+                    }}
+                  >
+                    <option value="">All</option>
+                    {hourOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+              <span>
+                {mode === "single"
+                  ? "Select a date."
+                  : "Select a start and end date."}
+              </span>
+              <div className="flex items-center gap-2">
+                <button className="btn btn-xs btn-outline" onClick={onClear}>
+                  Clear
+                </button>
+                <button
+                  className="btn btn-xs btn-outline"
+                  onClick={() => {
+                    if (mode === "single") {
+                      onApplySingle?.(
+                        pendingDate,
+                        pendingStartHour,
+                        pendingEndHour,
+                      );
+                    } else {
+                      onApply?.(pendingRange, pendingStartHour, pendingEndHour);
+                    }
+                    setOpen(false);
                   }}
                 >
-                  <option value="">All</option>
-                  {hourOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                  End hour
-                </span>
-                <select
-                  className="select select-xs select-bordered bg-base-300"
-                  value={pendingEndHour ?? ""}
-                  onChange={(event) => {
-                    const next =
-                      event.target.value === ""
-                        ? undefined
-                        : Number(event.target.value);
-                    setPendingEndHour(next);
-                  }}
-                >
-                  <option value="">All</option>
-                  {hourOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  Done
+                </button>
+              </div>
             </div>
-          )}
-          <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
-            <span>Select a start and end date.</span>
-            <div className="flex items-center gap-2">
-              <button className="btn btn-xs btn-outline" onClick={onClear}>
-                Clear
-              </button>
-              <button
-                className="btn btn-xs btn-outline"
-                onClick={() => {
-                  onApply(pendingRange, pendingStartHour, pendingEndHour);
-                  setOpen(false);
-                }}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

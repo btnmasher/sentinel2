@@ -4,6 +4,7 @@ import {
   MapLayoutSelect,
   MapPageShell,
   JumpbridgesToggle,
+  TimersToggle,
   MapZoomControls,
   MapCanvas,
   RegionSelect,
@@ -36,6 +37,7 @@ export default function Intel() {
       <RegionSelect multi />
       <MapLayoutSelect inlineLabel="Layout" />
       <JumpbridgesToggle />
+      <TimersToggle />
       <MapZoomControls />
       <button
         className="btn btn-xs btn-info btn-outline"

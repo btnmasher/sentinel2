@@ -57,6 +57,8 @@ export default function JobActionsSection() {
             path: "/admin/map-data/eve2d-positions",
           },
           { label: "Dotlan import", path: "/admin/map-data/dotlan" },
+          { label: "Import planets", path: "/admin/map-data/planets" },
+          { label: "Import moons", path: "/admin/map-data/moons" },
           {
             label: "Build metro positions",
             path: "/admin/map-data/metro-positions",

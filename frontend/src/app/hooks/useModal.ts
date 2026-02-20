@@ -172,5 +172,22 @@ export default function useModal<K extends string>(
     }
   }, [closeModal, dismissInternal, handleClose, open, openModal]);
 
+  useEffect(() => {
+    if (!open || !openedRef.current) return;
+    const config = buildRef.current(handleClose);
+    afterOpenCloseRef.current = config.onClose ?? null;
+    openModal({
+      ...config,
+      onClose: async (reason = "programmatic") => {
+        const shouldClose = await dismissInternal(reason);
+        if (shouldClose) {
+          openedRef.current = false;
+          afterOpenCloseRef.current = null;
+        }
+        return shouldClose;
+      },
+    });
+  }, [build, dismissInternal, handleClose, open, openModal]);
+
   return { handleClose, open: openFromKey };
 }

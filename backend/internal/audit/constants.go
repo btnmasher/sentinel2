@@ -8,6 +8,7 @@ const (
 	TargetTypeChannel        = "channel"
 	TargetTypeJumpbridgeSet  = "jumpbridge_set"
 	TargetTypeJumpbridgePair = "jumpbridge_pair"
+	TargetTypeTimer          = "timer"
 )
 
 const (
@@ -39,6 +40,11 @@ const (
 	ActionStaffJumpbridgeAdd        = "staff.jumpbridge.add"
 	ActionStaffJumpbridgeRemove     = "staff.jumpbridge.remove"
 	ActionStaffJumpbridgeUpdate     = "staff.jumpbridge.update"
+	ActionTimerCreate               = "timer.create"
+	ActionTimerUpdate               = "timer.update"
+	ActionTimerCancel               = "timer.cancel"
+	ActionTimerUncancel             = "timer.uncancel"
+	ActionTimerDelete               = "timer.delete"
 	ActionUserAccessLevelCleared    = "user.access_level_cleared"
 	ActionUserAccessLevelSet        = "user.access_level_set"
 )

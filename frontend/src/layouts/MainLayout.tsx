@@ -49,6 +49,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     const items = [
       { to: "/", label: "Intel" },
       { to: "/nav", label: "Navigation" },
+      { to: "/timers", label: "Timers" },
       { to: "/settings", label: "Settings" },
       { to: "/uploader", label: "Uploader" },
     ];

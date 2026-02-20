@@ -6,14 +6,14 @@ import (
 	"sentinel2/internal/shared/geom"
 )
 
-func normalizeSystemsByRegion(systems map[int]SystemDTO, regionIDs []int, tx, ty int) {
+func normalizeSystemsByRegion(systems map[int]System, regionIDs []int, tx, ty int) {
 	regionBounds := collectRegionBounds(systems, regionIDs)
 	for regionID, regionBoundsValue := range regionBounds {
 		applyRegionScale(systems, regionID, regionBoundsValue, tx, ty)
 	}
 }
 
-func collectRegionBounds(systems map[int]SystemDTO, regionIDs []int) map[int]*geom.Bounds[int] {
+func collectRegionBounds(systems map[int]System, regionIDs []int) map[int]*geom.Bounds[int] {
 	regionSet := map[int]struct{}{}
 	for _, id := range regionIDs {
 		regionSet[id] = struct{}{}
@@ -34,7 +34,7 @@ func collectRegionBounds(systems map[int]SystemDTO, regionIDs []int) map[int]*ge
 	return regionBoundsMap
 }
 
-func applyRegionScale(systems map[int]SystemDTO, regionID int, bounds *geom.Bounds[int], tx, ty int) {
+func applyRegionScale(systems map[int]System, regionID int, bounds *geom.Bounds[int], tx, ty int) {
 	if bounds == nil || !bounds.Seen {
 		return
 	}
@@ -56,7 +56,7 @@ func applyRegionScale(systems map[int]SystemDTO, regionID int, bounds *geom.Boun
 	}
 }
 
-func normalizeRegions(regions map[int]RegionDTO) {
+func normalizeRegions(regions map[int]Region) {
 	if len(regions) == 0 {
 		return
 	}

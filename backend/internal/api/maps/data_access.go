@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -17,18 +18,19 @@ import (
 )
 
 const findByNameCandidatesLimit = 50
+const ansiblexJumpBridgeStructureType = "ansiblex_jump_bridge"
 
-func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]RegionDTO, error) {
+func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]Region, error) {
 	filter, params := queryhelpers.BuildOrEqualsFilter("eve_id", regionIDs)
 	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionRegions, filter, "name", 0, 0, params)
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
 
-	out := map[int]RegionDTO{}
+	out := map[int]Region{}
 	for _, rec := range records {
 		id := rec.GetInt("eve_id")
-		dto := RegionDTO{
+		dto := Region{
 			Region: id,
 			Name:   rec.GetString("name"),
 		}
@@ -62,17 +64,17 @@ func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]RegionD
 	return out, nil
 }
 
-func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]SystemDTO, error) {
+func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]System, error) {
 	filter, params := queryhelpers.BuildOrEqualsFilter("region_id", regionIDs)
 	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionSolarSystems, filter, "", 0, 0, params)
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
 
-	out := map[int]SystemDTO{}
+	out := map[int]System{}
 	for _, rec := range records {
 		id := rec.GetInt("eve_id")
-		dto := SystemDTO{
+		dto := System{
 			Name:           rec.GetString("name"),
 			SecurityStatus: rec.GetFloat("security_status"),
 			Region:         rec.GetInt("region_id"),
@@ -109,7 +111,7 @@ func (h *MapHandler) fetchSystems(regionIDs []int, mode string) (map[int]SystemD
 	return out, nil
 }
 
-func (h *MapHandler) fetchGates(regionIDs []int) ([]GateDTO, error) {
+func (h *MapHandler) fetchGates(regionIDs []int) ([]Gate, error) {
 	filter, params := queryhelpers.BuildOrEqualsFilter("from_region", regionIDs)
 	filterTo, paramsTo := queryhelpers.BuildOrEqualsFilter("to_region", regionIDs)
 	stdmaps.Copy(params, paramsTo)
@@ -121,7 +123,7 @@ func (h *MapHandler) fetchGates(regionIDs []int) ([]GateDTO, error) {
 		return nil, recordsErr
 	}
 
-	out := []GateDTO{}
+	out := []Gate{}
 	for _, rec := range records {
 		fromRegion := rec.GetInt("from_region")
 		toRegion := rec.GetInt("to_region")
@@ -132,7 +134,7 @@ func (h *MapHandler) fetchGates(regionIDs []int) ([]GateDTO, error) {
 			gateType = "constellation"
 		}
 
-		out = append(out, GateDTO{
+		out = append(out, Gate{
 			To:          rec.GetInt("to_solarsystem"),
 			From:        rec.GetInt("from_solarsystem"),
 			Type:        gateType,
@@ -152,7 +154,12 @@ func (h *MapHandler) fetchGates(regionIDs []int) ([]GateDTO, error) {
 	return out, nil
 }
 
-func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]JumpbridgeDTO, error) {
+func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]Jumpbridge, error) {
+	disabledSystems, disabledErr := h.fetchDisabledAnsiblexSystems(regionIDs)
+	if disabledErr != nil {
+		disabledSystems = map[int]struct{}{}
+	}
+
 	filter, params := queryhelpers.BuildOrEqualsFilter("from_region", regionIDs)
 	filterTo, paramsTo := queryhelpers.BuildOrEqualsFilter("to_region", regionIDs)
 	stdmaps.Copy(params, paramsTo)
@@ -164,7 +171,7 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]JumpbridgeDTO, error) 
 		return nil, recordsErr
 	}
 
-	out := []JumpbridgeDTO{}
+	out := []Jumpbridge{}
 	seen := map[string]struct{}{}
 	for _, rec := range records {
 		fromRegion := rec.GetInt("from_region")
@@ -180,13 +187,80 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]JumpbridgeDTO, error) 
 			continue
 		}
 
-		out = append(out, JumpbridgeDTO{
+		out = append(out, Jumpbridge{
 			From:       from,
 			To:         to,
 			FromRegion: fromRegion,
 			ToRegion:   toRegion,
 			Friendly:   rec.GetBool("is_friendly"),
+			Disabled:   jumpbridgeTouchesDisabledSystem(from, to, disabledSystems),
 		})
+	}
+	return out, nil
+}
+
+func (h *MapHandler) fetchDisabledAnsiblexSystems(regionIDs []int) (map[int]struct{}, error) {
+	if h.Timers == nil {
+		return map[int]struct{}{}, nil
+	}
+	return h.Timers.ActiveSystemsByStructureTypes(
+		[]string{ansiblexJumpBridgeStructureType},
+		time.Now().UTC(),
+		regionIDs,
+	)
+}
+
+func jumpbridgeTouchesDisabledSystem(from, to int, disabledSystems map[int]struct{}) bool {
+	if len(disabledSystems) == 0 {
+		return false
+	}
+	_, fromDisabled := disabledSystems[from]
+	_, toDisabled := disabledSystems[to]
+	return fromDisabled || toDisabled
+}
+
+func (h *MapHandler) fetchTimerSignals(regionIDs []int) (map[int]TimerSignal, error) {
+	if h.Timers == nil {
+		return map[int]TimerSignal{}, nil
+	}
+	signals, err := h.Timers.ActiveSignalsByRegions(regionIDs, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[int]TimerSignal, len(signals))
+	for systemID, signal := range signals {
+		previews := make([]TimerPreview, 0, len(signal.Timers))
+		for _, timer := range signal.Timers {
+			previews = append(previews, TimerPreview{
+				Title:              timer.Title,
+				NextExpiresAt:      timer.ExpiresAt.Format(time.RFC3339),
+				Severity:           timer.Severity,
+				StandingType:       timer.StandingType,
+				TimerKind:          timer.TimerKind,
+				StructureType:      timer.StructureType,
+				StageLabel:         timer.StageLabel,
+				PlanetName:         timer.PlanetName,
+				MoonName:           timer.MoonName,
+				SkyhookFullnessPct: timer.SkyhookFullnessPct,
+			})
+		}
+		out[systemID] = TimerSignal{
+			SystemID:           systemID,
+			Count:              signal.Count,
+			RemainingCount:     signal.RemainingCount,
+			NextExpiresAt:      signal.NextExpiresAt.Format(time.RFC3339),
+			Severity:           signal.Severity,
+			StandingType:       signal.StandingType,
+			TimerKind:          signal.TimerKind,
+			Title:              signal.Title,
+			StructureType:      signal.StructureType,
+			StageLabel:         signal.StageLabel,
+			PlanetName:         signal.PlanetName,
+			MoonName:           signal.MoonName,
+			SkyhookFullnessPct: signal.SkyhookFullnessPct,
+			Timers:             previews,
+		}
 	}
 	return out, nil
 }

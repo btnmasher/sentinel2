@@ -7,6 +7,7 @@ type SelectionItem = {
   label: string;
   description?: string;
   disabled?: boolean;
+  kind?: "item" | "section";
 };
 
 type SelectionDropdownProps = {
@@ -122,11 +123,28 @@ export default function SelectionDropdown({
   const filteredItems = useMemo(() => {
     if (!searchable || !search.trim()) return items;
     const needle = search.trim().toLowerCase();
-    return items.filter((item) =>
-      [item.label, item.description]
+    const filtered: SelectionItem[] = [];
+    let pendingSection: SelectionItem | null = null;
+    let sectionAdded = false;
+
+    items.forEach((item) => {
+      if (item.kind === "section") {
+        pendingSection = item;
+        sectionAdded = false;
+        return;
+      }
+      const matches = [item.label, item.description]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle)),
-    );
+        .some((value) => String(value).toLowerCase().includes(needle));
+      if (!matches) return;
+      if (pendingSection && !sectionAdded) {
+        filtered.push(pendingSection);
+        sectionAdded = true;
+      }
+      filtered.push(item);
+    });
+
+    return filtered;
   }, [items, search, searchable]);
 
   const selectedLabel = useMemo(() => {
@@ -157,7 +175,9 @@ export default function SelectionDropdown({
   };
 
   const focusFirstItem = () => {
-    const index = filteredItems.findIndex((item) => !item.disabled);
+    const index = filteredItems.findIndex(
+      (item) => item.kind !== "section" && !item.disabled,
+    );
     if (index >= 0) {
       itemRefs.current[index]?.focus();
     }
@@ -188,7 +208,8 @@ export default function SelectionDropdown({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       const nextIndex = filteredItems.findIndex(
-        (candidate, idx) => idx > index && !candidate.disabled,
+        (candidate, idx) =>
+          idx > index && candidate.kind !== "section" && !candidate.disabled,
       );
       if (nextIndex >= 0) {
         itemRefs.current[nextIndex]?.focus();
@@ -200,7 +221,9 @@ export default function SelectionDropdown({
       const reversed = [...filteredItems]
         .slice(0, index)
         .reverse()
-        .findIndex((candidate) => !candidate.disabled);
+        .findIndex(
+          (candidate) => candidate.kind !== "section" && !candidate.disabled,
+        );
       if (reversed >= 0) {
         const targetIndex = index - 1 - reversed;
         itemRefs.current[targetIndex]?.focus();
@@ -319,6 +342,17 @@ export default function SelectionDropdown({
               {filteredItems.map((item, index) => {
                 const checked = selectedSet.has(item.id);
                 const disabled = Boolean(item.disabled);
+                const isSection = item.kind === "section";
+                if (isSection) {
+                  return (
+                    <div
+                      key={item.id}
+                      className="mt-1 border-t border-slate-700/70 pt-1 text-[10px] uppercase tracking-[0.2em] text-slate-500"
+                    >
+                      {item.label}
+                    </div>
+                  );
+                }
                 return (
                   <button
                     type="button"

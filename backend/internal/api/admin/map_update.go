@@ -87,6 +87,14 @@ func (h *MapUpdateHandler) RunDotlan(c *core.RequestEvent) error {
 	return h.runStep(c, mapdata.StepDotlanImport)
 }
 
+func (h *MapUpdateHandler) RunPlanets(c *core.RequestEvent) error {
+	return h.runStep(c, mapdata.StepPlanetsImport)
+}
+
+func (h *MapUpdateHandler) RunMoons(c *core.RequestEvent) error {
+	return h.runStep(c, mapdata.StepMoonsImport)
+}
+
 func (h *MapUpdateHandler) RunEve2DPositions(c *core.RequestEvent) error {
 	return h.runStep(c, mapdata.StepEve2DPositions)
 }

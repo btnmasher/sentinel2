@@ -15,6 +15,8 @@ import (
 	"sentinel2/internal/logging"
 )
 
+const defaultESIProxyTimeout = 30 * time.Second
+
 type ESIProxyClient struct {
 	BaseURL string
 	Client  *http.Client
@@ -25,8 +27,6 @@ type ESIProxyClient struct {
 type CharactersResponse struct {
 	Characters []int `json:"characters"`
 }
-
-const defaultESIProxyTimeout = 30 * time.Second
 
 func NewESIProxyClient(baseURL string, logger *logging.Logger) *ESIProxyClient {
 	return &ESIProxyClient{
@@ -61,6 +61,15 @@ func (e *ESIProxyClient) CharacterAffiliation(ctx context.Context, characterID i
 	_ = ctx
 	_ = characterID
 	return 0, 0, ErrAffiliationUnsupported
+}
+
+func (e *ESIProxyClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool) (corporationIDs, allianceIDs []int, err error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = query
+	_ = strict
+	return []int{}, []int{}, ErrAffiliationUnsupported
 }
 
 func (e *ESIProxyClient) SetAutopilotWaypoint(ctx context.Context, req AutopilotRequest, token string) error {

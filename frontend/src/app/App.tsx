@@ -7,8 +7,17 @@ import IntelAlarm from "@/components/IntelAlarm";
 import useVersionWatcher from "@/app/hooks/useVersionWatcher";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useAuthStore } from "@/app/store/authStore";
-import { useIntelStore, useIntelRealtime } from "@/features/intel";
-import { resolveRegionTokens, useMapStore } from "@/features/map";
+import {
+  useIntelStore,
+  useIntelRealtime,
+  useTimerThresholdIntelAlerts,
+} from "@/features/intel";
+import {
+  resolveRegionTokens,
+  useMapStore,
+  useMapTimerSignalsSync,
+} from "@/features/map";
+import { useTimersRealtime } from "@/features/timers";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import { useShallow } from "zustand/shallow";
 import AdminPage from "@/pages/AdminPage";
@@ -19,6 +28,7 @@ import NavigationPage from "@/pages/NavigationPage";
 import ProfilePage from "@/pages/ProfilePage";
 import SettingsPage from "@/pages/SettingsPage";
 import StaffPage from "@/pages/StaffPage";
+import TimersPage from "@/pages/TimersPage";
 import UploaderPage from "@/pages/UploaderPage";
 
 export default function App() {
@@ -46,6 +56,9 @@ export default function App() {
   );
   const theme = useSettingsStore((s) => s.settings.theme);
   useIntelRealtime();
+  useTimersRealtime();
+  useMapTimerSignalsSync();
+  useTimerThresholdIntelAlerts();
   useVersionWatcher();
 
   useEffect(() => {
@@ -147,6 +160,14 @@ export default function App() {
           element={
             <ErrorBoundary name="Navigation">
               <NavigationPage />
+            </ErrorBoundary>
+          }
+        />
+        <Route
+          path="/timers"
+          element={
+            <ErrorBoundary name="Timers">
+              <TimersPage />
             </ErrorBoundary>
           }
         />

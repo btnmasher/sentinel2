@@ -26,6 +26,23 @@ func GetOrgName(app *pocketbase.PocketBase, collection string, eveID int) string
 	return records[0].GetString("name")
 }
 
+func GetOrg(app *pocketbase.PocketBase, collection string, eveID int) (name, ticker string, ok bool) {
+	if app == nil || eveID == 0 {
+		return "", "", false
+	}
+	records, err := app.FindRecordsByFilter(collection, "eve_id = {:id}", "", 1, 0, dbx.Params{"id": eveID})
+	if err != nil || len(records) == 0 {
+		return "", "", false
+	}
+	record := records[0]
+	name = strings.TrimSpace(record.GetString("name"))
+	if name == "" {
+		return "", "", false
+	}
+	ticker = strings.TrimSpace(record.GetString("ticker"))
+	return name, ticker, true
+}
+
 func GetOrgNames(app *pocketbase.PocketBase, collection string, ids []int) map[int]string {
 	names := map[int]string{}
 	if app == nil || len(ids) == 0 {
@@ -60,7 +77,7 @@ func GetOrgNames(app *pocketbase.PocketBase, collection string, ids []int) map[i
 	return names
 }
 
-func UpsertOrgName(app *pocketbase.PocketBase, collection string, eveID int, name string) error {
+func UpsertOrg(app *pocketbase.PocketBase, collection string, eveID int, name, ticker string) error {
 	if app == nil || eveID == 0 || name == "" {
 		return nil
 	}
@@ -76,12 +93,22 @@ func UpsertOrgName(app *pocketbase.PocketBase, collection string, eveID int, nam
 	if len(records) > 0 {
 		record := records[0]
 		record.Set("name", name)
+		if record.Collection().Fields.GetByName("ticker") != nil {
+			record.Set("ticker", ticker)
+		}
 		record.Set("updated_at", updatedAt)
 		return app.Save(record)
 	}
 	record := core.NewRecord(collectionRecord)
 	record.Set("eve_id", eveID)
 	record.Set("name", name)
+	if record.Collection().Fields.GetByName("ticker") != nil {
+		record.Set("ticker", ticker)
+	}
 	record.Set("updated_at", updatedAt)
 	return app.Save(record)
+}
+
+func UpsertOrgName(app *pocketbase.PocketBase, collection string, eveID int, name string) error {
+	return UpsertOrg(app, collection, eveID, name, "")
 }

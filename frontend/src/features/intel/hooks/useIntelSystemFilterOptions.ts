@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { REGION_MAP, useMapStore } from "@/features/map";
+import { useMapStore, useRegionNames } from "@/features/map";
 
 type CoalescedRegionChip = {
   regionId: number;
@@ -30,6 +30,7 @@ export function useIntelSystemFilterOptions({
   const characters = useMapStore((s) => s.characters);
   const visibleCharacterIds = useMapStore((s) => s.visibleCharacterIds);
   const characterLocations = useMapStore((s) => s.characterLocations);
+  const { getRegionName } = useRegionNames();
 
   const activeCharacterIds =
     visibleCharacterIds.length > 0
@@ -114,8 +115,7 @@ export function useIntelSystemFilterOptions({
       if (!isFullRegion) return;
       const regionName =
         regions[regionId]?.name ??
-        REGION_MAP[String(regionId)] ??
-        `Region ${regionId}`;
+        getRegionName(regionId, `Region ${regionId}`);
       regionChips.push({
         regionId,
         name: regionName,

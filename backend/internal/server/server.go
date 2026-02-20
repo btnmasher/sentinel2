@@ -18,6 +18,7 @@ import (
 	"sentinel2/internal/logging"
 	"sentinel2/internal/oidc"
 	"sentinel2/internal/realtime"
+	timerssvc "sentinel2/internal/timers"
 	"sentinel2/internal/uploaderrelease"
 
 	adminapi "sentinel2/internal/api/admin"
@@ -25,6 +26,7 @@ import (
 	intelapi "sentinel2/internal/api/intel"
 	mapapi "sentinel2/internal/api/maps"
 	staffapi "sentinel2/internal/api/staff"
+	timerapi "sentinel2/internal/api/timers"
 	uploaderapi "sentinel2/internal/api/uploader"
 )
 
@@ -45,6 +47,8 @@ type dependencies struct {
 	adminMapDataUpdate *adminapi.MapUpdateHandler
 	characterRefresher *auth.CharacterRefresher
 	admin              *adminapi.Handler
+	timerService       *timerssvc.Service
+	timers             *timerapi.Handler
 	uploaderReleases   *uploaderrelease.Service
 	uploaderHandler    *uploaderapi.Handler
 }
@@ -78,6 +82,7 @@ func Run(cfg *config.Config) error {
 
 	intelHandler := intelapi.NewIntelHandler(app, cfg, intelService)
 	jumpbridgeService := jumpbridges.NewJumpbridgeService(app)
+	timerService := timerssvc.NewService(app, publicESI, esiClient)
 	realtimePublisher := realtime.NewPublisher(app)
 	defer realtimePublisher.Stop()
 	mapHandler := mapapi.NewMapHandler(
@@ -88,6 +93,7 @@ func Run(cfg *config.Config) error {
 		eveProvider,
 		intel.NewRoutePlanner(app),
 		intel.NewTopRoutesService(app),
+		timerService,
 	)
 	authHandler := authapi.NewAuthHandler(authManager, auditSvc)
 	cleanupSvc := cleanup.New(app)
@@ -96,6 +102,7 @@ func Run(cfg *config.Config) error {
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
 	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, auditSvc)
+	timers := timerapi.NewHandler(timerService, auditSvc, provider)
 	uploaderReleases := uploaderrelease.New(app, cfg)
 	uploaderHandler := uploaderapi.NewHandler(uploaderReleases)
 
@@ -116,6 +123,8 @@ func Run(cfg *config.Config) error {
 		adminMapDataUpdate: adminMapDataUpdate,
 		characterRefresher: characterRefresher,
 		admin:              admin,
+		timerService:       timerService,
+		timers:             timers,
 		uploaderReleases:   uploaderReleases,
 		uploaderHandler:    uploaderHandler,
 	}

@@ -10,9 +10,13 @@ import (
 	goesi "github.com/fnt-eve/goesi-openapi"
 	esi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/pocketbase/pocketbase/core"
+	retry "github.com/sethvargo/go-retry"
 
 	"sentinel2/internal/logging"
+	sharedcollections "sentinel2/internal/shared/collections"
 )
+
+const defaultESIDirectTimeout = 30 * time.Second
 
 type ESIDirectClient struct {
 	UserAgent string
@@ -24,7 +28,10 @@ type ESIDirectClient struct {
 	Logger    *logging.Logger
 }
 
-const defaultESIDirectTimeout = 30 * time.Second
+type authTransport struct {
+	Base  http.RoundTripper
+	Token string
+}
 
 func NewESIDirectClient(userAgent string, logger *logging.Logger) *ESIDirectClient {
 	return &ESIDirectClient{
@@ -129,6 +136,49 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 	return corpID, allianceID, nil
 }
 
+func (e *ESIDirectClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool) (corporationIDs, allianceIDs []int, err error) {
+	if e == nil {
+		return []int{}, []int{}, fmt.Errorf("esi direct client not configured")
+	}
+	q, token, ok := normalizeCharacterSearchInput(characterID, accessToken, query)
+	if !ok {
+		return []int{}, []int{}, nil
+	}
+
+	client := e.authenticatedClient(token)
+	var payload *esi.CharactersCharacterIdSearchGet
+	retryErr := retry.Do(ctx, publicRetryBackoff(), func(ctx context.Context) error {
+		e.limiter.wait(ctx)
+		e.throttle.wait(ctx)
+		response, httpResp, respErr := client.SearchAPI.
+			GetCharactersCharacterIdSearch(ctx, int64(characterID)).
+			Categories([]string{"corporation", "alliance"}).
+			Search(q).
+			Strict(strict).
+			Execute()
+		defer closeResponseBody(httpResp)
+		if httpResp != nil {
+			e.throttle.update(httpResp)
+		}
+		if respErr != nil {
+			wrapped := fmt.Errorf("esi character search failed (character_id=%d): %w", characterID, respErr)
+			if shouldRetryPublicESI(httpResp, respErr) {
+				return retry.RetryableError(wrapped)
+			}
+			return wrapped
+		}
+		if response == nil {
+			return fmt.Errorf("esi character search response empty (character_id=%d)", characterID)
+		}
+		payload = response
+		return nil
+	})
+	if retryErr != nil {
+		return []int{}, []int{}, retryErr
+	}
+	return sharedcollections.ToIntSlice(payload.GetCorporation()), sharedcollections.ToIntSlice(payload.GetAlliance()), nil
+}
+
 func (e *ESIDirectClient) SetAutopilotWaypoint(ctx context.Context, req AutopilotRequest, token string) error {
 	start := time.Now()
 	client := e.authenticatedClient(token)
@@ -194,18 +244,6 @@ func (e *ESIDirectClient) logRequest(endpoint, method, characterID string, statu
 	}
 }
 
-func httpStatus(resp *http.Response) int {
-	if resp == nil {
-		return 0
-	}
-	return resp.StatusCode
-}
-
-type authTransport struct {
-	Base  http.RoundTripper
-	Token string
-}
-
 func (a *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	clone.Header = req.Header.Clone()
@@ -220,4 +258,11 @@ func (a *authTransport) base() http.RoundTripper {
 		return http.DefaultTransport
 	}
 	return a.Base
+}
+
+func httpStatus(resp *http.Response) int {
+	if resp == nil {
+		return 0
+	}
+	return resp.StatusCode
 }

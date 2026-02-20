@@ -3,8 +3,10 @@ package queryhelpers
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 )
 
 func AppendAnd(filter, clause string) string {
@@ -38,4 +40,30 @@ func BuildOrEqualsFilter[T any](field string, values []T) (string, dbx.Params) {
 		params[key] = values[i]
 	}
 	return filter.String(), params
+}
+
+func AppendDateTimeClauseUTC(filter string, params dbx.Params, value *time.Time, paramKey, clause string) string {
+	if value == nil {
+		return filter
+	}
+	params[paramKey] = value.UTC().Format(time.RFC3339)
+	return AppendAnd(filter, clause)
+}
+
+func SetOptional[T any](record *core.Record, field string, value *T, normalize func(T) any) {
+	if record == nil || value == nil {
+		return
+	}
+	if normalize == nil {
+		record.Set(field, *value)
+		return
+	}
+	record.Set(field, normalize(*value))
+}
+
+func ValueOrTrim(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }

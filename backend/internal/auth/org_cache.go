@@ -13,24 +13,25 @@ func ensureOrgName(ctx context.Context, app *pocketbase.PocketBase, publicESI *e
 	if app == nil || eveID == 0 {
 		return
 	}
-	if store.GetOrgName(app, collection, eveID) != "" {
+	if name, _, ok := store.GetOrg(app, collection, eveID); ok && name != "" {
 		return
 	}
 	if publicESI == nil {
 		return
 	}
 	var name string
+	var ticker string
 	var err error
 	switch collection {
 	case store.CollectionAlliances:
-		name, err = publicESI.AllianceName(ctx, eveID)
+		name, ticker, err = publicESI.AllianceDetails(ctx, eveID)
 	case store.CollectionCorporations:
-		name, err = publicESI.CorporationName(ctx, eveID)
+		name, ticker, _, err = publicESI.CorporationDetails(ctx, eveID)
 	default:
 		return
 	}
 	if err != nil || name == "" {
 		return
 	}
-	_ = store.UpsertOrgName(app, collection, eveID, name)
+	_ = store.UpsertOrg(app, collection, eveID, name, ticker)
 }

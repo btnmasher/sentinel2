@@ -2,16 +2,23 @@ package esi
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	goesi "github.com/fnt-eve/goesi-openapi"
 	"github.com/fnt-eve/goesi-openapi/esi"
 	retry "github.com/sethvargo/go-retry"
+)
+
+const (
+	defaultPublicCacheTTL      = 6 * time.Hour
+	publicBackoffBase          = 200 * time.Millisecond
+	publicBackoffJitter        = 100 * time.Millisecond
+	publicBackoffCap           = 2 * time.Second
+	publicBackoffMaxRetryCount = 3
 )
 
 type ESIPublicClient struct {
@@ -22,20 +29,6 @@ type ESIPublicClient struct {
 	throttle *esiThrottle
 	limiter  *esiRateLimiter
 }
-
-type esiNameCache struct {
-	value   string
-	etag    string
-	expires time.Time
-}
-
-const (
-	defaultPublicCacheTTL      = 6 * time.Hour
-	publicBackoffBase          = 200 * time.Millisecond
-	publicBackoffJitter        = 100 * time.Millisecond
-	publicBackoffCap           = 2 * time.Second
-	publicBackoffMaxRetryCount = 3
-)
 
 func NewESIPublicClient(userAgent string) *ESIPublicClient {
 	return &ESIPublicClient{
@@ -85,88 +78,122 @@ func (c *ESIPublicClient) CorporationName(ctx context.Context, corpID int) (stri
 	return name, nil
 }
 
+func (c *ESIPublicClient) CorporationDetails(ctx context.Context, corporationID int) (name, ticker string, allianceID int, err error) {
+	if err := c.ensureConfigured(); err != nil {
+		return "", "", 0, err
+	}
+
+	var responseName string
+	var responseTicker string
+	var responseAllianceID int
+	//nolint:bodyclose // Body is closed in the callback immediately after Execute().
+	httpResp, fetchErr := executeWithPublicRetry(
+		c,
+		ctx,
+		publicRequestOptions{
+			operation:   fmt.Sprintf("esi corporation details fetch failed (corp_id=%d)", corporationID),
+			notFoundErr: fmt.Errorf("%w: corporation_id=%d", ErrOrganizationInactive, corporationID),
+		},
+		func(ctx context.Context) (*http.Response, error) {
+			response, httpResp, respErr := c.client.CorporationAPI.GetCorporationsCorporationId(ctx, int64(corporationID)).Execute()
+			defer closeResponseBody(httpResp)
+			if respErr != nil {
+				return httpResp, respErr
+			}
+			if response == nil {
+				return httpResp, newNonRetryPublicError(fmt.Sprintf("esi corporation details response empty (corp_id=%d)", corporationID))
+			}
+			responseName = strings.TrimSpace(response.GetName())
+			responseTicker = strings.TrimSpace(response.GetTicker())
+			if responseAllianceIDPtr, ok := response.GetAllianceIdOk(); ok {
+				responseAllianceID = int(*responseAllianceIDPtr)
+			}
+			return httpResp, nil
+		},
+	)
+	if fetchErr != nil {
+		return "", "", 0, fetchErr
+	}
+	c.setCached(corporationCacheKey(corporationID), responseName, httpResp)
+	return responseName, responseTicker, responseAllianceID, nil
+}
+
+func (c *ESIPublicClient) AllianceDetails(ctx context.Context, allianceID int) (name, ticker string, err error) {
+	if err := c.ensureConfigured(); err != nil {
+		return "", "", err
+	}
+
+	var responseName string
+	var responseTicker string
+	//nolint:bodyclose // Body is closed in the callback immediately after Execute().
+	httpResp, fetchErr := executeWithPublicRetry(
+		c,
+		ctx,
+		publicRequestOptions{
+			operation:   fmt.Sprintf("esi alliance details fetch failed (alliance_id=%d)", allianceID),
+			notFoundErr: fmt.Errorf("%w: alliance_id=%d", ErrOrganizationInactive, allianceID),
+		},
+		func(ctx context.Context) (*http.Response, error) {
+			response, httpResp, respErr := c.client.AllianceAPI.GetAlliancesAllianceId(ctx, int64(allianceID)).Execute()
+			defer closeResponseBody(httpResp)
+			if respErr != nil {
+				return httpResp, respErr
+			}
+			if response == nil {
+				return httpResp, newNonRetryPublicError(fmt.Sprintf("esi alliance details response empty (alliance_id=%d)", allianceID))
+			}
+			responseName = strings.TrimSpace(response.GetName())
+			responseTicker = strings.TrimSpace(response.GetTicker())
+			return httpResp, nil
+		},
+	)
+	if fetchErr != nil {
+		return "", "", fetchErr
+	}
+	c.setCached(allianceCacheKey(allianceID), responseName, httpResp)
+	return responseName, responseTicker, nil
+}
+
+func (c *ESIPublicClient) ResolveOrganizationNames(ctx context.Context, names []string) (*esi.UniverseIdsPost, error) {
+	if c == nil || c.client == nil {
+		return nil, fmt.Errorf("esi public client not configured")
+	}
+	if len(names) == 0 {
+		return esi.NewUniverseIdsPost(), nil
+	}
+	var result *esi.UniverseIdsPost
+	retryErr := retry.Do(ctx, publicRetryBackoff(), func(ctx context.Context) error {
+		c.limiter.wait(ctx)
+		c.throttle.wait(ctx)
+		response, httpResp, respErr := c.client.UniverseAPI.PostUniverseIds(ctx).RequestBody(names).Execute()
+		defer closeResponseBody(httpResp)
+		if httpResp != nil {
+			c.throttle.update(httpResp)
+		}
+		if respErr != nil {
+			wrapped := fmt.Errorf("esi universe ids lookup failed: %w", respErr)
+			if shouldRetryPublicESI(httpResp, respErr) {
+				return retry.RetryableError(wrapped)
+			}
+			return wrapped
+		}
+		result = response
+		return nil
+	})
+	if retryErr != nil {
+		return nil, retryErr
+	}
+	if result == nil {
+		return esi.NewUniverseIdsPost(), nil
+	}
+	return result, nil
+}
+
 func (c *ESIPublicClient) ThrottleDelay() time.Duration {
 	if c == nil || c.throttle == nil {
 		return 0
 	}
 	return c.throttle.delay()
-}
-
-func (c *ESIPublicClient) retryBackoff() retry.Backoff {
-	backoff := retry.NewExponential(publicBackoffBase)
-	backoff = retry.WithJitter(publicBackoffJitter, backoff)
-	backoff = retry.WithCappedDuration(publicBackoffCap, backoff)
-	backoff = retry.WithMaxRetries(publicBackoffMaxRetryCount, backoff)
-	return backoff
-}
-
-func shouldRetryPublicESI(resp *http.Response, err error) bool {
-	if err == nil {
-		return false
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	if resp == nil {
-		return true
-	}
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return true
-	}
-	return resp.StatusCode >= http.StatusInternalServerError
-}
-
-func (c *ESIPublicClient) getCached(key string) (string, bool) {
-	c.mu.RLock()
-	entry, ok := c.cache[key]
-	c.mu.RUnlock()
-	if !ok {
-		return "", false
-	}
-	if time.Now().After(entry.expires) {
-		c.mu.Lock()
-		delete(c.cache, key)
-		c.mu.Unlock()
-		return "", false
-	}
-	return entry.value, true
-}
-
-func (c *ESIPublicClient) getAny(key string) (esiNameCache, bool) {
-	c.mu.RLock()
-	entry, ok := c.cache[key]
-	c.mu.RUnlock()
-	return entry, ok
-}
-
-func (c *ESIPublicClient) refreshExpiry(key string, resp *http.Response) {
-	expires := parseESIExpires(resp)
-	if expires.IsZero() {
-		return
-	}
-	c.mu.Lock()
-	entry, ok := c.cache[key]
-	if ok {
-		entry.expires = expires
-		c.cache[key] = entry
-	}
-	c.mu.Unlock()
-}
-
-func (c *ESIPublicClient) setCached(key, value string, resp *http.Response) {
-	c.mu.Lock()
-	entry := esiNameCache{
-		value:   value,
-		etag:    "",
-		expires: time.Now().Add(c.cacheTTL),
-	}
-	if resp != nil {
-		entry.etag = resp.Header.Get("ETag")
-		entry.expires = coalesceExpiry(parseESIExpires(resp), c.cacheTTL)
-	}
-	c.cache[key] = entry
-	c.mu.Unlock()
 }
 
 func (c *ESIPublicClient) fetchName(
@@ -184,7 +211,7 @@ func (c *ESIPublicClient) fetchName(
 	}
 
 	var name string
-	retryErr := retry.Do(ctx, c.retryBackoff(), func(ctx context.Context) error {
+	retryErr := retry.Do(ctx, publicRetryBackoff(), func(ctx context.Context) error {
 		c.limiter.wait(ctx)
 		c.throttle.wait(ctx)
 		nextName, httpResp, respErr := c.fetchNameResponse(ctx, key, call)
@@ -224,37 +251,10 @@ func (c *ESIPublicClient) fetchNameResponse(
 	return call(ctx, etag)
 }
 
-func (c *ESIPublicClient) cachedNameFromNotModified(key string, httpResp *http.Response) (string, bool) {
-	if httpResp == nil || httpResp.StatusCode != http.StatusNotModified {
-		return "", false
-	}
-	entry, ok := c.getAny(key)
-	if !ok {
-		return "", false
-	}
-	c.refreshExpiry(key, httpResp)
-	return entry.value, true
-}
-
 func wrapPublicNameError(idLabel string, idValue int, httpResp *http.Response, respErr error) error {
 	err := fmt.Errorf("esi public name fetch failed (%s=%d): %w", idLabel, idValue, respErr)
 	if shouldRetryPublicESI(httpResp, respErr) {
 		return retry.RetryableError(err)
 	}
 	return err
-}
-
-func coalesceExpiry(expires time.Time, fallback time.Duration) time.Time {
-	if expires.IsZero() {
-		return time.Now().Add(fallback)
-	}
-	return expires
-}
-
-func allianceCacheKey(allianceID int) string {
-	return fmt.Sprintf("alliance:%d", allianceID)
-}
-
-func corporationCacheKey(corpID int) string {
-	return fmt.Sprintf("corporation:%d", corpID)
 }

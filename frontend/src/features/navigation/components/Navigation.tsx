@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ContextMenu,
   JumpbridgesToggle,
+  TimersToggle,
   MapLayoutSelect,
   MapPageShell,
   MapZoomControls,
@@ -33,6 +34,7 @@ export default function Navigation() {
       <RegionSelect multi />
       <MapLayoutSelect inlineLabel="Layout" />
       <JumpbridgesToggle />
+      <TimersToggle />
       <MapZoomControls />
       <button
         className="btn btn-xs btn-info btn-outline"

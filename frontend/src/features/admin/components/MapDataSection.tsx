@@ -67,6 +67,20 @@ export default function MapDataSection() {
         </button>
         <button
           className="btn btn-xs btn-info btn-outline"
+          onClick={() => runAction("Import planets", "/admin/map-data/planets")}
+          disabled={loadingLabel !== null}
+        >
+          Import planets
+        </button>
+        <button
+          className="btn btn-xs btn-info btn-outline"
+          onClick={() => runAction("Import moons", "/admin/map-data/moons")}
+          disabled={loadingLabel !== null}
+        >
+          Import moons
+        </button>
+        <button
+          className="btn btn-xs btn-info btn-outline"
           onClick={() =>
             runAction(
               "Build metro positions",

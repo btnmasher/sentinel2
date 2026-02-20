@@ -26,7 +26,8 @@ export default function MapCanvas() {
   const systemSearch = useMapStore((s) => s.systemSearch);
   const setSystemSearch = useMapStore((s) => s.setSystemSearch);
   const setMapControls = useMapStore((s) => s.setMapControls);
-  const fetchMapData = useMapStore((s) => s.fetchMapData);
+  const fetchMapTopology = useMapStore((s) => s.fetchMapTopology);
+  const fetchMapOverlays = useMapStore((s) => s.fetchMapOverlays);
   const setMapScale = useMapStore((s) => s.setMapScale);
   const mapSettings = useSettingsStore((s) => s.settings.map);
   const setContextMenu = useUIStore((s) => s.setContextMenu);
@@ -71,10 +72,17 @@ export default function MapCanvas() {
 
   useEffect(() => {
     const handler = setTimeout(() => {
-      fetchMapData();
+      fetchMapTopology();
     }, 250);
     return () => clearTimeout(handler);
-  }, [fetchMapData, mapRegions, mapLayout]);
+  }, [fetchMapTopology, mapRegions, mapLayout]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      fetchMapOverlays();
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [fetchMapOverlays, mapRegions]);
 
   const unloadedRegionGates = useMemo(
     () =>
@@ -113,10 +121,11 @@ export default function MapCanvas() {
   }, [gates, regions, systems]);
 
   const jumpbridgeEdges = useMemo(() => {
-    const edges = new Set<string>();
+    const edges = new Map<string, boolean>();
     jumpbridges.forEach((bridge) => {
-      edges.add(`${bridge.from}:${bridge.to}`);
-      edges.add(`${bridge.to}:${bridge.from}`);
+      const disabled = Boolean(bridge.disabled);
+      edges.set(`${bridge.from}:${bridge.to}`, disabled);
+      edges.set(`${bridge.to}:${bridge.from}`, disabled);
     });
     return edges;
   }, [jumpbridges]);
@@ -133,11 +142,13 @@ export default function MapCanvas() {
         const from = systems[fromId];
         const to = systems[toId];
         if (!from || !to) return null;
-        const isJumpbridge = jumpbridgeEdges.has(`${fromId}:${toId}`);
+        const jumpbridgeDisabled = jumpbridgeEdges.get(`${fromId}:${toId}`);
+        const isJumpbridge = jumpbridgeDisabled !== undefined;
         if (isJumpbridge) {
           return {
             type: "path" as const,
             d: buildJumpbridgePath(from, to, regions),
+            disabled: Boolean(jumpbridgeDisabled),
           };
         }
         const a = {
@@ -154,7 +165,7 @@ export default function MapCanvas() {
         (
           segment,
         ): segment is
-          | { type: "path"; d: string }
+          | { type: "path"; d: string; disabled: boolean }
           | {
               type: "line";
               a: { x: number; y: number };
@@ -567,13 +578,16 @@ export default function MapCanvas() {
               {routeSegments.map((segment, idx) => {
                 if (!segment) return null;
                 if (segment.type === "path") {
+                  const routeClass = segment.disabled
+                    ? "map-gate route route-disabled"
+                    : "map-gate route";
+                  const routeBlinkClass = segment.disabled
+                    ? "map-gate route route-disabled"
+                    : "map-gate route route-blink";
                   return (
                     <g key={`route-path-${idx}`}>
-                      <path className="map-gate route" d={segment.d} />
-                      <path
-                        className="map-gate route route-blink"
-                        d={segment.d}
-                      />
+                      <path className={routeClass} d={segment.d} />
+                      <path className={routeBlinkClass} d={segment.d} />
                     </g>
                   );
                 }
