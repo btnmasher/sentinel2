@@ -12,7 +12,7 @@ export default function ContextMenuCharacter({
   characterId: number;
 }) {
   const zkill = `https://zkillboard.com/character/${characterId}`;
-  const eveWho = `https://evewho.com/pilot/${character.replace(/ /g, "+")}`;
+  const eveWho = `https://evewho.com/characters/${characterId}`;
 
   return (
     <ContextMenuList>
