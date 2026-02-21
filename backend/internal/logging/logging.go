@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -108,16 +109,39 @@ func (l *Logger) Debug(msg string, attrs ...slog.Attr) {
 	l.log(slog.LevelDebug, msg, attrs...)
 }
 
+func (l *Logger) Debugf(format string, args ...any) {
+	l.Debug(formatf(format, args...))
+}
+
 func (l *Logger) Info(msg string, attrs ...slog.Attr) {
 	l.log(slog.LevelInfo, msg, attrs...)
+}
+
+func (l *Logger) Infof(format string, args ...any) {
+	l.Info(formatf(format, args...))
 }
 
 func (l *Logger) Warn(msg string, attrs ...slog.Attr) {
 	l.log(slog.LevelWarn, msg, attrs...)
 }
 
+func (l *Logger) Warnf(format string, args ...any) {
+	l.Warn(formatf(format, args...))
+}
+
 func (l *Logger) Error(msg string, attrs ...slog.Attr) {
 	l.log(slog.LevelError, msg, attrs...)
+}
+
+func (l *Logger) Errorf(format string, args ...any) {
+	l.Error(formatf(format, args...))
+}
+
+func formatf(format string, args ...any) string {
+	if len(args) == 0 {
+		return format
+	}
+	return fmt.Sprintf(format, args...)
 }
 
 func (l *Logger) log(level slog.Level, msg string, attrs ...slog.Attr) {
