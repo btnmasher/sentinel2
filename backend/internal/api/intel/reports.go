@@ -1,10 +1,12 @@
 package intel
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
@@ -106,6 +108,15 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 			"author": parsed.Author,
 		})
 	}
+	if len(systems) == 0 {
+		return router.NewApiError(
+			http.StatusUnprocessableEntity,
+			"Report text must include at least one valid system.",
+			validation.Errors{
+				"systems": validation.NewError("validation_missing_system", "At least one valid system name is required."),
+			},
+		)
+	}
 	regions := submitRegions(systems)
 	shouldCreate, shouldErr := h.Service.ShouldCreateReport(parsed.Author, parsed.Text, reportTime)
 	if shouldErr != nil {
@@ -114,7 +125,13 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 		})
 	}
 	if !shouldCreate {
-		return nil
+		return router.NewApiError(
+			http.StatusConflict,
+			"Duplicate report was recently submitted.",
+			logging.Fields{
+				"reason": "duplicate_report",
+			},
+		)
 	}
 
 	report := intel.IntelReport{
@@ -128,12 +145,24 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 		ChannelID: channelID,
 	}
 	if createErr := h.Service.CreateReport(&report); createErr != nil {
-		return router.NewInternalServerError("Failed to save report.", logging.Fields{
-			"author":     parsed.Author,
-			"channel_id": channelID,
-		})
+		return normalizeCreateReportError(createErr)
 	}
 	return nil
+}
+
+func normalizeCreateReportError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var apiErr *router.ApiError
+	if errors.As(err, &apiErr) {
+		return apiErr
+	}
+	var validationErrs validation.Errors
+	if errors.As(err, &validationErrs) {
+		return router.NewBadRequestError("Invalid report payload.", err)
+	}
+	return router.NewInternalServerError("Failed to save report.", nil)
 }
 
 func (h *IntelHandler) resolveSubmitChannelID(rawChannelID, userID string) (string, error) {
