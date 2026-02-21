@@ -2,6 +2,7 @@ package intel
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -155,6 +156,9 @@ func (s *IntelService) ValidateUploaderToken(token string) (*core.Record, error)
 
 	record, recordErr := s.App.FindRecordById(coll.Name, token)
 	if recordErr != nil {
+		if errors.Is(recordErr, sql.ErrNoRows) {
+			return nil, ErrExpiredOrRevoked
+		}
 		return nil, recordErr
 	}
 	if record.GetBool("revoked") {
@@ -171,6 +175,9 @@ func (s *IntelService) ValidateUploaderTokenID(tokenID string) (*core.Record, er
 
 	record, recordErr := s.App.FindRecordById(coll.Name, tokenID)
 	if recordErr != nil {
+		if errors.Is(recordErr, sql.ErrNoRows) {
+			return nil, ErrExpiredOrRevoked
+		}
 		return nil, recordErr
 	}
 	if record.GetBool("revoked") {

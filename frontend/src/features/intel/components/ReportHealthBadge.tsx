@@ -6,6 +6,7 @@ import HoverCardPortal from "@/components/HoverCardPortal";
 
 const CHANNEL_WARN_AFTER_SECONDS = 10 * 60;
 const CHANNEL_STALE_AFTER_SECONDS = 60 * 60;
+const HEALTH_RECOMPUTE_INTERVAL_MS = 30_000;
 
 const CHANNEL_STATUS_STYLE = {
   active: {
@@ -38,6 +39,7 @@ const CHANNEL_STATUS_SCORE: Record<ChannelStatus, number> = {
 export default function ReportHealthBadge() {
   const reports = useIntelStore((state) => state.reports);
   const [open, setOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const [configuredChannels, setConfiguredChannels] = useState<
@@ -69,8 +71,17 @@ export default function ReportHealthBadge() {
     };
   }, []);
 
+  useEffect(() => {
+    const intervalID = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, HEALTH_RECOMPUTE_INTERVAL_MS);
+    return () => {
+      window.clearInterval(intervalID);
+    };
+  }, []);
+
   const summary = useMemo(() => {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(nowMs / 1000);
     const latestByChannelID = new Map<string, number>();
 
     for (const report of reports) {
@@ -131,7 +142,7 @@ export default function ReportHealthBadge() {
       channels: channelRows,
       counts,
     };
-  }, [configuredChannels, reports]);
+  }, [configuredChannels, nowMs, reports]);
 
   const averageScore =
     summary.channels.length === 0
@@ -159,6 +170,7 @@ export default function ReportHealthBadge() {
 
   const statusStyle = CHANNEL_STATUS_STYLE[overallStatus];
   const outlierStyle = CHANNEL_STATUS_STYLE[outlierStatus];
+  const showOutlierDot = outlierStatus !== overallStatus;
 
   const formatAge = (ageSeconds: number) => {
     if (ageSeconds < 60) return `${ageSeconds}s`;
@@ -213,9 +225,11 @@ export default function ReportHealthBadge() {
           }`}
         >
           <ScrollText className={`h-3.5 w-3.5 ${statusStyle.textColor}`} />
-          <span
-            className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-base-100 ${outlierStyle.dotColor}`}
-          />
+          {showOutlierDot ? (
+            <span
+              className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-base-100 ${outlierStyle.dotColor}`}
+            />
+          ) : null}
         </span>
         <span>{reports.length}</span>
       </button>
@@ -276,9 +290,11 @@ export default function ReportHealthBadge() {
                     <span
                       className={`h-2 w-2 rounded-full ${rowStyle.dotColor}`}
                     />
-                    {channel.hasUpdates
-                      ? `has had no updates for ${formatAge(channel.ageSeconds)}`
-                      : "has had no updates yet"}
+                    {!channel.hasUpdates
+                      ? "has had no report yet"
+                      : channel.status === "active"
+                        ? `last report ${formatAge(channel.ageSeconds)} ago`
+                        : `has had no report for ${formatAge(channel.ageSeconds)}`}
                   </span>
                 </div>
               );
