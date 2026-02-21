@@ -88,6 +88,36 @@ export default function ReportItem({
 
   const isClearReport = useMemo(() => isClearIntelReport(log), [log]);
 
+  const openCharacterSearchMenu = (
+    event: React.MouseEvent,
+    rawText: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const selectedText = window.getSelection()?.toString() ?? "";
+    const sourceText = selectedText.trim() ? selectedText : rawText;
+    const normalized = sourceText
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/^[^\w'-]+|[^\w'-]+$/g, "");
+    if (!normalized) {
+      return;
+    }
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      anchorRect: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      },
+      type: "character-search",
+      text: normalized,
+    });
+  };
+
   const showMenu = (event: React.MouseEvent) => {
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -142,7 +172,10 @@ export default function ReportItem({
         {splitText.map((chunk, idx) => {
           if (typeof chunk === "string") {
             return (
-              <span key={idx}>
+              <span
+                key={idx}
+                onContextMenu={(event) => openCharacterSearchMenu(event, chunk)}
+              >
                 {idx > 0 ? " " : ""}
                 {chunk}
               </span>
@@ -150,7 +183,12 @@ export default function ReportItem({
           }
           if ("tooltip" in chunk) {
             return (
-              <span key={idx}>
+              <span
+                key={idx}
+                onContextMenu={(event) =>
+                  openCharacterSearchMenu(event, chunk.text)
+                }
+              >
                 {idx > 0 ? " " : ""}
                 <span className="text-amber-300" title={chunk.tooltip}>
                   {chunk.text}
@@ -220,7 +258,12 @@ export default function ReportItem({
           );
         })}
       </p>
-      <div className="text-xs text-slate-500 mt-2">{log.author}</div>
+      <div
+        className="text-xs text-slate-500 mt-2"
+        onContextMenu={(event) => openCharacterSearchMenu(event, log.author)}
+      >
+        {log.author}
+      </div>
     </article>
   );
 }
