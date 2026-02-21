@@ -9,7 +9,7 @@ RUN apt-get update \
 
 FROM toolchain AS deps
 WORKDIR /app
-RUN mkdir -p /root/.cache/go-build /go/pkg/mod /app/.tmp/bun /app/.tmp/bun-install
+RUN mkdir -p /root/.cache/go-build /root/.cache/go-tmp /go/pkg/mod /app/.tmp/bun /app/.tmp/bun-install
 COPY backend/go.mod backend/go.sum ./backend/
 RUN cd backend && go mod download
 COPY frontend/package.json frontend/bun.lockb* ./frontend/
@@ -22,6 +22,7 @@ ARG BUILD_VERSION=""
 ENV BUILD_VERSION=${BUILD_VERSION}
 COPY --from=deps /go/pkg/mod /go/pkg/mod
 COPY --from=deps /root/.cache/go-build /root/.cache/go-build
+COPY --from=deps /root/.cache/go-tmp /root/.cache/go-tmp
 COPY --from=deps /app/frontend/node_modules /app/frontend/node_modules
 COPY --from=deps /app/.tmp /app/.tmp
 COPY . .
@@ -52,7 +53,7 @@ RUN cd frontend \
   fi; \
   fi; \
   fi \
-  && GOCACHE=/root/.cache/go-build go build -tags embed_frontend -ldflags "-X main.BuildVersion=${DERIVED_BUILD_VERSION}" -o /app/bin/sentinel2-server ./main.go
+  && GOCACHE=/root/.cache/go-build GOTMPDIR=/root/.cache/go-tmp go build -tags embed_frontend -ldflags "-X main.BuildVersion=${DERIVED_BUILD_VERSION}" -o /app/bin/sentinel2-server ./main.go
 
 FROM debian:bookworm-slim
 RUN apt-get update \
