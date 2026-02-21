@@ -38,6 +38,7 @@ node_modules/
 sentinel2-*
 *.zip
 .cache/
+.gocache/
 
 # local dev artifacts
 pb_data/

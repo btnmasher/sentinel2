@@ -10,13 +10,19 @@ import (
 )
 
 func registerCrons(app *pocketbase.PocketBase, cfg *config.Config, deps *dependencies) {
+	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		cancelLifecycle()
+		return e.Next()
+	})
+
 	registerCleanupCron(app, deps)
 	if cfg.AuthBackend == "eve" {
 		registerCharacterRefreshCron(app, deps)
 	}
 	registerUploaderReleaseBootstrap(app, deps)
 	registerUploaderReleaseCron(app, deps)
-	registerSDEBootstrap(app)
+	registerSDEBootstrap(app, lifecycleCtx)
 	registerSDECron(app)
 }
 
@@ -32,12 +38,13 @@ func registerCharacterRefreshCron(app *pocketbase.PocketBase, deps *dependencies
 	})
 }
 
-func registerSDEBootstrap(app *pocketbase.PocketBase) {
-	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+func registerSDEBootstrap(app *pocketbase.PocketBase, lifecycleCtx context.Context) {
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		if err := e.Next(); err != nil {
 			return err
 		}
-		runMapDataBootstrap(app)
+
+		go runMapDataBootstrap(app, lifecycleCtx)
 		return nil
 	})
 }

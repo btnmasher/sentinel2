@@ -9,7 +9,7 @@ import (
 	"sentinel2/internal/mapdata"
 )
 
-func runMapDataBootstrap(app *pocketbase.PocketBase) {
+func runMapDataBootstrap(app *pocketbase.PocketBase, ctx context.Context) {
 	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: mapdata.JobMapDataUpdate,
 		JobOptions: jobs.JobOptions{
@@ -17,8 +17,9 @@ func runMapDataBootstrap(app *pocketbase.PocketBase) {
 			Trigger: jobs.TriggerCronSchedule,
 		},
 		Timeout: jobs.NoTimeout,
+		Parent:  ctx,
 	})
-	mapdata.RunMapDataUpdate(app, runner, jobs.TriggerCronSchedule, false)
+	mapdata.RunMapDataUpdateWithContext(ctx, app, runner, jobs.TriggerCronSchedule, false)
 }
 
 func runMapDataCron(app *pocketbase.PocketBase, ctx context.Context) {
