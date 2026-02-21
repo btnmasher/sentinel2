@@ -51,17 +51,30 @@ export default function ContextMenu() {
 
   useLayoutEffect(() => {
     if (!menu || !menuRef.current) return;
-    const baseX = menu.x;
-    const baseY = menu.y;
-    const padding = 8;
-    const rect = menuRef.current.getBoundingClientRect();
-    const maxX = window.innerWidth - rect.width - padding;
-    const maxY = window.innerHeight - rect.height - padding;
-    const nextX = Math.min(Math.max(baseX, padding), Math.max(padding, maxX));
-    const nextY = Math.min(Math.max(baseY, padding), Math.max(padding, maxY));
-    setPosition((prev) =>
-      prev.x === nextX && prev.y === nextY ? prev : { x: nextX, y: nextY },
-    );
+
+    const applyPositionClamp = () => {
+      if (!menuRef.current) return;
+      const baseX = menu.x;
+      const baseY = menu.y;
+      const padding = 8;
+      const rect = menuRef.current.getBoundingClientRect();
+      const maxX = window.innerWidth - rect.width - padding;
+      const maxY = window.innerHeight - rect.height - padding;
+      const nextX = Math.min(Math.max(baseX, padding), Math.max(padding, maxX));
+      const nextY = Math.min(Math.max(baseY, padding), Math.max(padding, maxY));
+      setPosition((prev) =>
+        prev.x === nextX && prev.y === nextY ? prev : { x: nextX, y: nextY },
+      );
+    };
+
+    applyPositionClamp();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      applyPositionClamp();
+    });
+    observer.observe(menuRef.current);
+    return () => observer.disconnect();
   }, [menu?.x, menu?.y, menu?.type]);
 
   if (!menu) return null;

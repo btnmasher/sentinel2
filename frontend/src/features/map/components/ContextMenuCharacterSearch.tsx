@@ -37,21 +37,6 @@ const fetchJson = async (url: string, init?: RequestInit): Promise<unknown> => {
   return parseJsonSafe(text);
 };
 
-const fetchJsonWithFallback = async (
-  urls: string[],
-  init?: RequestInit,
-): Promise<unknown> => {
-  let lastError: unknown;
-  for (const url of urls) {
-    try {
-      return await fetchJson(url, init);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError ?? new Error("No URL candidates succeeded");
-};
-
 export default function ContextMenuCharacterSearch({ text }: { text: string }) {
   const [characters, setCharacters] = useState<Character[] | undefined>(
     undefined,
@@ -66,10 +51,9 @@ export default function ContextMenuCharacterSearch({ text }: { text: string }) {
       setCharacters(undefined);
       try {
         const encoded = encodeURIComponent(text);
-        const searchData = (await fetchJsonWithFallback([
-          `${ESI_BASE}/v2/search/?categories=character&search=${encoded}&strict=false`,
-          `${ESI_BASE}/latest/search/?categories=character&search=${encoded}&strict=false`,
-        ])) as { character?: number[] };
+        const searchData = (await fetchJson(
+          `${ESI_BASE}/v3/search/?categories=character&search=${encoded}&strict=false&datasource=tranquility`,
+        )) as { character?: number[] };
         if (
           !Array.isArray(searchData.character) ||
           searchData.character.length === 0
@@ -77,19 +61,14 @@ export default function ContextMenuCharacterSearch({ text }: { text: string }) {
           if (!cancelled) setCharacters([]);
           return;
         }
-        const names = (await fetchJsonWithFallback(
-          [
-            `${ESI_BASE}/v2/universe/names/`,
-            `${ESI_BASE}/latest/universe/names/`,
-          ],
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(searchData.character),
-          },
-        )) as Character[];
+        const names = (await fetchJson(`${ESI_BASE}/v3/universe/names/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(searchData.character),
+        })) as Character[];
         if (!cancelled) setCharacters(names as Character[]);
       } catch (error: unknown) {
+        if (!cancelled) setCharacters([]);
         setToast({
           text: "Error searching for characters",
           color: "error",
@@ -113,7 +92,16 @@ export default function ContextMenuCharacterSearch({ text }: { text: string }) {
   return (
     <ContextMenuList>
       <ContextMenuTitle>Pilot Matches</ContextMenuTitle>
-      {!characters && <ContextMenuItem muted>Searching...</ContextMenuItem>}
+      {!characters && (
+        <ContextMenuItem muted>
+          Searching
+          <span className="context-menu-loading-dots" aria-hidden="true">
+            <span>.</span>
+            <span>.</span>
+            <span>.</span>
+          </span>
+        </ContextMenuItem>
+      )}
       {characters && characters.length === 0 && (
         <ContextMenuItem muted>No characters found</ContextMenuItem>
       )}

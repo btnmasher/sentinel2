@@ -340,6 +340,36 @@ html[data-theme="sentinel-light"] .intel-status-dot-stale {
   background: transparent;
 }
 
+.context-menu-loading-dots {
+  display: inline-flex;
+  min-width: 1.1rem;
+  margin-left: 0.1rem;
+}
+
+.context-menu-loading-dots > span {
+  opacity: 0.2;
+  animation: context-menu-loading-pulse 1s infinite ease-in-out;
+}
+
+.context-menu-loading-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.context-menu-loading-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes context-menu-loading-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 0.85;
+  }
+}
+
 .context-menu-separator {
   height: 1px;
   margin: 0.35rem 0.6rem;
