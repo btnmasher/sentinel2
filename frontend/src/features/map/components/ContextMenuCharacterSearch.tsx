@@ -9,6 +9,9 @@ import {
 } from "./ContextMenuUI";
 
 type Character = { id: number; name: string };
+type UniverseIDsResponse = {
+  characters?: Character[];
+};
 
 const parseJsonSafe = (raw: string): unknown => {
   const trimmed = raw.trim();
@@ -37,6 +40,17 @@ const fetchJson = async (url: string, init?: RequestInit): Promise<unknown> => {
   return parseJsonSafe(text);
 };
 
+const buildNameCandidates = (source: string): string[] => {
+  const trimmed = source.trim();
+  if (!trimmed) return [];
+  const normalized = trimmed.replace(/\s+/g, " ");
+  const unwrapped = normalized.replace(/^[^\w'-]+|[^\w'-]+$/g, "");
+  const candidates = [trimmed, normalized, unwrapped]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return Array.from(new Set(candidates));
+};
+
 export default function ContextMenuCharacterSearch({ text }: { text: string }) {
   const [characters, setCharacters] = useState<Character[] | undefined>(
     undefined,
@@ -50,23 +64,27 @@ export default function ContextMenuCharacterSearch({ text }: { text: string }) {
     const search = async () => {
       setCharacters(undefined);
       try {
-        const encoded = encodeURIComponent(text);
-        const searchData = (await fetchJson(
-          `${ESI_BASE}/v3/search/?categories=character&search=${encoded}&strict=false&datasource=tranquility`,
-        )) as { character?: number[] };
-        if (
-          !Array.isArray(searchData.character) ||
-          searchData.character.length === 0
-        ) {
+        const names = buildNameCandidates(text);
+        if (names.length === 0) {
           if (!cancelled) setCharacters([]);
           return;
         }
-        const names = (await fetchJson(`${ESI_BASE}/v3/universe/names/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(searchData.character),
-        })) as Character[];
-        if (!cancelled) setCharacters(names as Character[]);
+        const resolved = (await fetchJson(
+          `${ESI_BASE}/v3/universe/ids/?datasource=tranquility`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(names),
+          },
+        )) as UniverseIDsResponse;
+        const matches = Array.isArray(resolved.characters)
+          ? resolved.characters
+          : [];
+        if (matches.length === 0) {
+          if (!cancelled) setCharacters([]);
+          return;
+        }
+        if (!cancelled) setCharacters(matches);
       } catch (error: unknown) {
         if (!cancelled) setCharacters([]);
         setToast({
