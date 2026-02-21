@@ -94,45 +94,76 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 	}
 
 	start := time.Now()
-	e.limiter.wait(ctx)
-	e.throttle.wait(ctx)
-	request := e.public.CharacterAPI.GetCharactersCharacterId(ctx, int64(characterID))
-	if etag, ok := e.cache.etag(characterID); ok {
-		request = request.IfNoneMatch(etag)
-	}
-	resp, httpResp, respErr := request.Execute()
-	if httpResp != nil && httpResp.Body != nil {
-		defer func() { _ = httpResp.Body.Close() }()
-	}
-	if respErr != nil {
-		e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpStatus(httpResp), start, respErr)
-		return 0, 0, respErr
-	}
+	operation := "characters.affiliation"
+	charID := strconv.Itoa(characterID)
+	corpID := 0
+	allianceID = 0
 
-	if httpResp != nil {
-		e.throttle.update(httpResp)
-	} else {
-		e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), 0, start, fmt.Errorf("character fetch failed: missing response"))
-		return 0, 0, fmt.Errorf("character fetch failed: missing response")
-	}
+	retryErr := retry.Do(ctx, publicRetryBackoff(), func(ctx context.Context) error {
+		e.limiter.wait(ctx)
+		e.throttle.wait(ctx)
 
-	if httpResp.StatusCode == http.StatusNotModified {
-		if cached, ok := e.cache.getAny(characterID); ok {
-			e.cache.refreshExpiry(characterID, httpResp)
-			e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpResp.StatusCode, start, nil)
-			return cached.CorporationID, cached.AllianceID, nil
+		request := e.public.CharacterAPI.GetCharactersCharacterId(ctx, int64(characterID))
+		if etag, ok := e.cache.etag(characterID); ok {
+			request = request.IfNoneMatch(etag)
 		}
-	}
-	if httpResp.StatusCode >= http.StatusBadRequest {
-		err := fmt.Errorf("character fetch failed: %s", httpResp.Status)
-		e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpResp.StatusCode, start, err)
-		return 0, 0, err
-	}
+		resp, httpResp, respErr := request.Execute()
+		defer closeResponseBody(httpResp)
 
-	corpID := int(resp.GetCorporationId())
-	allianceID = int(resp.GetAllianceId())
-	e.cache.set(characterID, corpID, allianceID, httpResp)
-	e.logRequest("characters.affiliation", "GET", strconv.Itoa(characterID), httpResp.StatusCode, start, nil)
+		status := httpStatus(httpResp)
+		if httpResp != nil {
+			e.throttle.update(httpResp)
+		}
+
+		if respErr != nil {
+			e.logRequest(operation, "GET", charID, status, start, respErr)
+			err := fmt.Errorf("character fetch failed (character_id=%d): %w", characterID, respErr)
+			if shouldRetryPublicESI(httpResp, respErr) {
+				return retry.RetryableError(err)
+			}
+			return err
+		}
+		if httpResp == nil {
+			err := fmt.Errorf("character fetch failed: missing response")
+			e.logRequest(operation, "GET", charID, 0, start, err)
+			return retry.RetryableError(err)
+		}
+
+		if httpResp.StatusCode == http.StatusNotModified {
+			if cached, ok := e.cache.getAny(characterID); ok {
+				e.cache.refreshExpiry(characterID, httpResp)
+				corpID = cached.CorporationID
+				allianceID = cached.AllianceID
+				e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
+				return nil
+			}
+			err := fmt.Errorf("character fetch failed: cache miss on 304 response")
+			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+			return retry.RetryableError(err)
+		}
+		if httpResp.StatusCode >= http.StatusBadRequest {
+			err := fmt.Errorf("character fetch failed: %s", httpResp.Status)
+			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+			if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= http.StatusInternalServerError {
+				return retry.RetryableError(err)
+			}
+			return err
+		}
+		if resp == nil {
+			err := fmt.Errorf("character fetch failed: empty response")
+			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+			return retry.RetryableError(err)
+		}
+
+		corpID = int(resp.GetCorporationId())
+		allianceID = int(resp.GetAllianceId())
+		e.cache.set(characterID, corpID, allianceID, httpResp)
+		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
+		return nil
+	})
+	if retryErr != nil {
+		return 0, 0, retryErr
+	}
 	return corpID, allianceID, nil
 }
 
