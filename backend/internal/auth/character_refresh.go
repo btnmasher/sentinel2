@@ -140,6 +140,15 @@ func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *co
 
 	_, refreshErr := r.EVE.RefreshCharacter(ctx, user, character)
 	if refreshErr != nil {
+		if errors.Is(refreshErr, esi.ErrNotModified) {
+			logging.New(r.App).
+				WithFields(logging.Fields{
+					"character_record_id": character.Id,
+					"character_id":        character.GetInt("eve_character_id"),
+				}).
+				Info("character refresh skipped: affiliation not modified")
+			return nil
+		}
 		r.handleRefreshDenied(userID, character, refreshErr)
 		return r.refreshAffiliationOnly(ctx, character, refreshErr)
 	}

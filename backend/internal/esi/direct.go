@@ -115,6 +115,19 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 			e.throttle.update(httpResp)
 		}
 
+		if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
+			if cached, ok := e.cache.getAny(characterID); ok {
+				e.cache.refreshExpiry(characterID, httpResp)
+				corpID = cached.CorporationID
+				allianceID = cached.AllianceID
+				e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
+				return nil
+			}
+			err := fmt.Errorf("%w: cache miss on 304 response", ErrNotModified)
+			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+			return retry.RetryableError(err)
+		}
+
 		if respErr != nil {
 			e.logRequest(operation, "GET", charID, status, start, respErr)
 			err := fmt.Errorf("character fetch failed (character_id=%d): %w", characterID, respErr)
@@ -126,19 +139,6 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 		if httpResp == nil {
 			err := fmt.Errorf("character fetch failed: missing response")
 			e.logRequest(operation, "GET", charID, 0, start, err)
-			return retry.RetryableError(err)
-		}
-
-		if httpResp.StatusCode == http.StatusNotModified {
-			if cached, ok := e.cache.getAny(characterID); ok {
-				e.cache.refreshExpiry(characterID, httpResp)
-				corpID = cached.CorporationID
-				allianceID = cached.AllianceID
-				e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
-				return nil
-			}
-			err := fmt.Errorf("character fetch failed: cache miss on 304 response")
-			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
 			return retry.RetryableError(err)
 		}
 		if httpResp.StatusCode >= http.StatusBadRequest {

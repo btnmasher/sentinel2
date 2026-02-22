@@ -112,13 +112,13 @@ func (p *EVEProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, err
 		return nil, AuthFlow{}, ErrInvalidCharacter
 	}
 
-	corpID, allianceID, affiliationErr := p.ESI.CharacterAffiliation(c.Request.Context(), charID)
+	existingChar, _ := p.findCharacterByID(charID)
+	corpID, allianceID, affiliationErr := p.resolveCharacterAffiliationForCallback(c.Request.Context(), charID, existingChar)
 	if affiliationErr != nil {
-		return nil, AuthFlow{}, ErrFailedFetchCharacter
+		return nil, AuthFlow{}, affiliationErr
 	}
 
 	linkUserID := flow.LinkUserID
-	existingChar, _ := p.findCharacterByID(charID)
 
 	if linkUserID != "" {
 		return p.handleLinkCallback(c, flow, linkContext{
@@ -382,10 +382,17 @@ func (p *EVEProvider) authorizeAccess(corpID, allianceID int) error {
 
 func (p *EVEProvider) refreshMainAffiliation(ctx context.Context, mainChar *core.Record) error {
 	mainCharID := mainChar.GetInt("eve_character_id")
-	mainCorp, mainAlliance, affiliationErr := p.ESI.CharacterAffiliation(ctx, mainCharID)
+	mainCorp := mainChar.GetInt("eve_corporation_id")
+	mainAlliance := mainChar.GetInt("eve_alliance_id")
+	fetchedCorp, fetchedAlliance, affiliationErr := p.ESI.CharacterAffiliation(ctx, mainCharID)
 	if affiliationErr != nil {
-		return ErrFailedFetchMainCharacter
+		if authorizeErr := p.authorizeAccess(mainCorp, mainAlliance); authorizeErr != nil {
+			return authorizeErr
+		}
+		return nil
 	}
+	mainCorp = fetchedCorp
+	mainAlliance = fetchedAlliance
 	if authorizeErr := p.authorizeAccess(mainCorp, mainAlliance); authorizeErr != nil {
 		return authorizeErr
 	}
@@ -397,6 +404,17 @@ func (p *EVEProvider) refreshMainAffiliation(ctx context.Context, mainChar *core
 		return ErrFailedPersistCharacter
 	}
 	return nil
+}
+
+func (p *EVEProvider) resolveCharacterAffiliationForCallback(ctx context.Context, charID int, existingChar *core.Record) (corpID, allianceID int, err error) {
+	corpID, allianceID, affiliationErr := p.ESI.CharacterAffiliation(ctx, charID)
+	if affiliationErr == nil {
+		return corpID, allianceID, nil
+	}
+	if existingChar == nil {
+		return 0, 0, ErrFailedFetchCharacter
+	}
+	return existingChar.GetInt("eve_corporation_id"), existingChar.GetInt("eve_alliance_id"), nil
 }
 
 func oauthTokens(token *oauth2.Token) AuthTokens {
