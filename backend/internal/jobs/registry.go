@@ -47,3 +47,13 @@ func Cancel(jobID string) bool {
 	}
 	return ok
 }
+
+func IsRegistered(jobID string) bool {
+	if jobID == "" {
+		return false
+	}
+	registry.mu.Lock()
+	_, ok := registry.cancels[jobID]
+	registry.mu.Unlock()
+	return ok
+}

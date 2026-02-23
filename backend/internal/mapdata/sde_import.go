@@ -3,14 +3,16 @@ package mapdata
 import (
 	"archive/zip"
 	"bufio"
-	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +38,16 @@ type SDEImporter struct {
 	Client *http.Client
 }
 
+type SDEImportFileResult struct {
+	Name    string
+	Skipped bool
+	Reason  string
+}
+
+type SDEImportReport struct {
+	Files []SDEImportFileResult
+}
+
 func NewSDEImporter(app *pocketbase.PocketBase) *SDEImporter {
 	return &SDEImporter{
 		App:    app,
@@ -57,6 +69,12 @@ func (s *SDEImporter) NeedsUpdate(ctx context.Context) (needs bool, etag string,
 }
 
 func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error {
+	_, err := s.DownloadAndImportWithReport(ctx, etag)
+	return err
+}
+
+func (s *SDEImporter) DownloadAndImportWithReport(ctx context.Context, etag string) (SDEImportReport, error) {
+	report := SDEImportReport{}
 	if etag == "" {
 		fetched, fetchErr := s.fetchETag(ctx, LatestJSONLZip)
 		if fetchErr == nil {
@@ -64,23 +82,43 @@ func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error 
 		}
 	}
 
-	files, loadErr := s.loadJSONLFiles(ctx, "mapRegions.jsonl", "mapConstellations.jsonl", "mapSolarSystems.jsonl", "mapStargates.jsonl")
+	zipPath, loadErr := s.downloadSDEZip(ctx)
 	if loadErr != nil {
-		return loadErr
+		return report, loadErr
 	}
+	defer func() { _ = os.Remove(zipPath) }()
 
-	if importErr := s.importRegions(ctx, files["mapRegions.jsonl"]); importErr != nil {
-		return importErr
+	skipped, reason, importErr := s.importJSONLIfChanged(ctx, zipPath, "mapRegions.jsonl", func(r io.Reader) error {
+		return s.importRegions(ctx, r)
+	})
+	if importErr != nil {
+		return report, importErr
 	}
-	if importErr := s.importConstellations(ctx, files["mapConstellations.jsonl"]); importErr != nil {
-		return importErr
+	report.Files = append(report.Files, SDEImportFileResult{Name: "mapRegions.jsonl", Skipped: skipped, Reason: reason})
+
+	skipped, reason, importErr = s.importJSONLIfChanged(ctx, zipPath, "mapConstellations.jsonl", func(r io.Reader) error {
+		return s.importConstellations(ctx, r)
+	})
+	if importErr != nil {
+		return report, importErr
 	}
-	if importErr := s.importSystems(ctx, files["mapSolarSystems.jsonl"]); importErr != nil {
-		return importErr
+	report.Files = append(report.Files, SDEImportFileResult{Name: "mapConstellations.jsonl", Skipped: skipped, Reason: reason})
+
+	skipped, reason, importErr = s.importJSONLIfChanged(ctx, zipPath, "mapSolarSystems.jsonl", func(r io.Reader) error {
+		return s.importSystems(ctx, r)
+	})
+	if importErr != nil {
+		return report, importErr
 	}
-	if importErr := s.importGates(ctx, files["mapStargates.jsonl"]); importErr != nil {
-		return importErr
+	report.Files = append(report.Files, SDEImportFileResult{Name: "mapSolarSystems.jsonl", Skipped: skipped, Reason: reason})
+
+	skipped, reason, importErr = s.importJSONLIfChanged(ctx, zipPath, "mapStargates.jsonl", func(r io.Reader) error {
+		return s.importGates(ctx, r)
+	})
+	if importErr != nil {
+		return report, importErr
 	}
+	report.Files = append(report.Files, SDEImportFileResult{Name: "mapStargates.jsonl", Skipped: skipped, Reason: reason})
 
 	build := s.fetchBuildNumber(ctx)
 	_ = s.saveMeta("last_sde_update", time.Now().UTC().Format(time.RFC3339))
@@ -92,53 +130,137 @@ func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error 
 	}
 
 	s.logSDECollectionCounts()
-	return nil
+	return report, nil
 }
 
 func (s *SDEImporter) ImportPlanetsFromLatest(ctx context.Context) error {
-	files, err := s.loadJSONLFiles(ctx, "mapPlanets.jsonl")
-	if err != nil {
-		return err
+	zipPath, loadErr := s.downloadSDEZip(ctx)
+	if loadErr != nil {
+		return loadErr
 	}
-	return s.importPlanets(ctx, files["mapPlanets.jsonl"])
+	defer func() { _ = os.Remove(zipPath) }()
+	_, _, importErr := s.importJSONLIfChanged(ctx, zipPath, "mapPlanets.jsonl", func(r io.Reader) error {
+		return s.importPlanets(ctx, r)
+	})
+	return importErr
 }
 
 func (s *SDEImporter) ImportMoonsFromLatest(ctx context.Context) error {
-	files, err := s.loadJSONLFiles(ctx, "mapMoons.jsonl")
-	if err != nil {
-		return err
+	zipPath, loadErr := s.downloadSDEZip(ctx)
+	if loadErr != nil {
+		return loadErr
 	}
-	return s.importMoons(ctx, files["mapMoons.jsonl"])
+	defer func() { _ = os.Remove(zipPath) }()
+	_, _, importErr := s.importJSONLIfChanged(ctx, zipPath, "mapMoons.jsonl", func(r io.Reader) error {
+		return s.importMoons(ctx, r)
+	})
+	return importErr
 }
 
-func (s *SDEImporter) loadJSONLFiles(ctx context.Context, names ...string) (map[string][]byte, error) {
-	data, dataErr := s.downloadZip(ctx, LatestJSONLZip)
-	if dataErr != nil {
-		return nil, dataErr
+func (s *SDEImporter) importJSONLIfChanged(ctx context.Context, zipPath, name string, importFn func(io.Reader) error) (bool, string, error) {
+	if ctx.Err() != nil {
+		return false, "", ctx.Err()
 	}
-	files, unzipErr := unzipJSONL(data)
-	if unzipErr != nil {
-		return nil, unzipErr
+	hash, hashErr := hashJSONLInZip(zipPath, name)
+	if hashErr != nil {
+		return false, "", hashErr
 	}
+
+	metaKey := sdeFileHashMetaKey(name)
+	previousHash := strings.TrimSpace(s.getMeta(metaKey))
+	if previousHash != "" && previousHash == hash {
+		reason := "skipped (hash unchanged)"
+		logging.New(s.App).
+			WithFields(logging.Fields{
+				"file": name,
+				"hash": hash,
+			}).
+			Info("skipping unchanged sde file import")
+		return true, reason, nil
+	}
+
+	if importErr := withJSONLFileFromZip(zipPath, name, importFn); importErr != nil {
+		return false, "", importErr
+	}
+	if saveErr := s.saveMeta(metaKey, hash); saveErr != nil {
+		logging.New(s.App).
+			WithErr(saveErr).
+			WithFields(logging.Fields{"file": name}).
+			Warn("failed to persist sde file hash meta")
+	}
+	return false, "", nil
+}
+
+func (s *SDEImporter) ShouldImportJSONLFromLatest(ctx context.Context, name string) (bool, string, error) {
+	if ctx.Err() != nil {
+		return false, "", ctx.Err()
+	}
+	zipPath, loadErr := s.downloadSDEZip(ctx)
+	if loadErr != nil {
+		return false, "", loadErr
+	}
+	defer func() { _ = os.Remove(zipPath) }()
+
+	hash, hashErr := hashJSONLInZip(zipPath, name)
+	if hashErr != nil {
+		return false, "", hashErr
+	}
+
+	metaKey := sdeFileHashMetaKey(name)
+	previousHash := strings.TrimSpace(s.getMeta(metaKey))
+	if previousHash != "" && previousHash == hash {
+		return false, "skipped (hash unchanged)", nil
+	}
+	return true, "", nil
+}
+
+func sdeFileHashMetaKey(name string) string {
+	sanitized := strings.ToLower(strings.TrimSpace(name))
+	sanitized = strings.ReplaceAll(sanitized, "/", "_")
+	sanitized = strings.ReplaceAll(sanitized, "\\", "_")
+	sanitized = strings.ReplaceAll(sanitized, ".", "_")
+	return "sde_file_hash_" + sanitized
+}
+
+func (s *SDEImporter) downloadSDEZip(ctx context.Context) (string, error) {
+	req, reqErr := http.NewRequestWithContext(ctx, "GET", LatestJSONLZip, http.NoBody)
+	if reqErr != nil {
+		return "", reqErr
+	}
+	resp, respErr := s.Client.Do(req)
+	if respErr != nil {
+		return "", respErr
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return "", ErrSDEDownloadFailed
+	}
+
+	tmp, tmpErr := os.CreateTemp("", "sentinel2-sde-*.zip")
+	if tmpErr != nil {
+		return "", tmpErr
+	}
+	tmpPath := tmp.Name()
+
+	written, copyErr := io.Copy(tmp, resp.Body)
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return "", closeErr
+	}
+
 	logging.New(s.App).
 		WithFields(logging.Fields{
-			"sde_zip_bytes": len(data),
-			"file_count":    len(files),
+			"sde_zip_bytes": written,
+			"zip_path":      tmpPath,
 		}).
-		Info("zip downloaded and unpacked")
-
-	if len(names) == 0 {
-		return files, nil
-	}
-	out := map[string][]byte{}
-	for _, name := range names {
-		fileData, ok := files[name]
-		if !ok {
-			return nil, ErrMapJSONLNotFound
-		}
-		out[name] = fileData
-	}
-	return out, nil
+		Info("zip downloaded to temp file")
+	return tmpPath, nil
 }
 
 func (s *SDEImporter) logSDECollectionCounts() {
@@ -168,17 +290,9 @@ func (s *SDEImporter) logSDECollectionCounts() {
 	}
 }
 
-func (s *SDEImporter) importRegions(ctx context.Context, data []byte) error {
-	rows, rowsErr := parseJSONL(data)
-	if rowsErr != nil {
-		return rowsErr
-	}
+func (s *SDEImporter) importRegions(ctx context.Context, r io.Reader) error {
 	var missingID, missingName, missingPos, saved int
-	log := logging.New(s.App).WithFields(logging.Fields{
-		"sde":       "regions",
-		"row_count": len(rows),
-	})
-	for i, row := range rows {
+	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -189,25 +303,33 @@ func (s *SDEImporter) importRegions(ctx context.Context, data []byte) error {
 				WithFields(logging.Fields{"row_id": region.rowID}).
 				Warn("region missing id")
 			missingID++
-			continue
+			return nil
 		case "missing_name":
 			logging.New(s.App).
 				WithFields(logging.Fields{"region_id": region.regionID}).
 				Warn("region missing name")
 			missingName++
-			continue
+			return nil
 		}
 		if region.rawX == 0 && region.rawY == 0 {
 			missingPos++
 		}
 		if upsertErr := s.upsertNumberRecord(store.CollectionRegions, region.regionID, region.payload()); upsertErr != nil {
-			log.WithErr(upsertErr).
+			logging.New(s.App).WithErr(upsertErr).
 				WithFields(logging.Fields{"region_id": region.regionID}).
 				Error("region upsert failed")
 			return upsertErr
 		}
 		saved++
+		return nil
+	})
+	if scanErr != nil {
+		return scanErr
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "regions",
+		"row_count": rowCount,
+	})
 	log.WithFields(logging.Fields{
 		"saved_count":                saved,
 		"skipped_missing_id_count":   missingID,
@@ -259,17 +381,9 @@ func (row regionRowData) payload() map[string]any {
 	return payload
 }
 
-func (s *SDEImporter) importConstellations(ctx context.Context, data []byte) error {
-	rows, rowsErr := parseJSONL(data)
-	if rowsErr != nil {
-		return rowsErr
-	}
+func (s *SDEImporter) importConstellations(ctx context.Context, r io.Reader) error {
 	var missingID, missingRegion, missingName, saved int
-	log := logging.New(s.App).WithFields(logging.Fields{
-		"sde":       "constellations",
-		"row_count": len(rows),
-	})
-	for i, row := range rows {
+	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -281,34 +395,42 @@ func (s *SDEImporter) importConstellations(ctx context.Context, data []byte) err
 				WithFields(logging.Fields{"row_id": getString(row, "id", "_key")}).
 				Warn("constellation missing id")
 			missingID++
-			continue
+			return nil
 		}
 		if regionID == 0 {
 			logging.New(s.App).
 				WithFields(logging.Fields{"constellation_id": id}).
 				Warn("constellation missing region")
 			missingRegion++
-			continue
+			return nil
 		}
 		if name == "" {
 			logging.New(s.App).
 				WithFields(logging.Fields{"constellation_id": id}).
 				Warn("constellation missing name")
 			missingName++
-			continue
+			return nil
 		}
 		if upsertErr := s.upsertNumberRecord(store.CollectionConstellations, id, map[string]any{
 			"eve_id":    id,
 			"name":      name,
 			"region_id": regionID,
 		}); upsertErr != nil {
-			log.WithErr(upsertErr).
+			logging.New(s.App).WithErr(upsertErr).
 				WithFields(logging.Fields{"constellation_id": id}).
 				Error("constellation upsert failed")
 			return upsertErr
 		}
 		saved++
+		return nil
+	})
+	if scanErr != nil {
+		return scanErr
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "constellations",
+		"row_count": rowCount,
+	})
 	log.WithFields(logging.Fields{
 		"saved_count":                  saved,
 		"skipped_missing_id_count":     missingID,
@@ -318,18 +440,10 @@ func (s *SDEImporter) importConstellations(ctx context.Context, data []byte) err
 	return nil
 }
 
-func (s *SDEImporter) importSystems(ctx context.Context, data []byte) error {
-	rows, rowsErr := parseJSONL(data)
-	if rowsErr != nil {
-		return rowsErr
-	}
+func (s *SDEImporter) importSystems(ctx context.Context, r io.Reader) error {
 	var missingID, missingRegionConst, missingName, missingCoords, saved int
 	var withPos2D, missingPos2D int
-	log := logging.New(s.App).WithFields(logging.Fields{
-		"sde":       "systems",
-		"row_count": len(rows),
-	})
-	for i, row := range rows {
+	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -338,7 +452,7 @@ func (s *SDEImporter) importSystems(ctx context.Context, data []byte) error {
 		case "missing_id":
 			logging.New(s.App).WithFields(logging.Fields{"row_id": system.rowID}).Warn("system missing id")
 			missingID++
-			continue
+			return nil
 		case "missing_region_or_constellation":
 			logging.New(s.App).
 				WithFields(logging.Fields{
@@ -348,11 +462,11 @@ func (s *SDEImporter) importSystems(ctx context.Context, data []byte) error {
 				}).
 				Warn("system missing region or constellation")
 			missingRegionConst++
-			continue
+			return nil
 		case "missing_name":
 			logging.New(s.App).WithFields(logging.Fields{"system_id": system.id}).Warn("system missing name")
 			missingName++
-			continue
+			return nil
 		}
 
 		if system.coordsMissing() {
@@ -365,13 +479,21 @@ func (s *SDEImporter) importSystems(ctx context.Context, data []byte) error {
 		}
 
 		if upsertErr := s.upsertNumberRecord(store.CollectionSolarSystems, system.id, system.payload()); upsertErr != nil {
-			log.WithErr(upsertErr).
+			logging.New(s.App).WithErr(upsertErr).
 				WithFields(logging.Fields{"system_id": system.id}).
 				Error("system upsert failed")
 			return upsertErr
 		}
 		saved++
+		return nil
+	})
+	if scanErr != nil {
+		return scanErr
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "systems",
+		"row_count": rowCount,
+	})
 	log.WithFields(logging.Fields{
 		"saved_count":              saved,
 		"skipped_missing_id_count": missingID,
@@ -468,29 +590,20 @@ func (row *systemRowData) payload() map[string]any {
 
 const moonGroupID = 8
 
-func (s *SDEImporter) importPlanets(ctx context.Context, data []byte) error {
-	rows, rowsErr := parseJSONL(data)
-	if rowsErr != nil {
-		return rowsErr
-	}
-	log := logging.New(s.App).WithFields(logging.Fields{
-		"sde":       "planets",
-		"row_count": len(rows),
-	})
+func (s *SDEImporter) importPlanets(ctx context.Context, r io.Reader) error {
 	var saved, skippedMissingID, skippedMissingSystem, skippedUnchanged int
-
-	for i, row := range rows {
+	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
 		planet := parsePlanetRow(row)
 		if planet.id == 0 {
 			skippedMissingID++
-			continue
+			return nil
 		}
 		if planet.systemID == 0 {
 			skippedMissingSystem++
-			continue
+			return nil
 		}
 		systemName := ""
 		if system, err := s.findSystem(planet.systemID); err == nil {
@@ -508,17 +621,25 @@ func (s *SDEImporter) importPlanets(ctx context.Context, data []byte) error {
 			"celestial_index": planet.celestialIndex,
 		})
 		if upsertErr != nil {
-			log.WithErr(upsertErr).
+			logging.New(s.App).WithErr(upsertErr).
 				WithFields(logging.Fields{"planet_id": planet.id, "system_id": planet.systemID}).
 				Error("planet upsert failed")
 			return upsertErr
 		}
 		if !changed {
 			skippedUnchanged++
-			continue
+			return nil
 		}
 		saved++
+		return nil
+	})
+	if scanErr != nil {
+		return scanErr
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "planets",
+		"row_count": rowCount,
+	})
 	log.WithFields(logging.Fields{
 		"saved_count":                     saved,
 		"skipped_missing_id_count":        skippedMissingID,
@@ -528,18 +649,10 @@ func (s *SDEImporter) importPlanets(ctx context.Context, data []byte) error {
 	return nil
 }
 
-func (s *SDEImporter) importMoons(ctx context.Context, data []byte) error {
-	rows, rowsErr := parseJSONL(data)
-	if rowsErr != nil {
-		return rowsErr
-	}
-	log := logging.New(s.App).WithFields(logging.Fields{
-		"sde":       "moons",
-		"row_count": len(rows),
-	})
+func (s *SDEImporter) importMoons(ctx context.Context, r io.Reader) error {
 	var saved, skippedNotMoon, skippedMissingID, skippedMissingSystem, skippedUnchanged int
 
-	for i, row := range rows {
+	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -547,28 +660,36 @@ func (s *SDEImporter) importMoons(ctx context.Context, data []byte) error {
 		switch reason {
 		case "not_moon":
 			skippedNotMoon++
-			continue
+			return nil
 		case "missing_id":
 			skippedMissingID++
-			continue
+			return nil
 		case "missing_system":
 			skippedMissingSystem++
-			continue
+			return nil
 		}
 		payload := s.moonPayload(moon)
 		changed, upsertErr := s.upsertNumberRecordIfChanged(store.CollectionMoons, moon.id, payload)
 		if upsertErr != nil {
-			log.WithErr(upsertErr).
+			logging.New(s.App).WithErr(upsertErr).
 				WithFields(logging.Fields{"moon_id": moon.id, "system_id": moon.systemID}).
 				Error("moon upsert failed")
 			return upsertErr
 		}
 		if !changed {
 			skippedUnchanged++
-			continue
+			return nil
 		}
 		saved++
+		return nil
+	})
+	if scanErr != nil {
+		return scanErr
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "moons",
+		"row_count": rowCount,
+	})
 	log.WithFields(logging.Fields{
 		"saved_count":                     saved,
 		"skipped_not_moon_count":          skippedNotMoon,
@@ -697,23 +818,15 @@ func intToRoman(value int) string {
 	return out.String()
 }
 
-func (s *SDEImporter) importGates(ctx context.Context, data []byte) error {
-	rows, rowsErr := parseJSONL(data)
-	if rowsErr != nil {
-		return rowsErr
-	}
+func (s *SDEImporter) importGates(ctx context.Context, r io.Reader) error {
 	var missingID, missingFrom, missingTo, skippedExisting, saved int
-	log := logging.New(s.App).WithFields(logging.Fields{
-		"sde":       "gates",
-		"row_count": len(rows),
-	})
-	for i, row := range rows {
+	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
 		}
 		result, importErr := s.importGateRow(row)
 		if importErr != nil {
-			log.WithErr(importErr).Error("gate save failed")
+			logging.New(s.App).WithErr(importErr).Error("gate save failed")
 			return importErr
 		}
 		switch result {
@@ -728,7 +841,15 @@ func (s *SDEImporter) importGates(ctx context.Context, data []byte) error {
 		case gateImportSkippedExisting:
 			skippedExisting++
 		}
+		return nil
+	})
+	if scanErr != nil {
+		return scanErr
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"sde":       "gates",
+		"row_count": rowCount,
+	})
 	log.WithFields(logging.Fields{
 		"saved_count":                 saved,
 		"skipped_missing_id_count":    missingID,
@@ -851,69 +972,62 @@ func (s *SDEImporter) fetchETag(ctx context.Context, url string) (string, error)
 	return resp.Header.Get("ETag"), nil
 }
 
-func (s *SDEImporter) downloadZip(ctx context.Context, url string) ([]byte, error) {
-	req, reqErr := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
-	if reqErr != nil {
-		return nil, reqErr
+func withJSONLFileFromZip(zipPath string, name string, fn func(io.Reader) error) error {
+	if fn == nil {
+		return nil
 	}
-	resp, respErr := s.Client.Do(req)
-	if respErr != nil {
-		return nil, respErr
+	if !isSupportedJSONLFile(name) {
+		return ErrMapJSONLNotFound
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, ErrSDEDownloadFailed
-	}
-
-	return io.ReadAll(resp.Body)
-}
-
-func unzipJSONL(data []byte) (map[string][]byte, error) {
-	reader, readerErr := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	reader, readerErr := zip.OpenReader(zipPath)
 	if readerErr != nil {
-		return nil, readerErr
+		return readerErr
 	}
+	defer func() { _ = reader.Close() }()
 
-	needed := map[string][]byte{}
 	for _, file := range reader.File {
-		if !strings.HasSuffix(file.Name, ".jsonl") {
-			continue
-		}
-		if file.Name != "mapRegions.jsonl" &&
-			file.Name != "mapConstellations.jsonl" &&
-			file.Name != "mapSolarSystems.jsonl" &&
-			file.Name != "mapPlanets.jsonl" &&
-			file.Name != "mapMoons.jsonl" &&
-			file.Name != "mapStargates.jsonl" {
+		if file.Name != name {
 			continue
 		}
 
 		rc, openErr := file.Open()
 		if openErr != nil {
-			return nil, openErr
+			return openErr
 		}
-		body, bodyErr := io.ReadAll(rc)
-		closeErr := rc.Close()
-		if closeErr != nil {
-			return nil, closeErr
-		}
-		if bodyErr != nil {
-			return nil, bodyErr
-		}
-		needed[file.Name] = body
+		defer func() { _ = rc.Close() }()
+		return fn(rc)
 	}
 
-	if len(needed) == 0 {
-		return nil, ErrMapJSONLNotFound
-	}
-	return needed, nil
+	return ErrMapJSONLNotFound
 }
 
-func parseJSONL(data []byte) ([]map[string]any, error) {
-	rows := []map[string]any{}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
+func hashJSONLInZip(zipPath, name string) (string, error) {
+	hash := sha256.New()
+	if err := withJSONLFileFromZip(zipPath, name, func(r io.Reader) error {
+		_, copyErr := io.Copy(hash, r)
+		return copyErr
+	}); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func isSupportedJSONLFile(name string) bool {
+	switch name {
+	case "mapRegions.jsonl", "mapConstellations.jsonl", "mapSolarSystems.jsonl", "mapPlanets.jsonl", "mapMoons.jsonl", "mapStargates.jsonl":
+		return true
+	default:
+		return false
+	}
+}
+
+func forEachJSONLRow(r io.Reader, fn func(i int, row map[string]any) error) (int, error) {
+	if fn == nil {
+		return 0, nil
+	}
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, jsonlScanBufBytes), jsonlScanMaxBytes)
+	rowIndex := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -921,11 +1035,17 @@ func parseJSONL(data []byte) ([]map[string]any, error) {
 		}
 		var payload map[string]any
 		if unmarshalErr := json.Unmarshal([]byte(line), &payload); unmarshalErr != nil {
-			return nil, unmarshalErr
+			return rowIndex, unmarshalErr
 		}
-		rows = append(rows, normalizeJSONL(payload))
+		if rowErr := fn(rowIndex, normalizeJSONL(payload)); rowErr != nil {
+			return rowIndex + 1, rowErr
+		}
+		rowIndex++
 	}
-	return rows, nil
+	if scanErr := scanner.Err(); scanErr != nil {
+		return rowIndex, scanErr
+	}
+	return rowIndex, nil
 }
 
 func normalizeJSONL(payload map[string]any) map[string]any {

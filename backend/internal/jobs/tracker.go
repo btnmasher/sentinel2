@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -153,4 +154,55 @@ func (t *JobTracker) FinishCanceled(record *core.Record, reason string) {
 	record.Set("status", StatusCanceled)
 	record.Set("error", reason)
 	_ = t.app.Save(record)
+}
+
+func (t *JobTracker) MarkStaleRunningAsTimeout(maxAge time.Duration) (int, error) {
+	if t == nil || t.app == nil {
+		return 0, nil
+	}
+	if maxAge <= 0 {
+		return 0, nil
+	}
+
+	records, err := t.app.FindRecordsByFilter(
+		collectionJobRuns,
+		"status = {:status}",
+		"",
+		0,
+		0,
+		map[string]any{"status": StatusRunning},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	now := time.Now().UTC()
+	cutoff := now.Add(-maxAge)
+	updated := 0
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+
+		jobID := record.GetString("job_id")
+		started := recordTime(record.Get("started_at"))
+		if started.After(cutoff) {
+			continue
+		}
+		// If this process still has a live cancel handle for the stale job,
+		// request graceful cancellation first and let the runner finalize state.
+		if Cancel(jobID) {
+			continue
+		}
+
+		record.Set("completed_at", now)
+		record.Set("duration_ms", now.Sub(started).Milliseconds())
+		record.Set("status", StatusTimeout)
+		record.Set("error", fmt.Sprintf("timed out by cleanup after running longer than %s", maxAge))
+		if saveErr := t.app.Save(record); saveErr != nil {
+			return updated, saveErr
+		}
+		updated++
+	}
+	return updated, nil
 }

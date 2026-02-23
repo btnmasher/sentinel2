@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 
@@ -12,6 +13,8 @@ import (
 )
 
 func runCleanupJob(app *pocketbase.PocketBase, deps *dependencies) {
+	const staleJobTimeout = 30 * time.Minute
+
 	runner := jobs.NewRunner(app, &jobs.RunOptions{
 		JobName: jobs.JobCleanup,
 		JobOptions: jobs.JobOptions{
@@ -27,6 +30,7 @@ func runCleanupJob(app *pocketbase.PocketBase, deps *dependencies) {
 		var uploaderTokenCount int
 		var intelReportCount int
 		var timerCount int
+		var staleJobRunCount int
 
 		if err := stepper.Run("cleanup_report_hashes", false, func(ctx context.Context) error {
 			count, err := deps.cleanup.RemoveExpired(store.CollectionIntelReportHash)
@@ -78,6 +82,14 @@ func runCleanupJob(app *pocketbase.PocketBase, deps *dependencies) {
 			return err
 		}
 
+		if err := stepper.Run("cleanup_stale_job_runs", false, func(ctx context.Context) error {
+			count, err := jobs.NewJobTracker(app).MarkStaleRunningAsTimeout(staleJobTimeout)
+			staleJobRunCount = count
+			return err
+		}); err != nil {
+			return err
+		}
+
 		runner.WithFields(logging.Fields{
 			"intel_report_hash_count": reportHashCount,
 			"intel_uploaders_count":   intelUploaderCount,
@@ -85,6 +97,7 @@ func runCleanupJob(app *pocketbase.PocketBase, deps *dependencies) {
 			"uploader_tokens_count":   uploaderTokenCount,
 			"intel_reports_count":     intelReportCount,
 			"timers_count":            timerCount,
+			"stale_job_runs_count":    staleJobRunCount,
 		})
 
 		return nil
