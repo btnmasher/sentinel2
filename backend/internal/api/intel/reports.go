@@ -85,6 +85,22 @@ func (h *IntelHandler) refreshUploaderHeartbeat(userID string) error {
 			"error":            updateErr.Error(),
 		})
 	}
+	count, countErr := h.Service.UploaderCount()
+	if countErr != nil {
+		logging.New(h.App).
+			WithFields(logging.Fields{
+				"uploader_user_id": userID,
+			}).
+			WithErr(countErr).
+			Debug("uploader heartbeat refreshed but uploader count fetch failed")
+		return nil
+	}
+	logging.New(h.App).
+		WithFields(logging.Fields{
+			"uploader_user_id": userID,
+			"uploaders_count":  count,
+		}).
+		Debug("uploader heartbeat refreshed")
 	return nil
 }
 
