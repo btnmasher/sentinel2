@@ -15,6 +15,9 @@ import {
 
 export const INTEL_STORE_VERSION = 2;
 const MAX_REPORT_AGE_SECONDS = 30 * 60;
+const UPLOADER_RESYNC_THROTTLE_MS = 15_000;
+let uploaderResyncInFlight: Promise<void> | null = null;
+let lastUploaderResyncAt = 0;
 
 type IntelFilters = {
   includeSystemLogs: boolean;
@@ -45,6 +48,7 @@ type IntelState = {
   setUploaders: (count: number) => void;
   setVersion: (version: string) => void;
   setIntelStatus: (status: IntelState["intelStatus"]) => void;
+  ensureUploaderPresenceFresh: () => Promise<void>;
   setLogFilters: (filters: Partial<IntelFilters>) => void;
   toggleSystemFilter: (systemId: number) => void;
   clearFilters: () => void;
@@ -116,162 +120,217 @@ type IntelRecord = {
 
 export const useIntelStore = create<IntelState>()(
   persist(
-    (set, get) => ({
-      reports: [],
-      lastReports: [],
-      reportsFetchedAt: undefined,
-      uploaders: 0,
-      version: "",
-      intelStatus: "connecting",
-      reportsRealtimeUnsubscribe: undefined,
-      uploadersRealtimeUnsubscribe: undefined,
-      logFilters: {
-        includeSystemLogs: true,
-        includeSystemAlarm: true,
-        includeUnknownLogs: true,
-        includeUnknownAlarm: true,
-        includeUnloadedRegionsLogs: true,
-        includeUnloadedRegionsAlarm: true,
-        system: [],
-      },
-      lastIntelSystems: {},
-      lastClearSystems: {},
-      setReports: (reports) =>
-        set(() => {
-          const nextReports = normalizeReports(reports);
+    (set, get) => {
+      const ensureUploadersRealtimeSubscription = async () => {
+        const existing = get().uploadersRealtimeUnsubscribe;
+        if (existing) {
+          return existing;
+        }
+        const uploadersUnsubscribe = await pb.realtime.subscribe(
+          INTEL_UPLOADER_COUNT_TOPIC,
+          (data) => {
+            const payload = normalizeUploaderCountMessage(data);
+            if (payload) {
+              get().setUploaders(payload.uploaders);
+            }
+          },
+        );
+        set({ uploadersRealtimeUnsubscribe: uploadersUnsubscribe });
+        return uploadersUnsubscribe;
+      };
+
+      return {
+        reports: [],
+        lastReports: [],
+        reportsFetchedAt: undefined,
+        uploaders: 0,
+        version: "",
+        intelStatus: "connecting",
+        reportsRealtimeUnsubscribe: undefined,
+        uploadersRealtimeUnsubscribe: undefined,
+        logFilters: {
+          includeSystemLogs: true,
+          includeSystemAlarm: true,
+          includeUnknownLogs: true,
+          includeUnknownAlarm: true,
+          includeUnloadedRegionsLogs: true,
+          includeUnloadedRegionsAlarm: true,
+          system: [],
+        },
+        lastIntelSystems: {},
+        lastClearSystems: {},
+        setReports: (reports) =>
+          set(() => {
+            const nextReports = normalizeReports(reports);
+            const { latestBySystem, latestClearBySystem } =
+              computeIntelSystemSignals(nextReports);
+            return {
+              reports: nextReports,
+              lastReports: nextReports,
+              lastIntelSystems: latestBySystem,
+              lastClearSystems: latestClearBySystem,
+              reportsFetchedAt: Date.now(),
+            };
+          }),
+        pushReport: (report) => {
+          const existing = get().reports;
+          const key = report.recordId ?? String(report.id);
+          if (
+            existing.some(
+              (entry) => (entry.recordId ?? String(entry.id)) === key,
+            )
+          ) {
+            return;
+          }
+          const nextReports = normalizeReports([report, ...existing]);
           const { latestBySystem, latestClearBySystem } =
             computeIntelSystemSignals(nextReports);
-          return {
+          set({
             reports: nextReports,
-            lastReports: nextReports,
+            lastReports: [report],
             lastIntelSystems: latestBySystem,
             lastClearSystems: latestClearBySystem,
-            reportsFetchedAt: Date.now(),
-          };
-        }),
-      pushReport: (report) => {
-        const existing = get().reports;
-        const key = report.recordId ?? String(report.id);
-        if (
-          existing.some((entry) => (entry.recordId ?? String(entry.id)) === key)
-        ) {
-          return;
-        }
-        const nextReports = normalizeReports([report, ...existing]);
-        const { latestBySystem, latestClearBySystem } =
-          computeIntelSystemSignals(nextReports);
-        set({
-          reports: nextReports,
-          lastReports: [report],
-          lastIntelSystems: latestBySystem,
-          lastClearSystems: latestClearBySystem,
-        });
-      },
-      setUploaders: (count) => set({ uploaders: count }),
-      setVersion: (version) => set({ version }),
-      setIntelStatus: (intelStatus) => set({ intelStatus }),
-      setLogFilters: (filters) =>
-        set((state) => ({ logFilters: { ...state.logFilters, ...filters } })),
-      toggleSystemFilter: (systemId) => {
-        const current = get().logFilters.system;
-        const next = current.includes(systemId)
-          ? current.filter((id) => id !== systemId)
-          : [...current, systemId];
-        set({ logFilters: { ...get().logFilters, system: next } });
-      },
-      clearFilters: () =>
-        set({
-          logFilters: {
-            includeSystemLogs: true,
-            includeSystemAlarm: true,
-            includeUnknownLogs: true,
-            includeUnknownAlarm: true,
-            includeUnloadedRegionsLogs: true,
-            includeUnloadedRegionsAlarm: true,
-            system: [],
-          },
-        }),
-      connectRealtime: async () => {
-        if (
-          get().reportsRealtimeUnsubscribe ||
-          get().uploadersRealtimeUnsubscribe
-        ) {
-          return "ok";
-        }
-        set({ intelStatus: "connecting" });
-        try {
-          if (!get().reportsFetchedAt) {
-            const res = await api.get("/intel/reports", {
-              headers: { "X-Auth-Check": "1" },
-            });
-            if (!get().reportsFetchedAt) {
-              const reports = Array.isArray(res.data.intel)
-                ? res.data.intel
-                    .map((report: unknown) => normalizeIntelReport(report))
-                    .filter(
-                      (report): report is NonNullable<typeof report> =>
-                        report !== null,
-                    )
-                : [];
-              get().setReports(reports);
-              get().setUploaders(res.data.uploaders ?? 0);
-              get().setVersion(res.data.version ?? "");
-            }
-          }
-          const reportsUnsubscribe = await pb
-            .collection("intel_reports")
-            .subscribe("*", (event) => {
-              if (event.action !== "create") return;
-              const record = event.record as IntelRecord;
-              const report = normalizeIntelReport({
-                ...record,
-                recordId: event.record?.id,
-              });
-              if (report) {
-                get().pushReport(report);
-              }
-            });
-          const uploadersUnsubscribe = await pb.realtime.subscribe(
-            INTEL_UPLOADER_COUNT_TOPIC,
-            (data) => {
-              const payload = normalizeUploaderCountMessage(data);
-              if (payload) {
-                get().setUploaders(payload.uploaders);
-              }
-            },
-          );
-          set({
-            reportsRealtimeUnsubscribe: reportsUnsubscribe,
-            uploadersRealtimeUnsubscribe: uploadersUnsubscribe,
-            intelStatus: "connected",
           });
-          return "ok";
-        } catch (error: unknown) {
-          await get().disconnectRealtime();
-          const status = getHttpStatus(error);
-          if (status === 401 || status === 403) {
-            return "auth_error";
+        },
+        setUploaders: (count) => set({ uploaders: count }),
+        setVersion: (version) => set({ version }),
+        setIntelStatus: (intelStatus) => set({ intelStatus }),
+        ensureUploaderPresenceFresh: async () => {
+          const snapshot = get();
+          if (snapshot.intelStatus !== "connected" || snapshot.uploaders > 0) {
+            return;
           }
-          set({ intelStatus: "disconnected" });
-          return "error";
-        }
-      },
-      disconnectRealtime: async () => {
-        const reportsUnsubscribe = get().reportsRealtimeUnsubscribe;
-        const uploadersUnsubscribe = get().uploadersRealtimeUnsubscribe;
-        set({
-          reportsRealtimeUnsubscribe: undefined,
-          uploadersRealtimeUnsubscribe: undefined,
-          intelStatus: "disconnected",
-        });
-        if (reportsUnsubscribe) {
-          await reportsUnsubscribe().catch(() => undefined);
-        }
-        if (uploadersUnsubscribe) {
-          await uploadersUnsubscribe().catch(() => undefined);
-        }
-      },
-    }),
+          const now = Date.now();
+          if (uploaderResyncInFlight) {
+            return uploaderResyncInFlight;
+          }
+          if (now - lastUploaderResyncAt < UPLOADER_RESYNC_THROTTLE_MS) {
+            return;
+          }
+          lastUploaderResyncAt = now;
+          uploaderResyncInFlight = (async () => {
+            try {
+              await ensureUploadersRealtimeSubscription();
+              const res = await api.get("/intel/reports", {
+                headers: { "X-Auth-Check": "1" },
+              });
+              const raw = res?.data?.uploaders;
+              const count =
+                typeof raw === "number"
+                  ? raw
+                  : typeof raw === "string"
+                    ? Number(raw)
+                    : NaN;
+              if (Number.isFinite(count) && count >= 0) {
+                get().setUploaders(count);
+              }
+            } catch {
+              // best-effort self-heal for uploader count drift
+            } finally {
+              uploaderResyncInFlight = null;
+            }
+          })();
+          return uploaderResyncInFlight;
+        },
+        setLogFilters: (filters) =>
+          set((state) => ({ logFilters: { ...state.logFilters, ...filters } })),
+        toggleSystemFilter: (systemId) => {
+          const current = get().logFilters.system;
+          const next = current.includes(systemId)
+            ? current.filter((id) => id !== systemId)
+            : [...current, systemId];
+          set({ logFilters: { ...get().logFilters, system: next } });
+        },
+        clearFilters: () =>
+          set({
+            logFilters: {
+              includeSystemLogs: true,
+              includeSystemAlarm: true,
+              includeUnknownLogs: true,
+              includeUnknownAlarm: true,
+              includeUnloadedRegionsLogs: true,
+              includeUnloadedRegionsAlarm: true,
+              system: [],
+            },
+          }),
+        connectRealtime: async () => {
+          if (
+            get().reportsRealtimeUnsubscribe ||
+            get().uploadersRealtimeUnsubscribe
+          ) {
+            return "ok";
+          }
+          set({ intelStatus: "connecting" });
+          try {
+            if (!get().reportsFetchedAt) {
+              const res = await api.get("/intel/reports", {
+                headers: { "X-Auth-Check": "1" },
+              });
+              if (!get().reportsFetchedAt) {
+                const reports = Array.isArray(res.data.intel)
+                  ? res.data.intel
+                      .map((report: unknown) => normalizeIntelReport(report))
+                      .filter(
+                        (report): report is NonNullable<typeof report> =>
+                          report !== null,
+                      )
+                  : [];
+                get().setReports(reports);
+                get().setUploaders(res.data.uploaders ?? 0);
+                get().setVersion(res.data.version ?? "");
+              }
+            }
+            const reportsUnsubscribe = await pb
+              .collection("intel_reports")
+              .subscribe("*", (event) => {
+                if (event.action !== "create") return;
+                const record = event.record as IntelRecord;
+                const report = normalizeIntelReport({
+                  ...record,
+                  recordId: event.record?.id,
+                });
+                if (report) {
+                  get().pushReport(report);
+                  if (get().uploaders === 0) {
+                    void get().ensureUploaderPresenceFresh();
+                  }
+                }
+              });
+            const uploadersUnsubscribe =
+              await ensureUploadersRealtimeSubscription();
+            set({
+              reportsRealtimeUnsubscribe: reportsUnsubscribe,
+              uploadersRealtimeUnsubscribe: uploadersUnsubscribe,
+              intelStatus: "connected",
+            });
+            return "ok";
+          } catch (error: unknown) {
+            await get().disconnectRealtime();
+            const status = getHttpStatus(error);
+            if (status === 401 || status === 403) {
+              return "auth_error";
+            }
+            set({ intelStatus: "disconnected" });
+            return "error";
+          }
+        },
+        disconnectRealtime: async () => {
+          const reportsUnsubscribe = get().reportsRealtimeUnsubscribe;
+          const uploadersUnsubscribe = get().uploadersRealtimeUnsubscribe;
+          set({
+            reportsRealtimeUnsubscribe: undefined,
+            uploadersRealtimeUnsubscribe: undefined,
+            intelStatus: "disconnected",
+          });
+          if (reportsUnsubscribe) {
+            await reportsUnsubscribe().catch(() => undefined);
+          }
+          if (uploadersUnsubscribe) {
+            await uploadersUnsubscribe().catch(() => undefined);
+          }
+        },
+      };
+    },
     {
       name: "intel-map-config/intel",
       version: INTEL_STORE_VERSION,
