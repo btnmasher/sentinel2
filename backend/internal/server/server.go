@@ -132,6 +132,7 @@ func Run(cfg *config.Config) error {
 	registerRoutes(app, cfg, &deps)
 	registerCrons(app, cfg, &deps)
 	registerRealtime(app, intelService, realtimePublisher)
+	registerTrustedProxyDefaults(app, cfg)
 
 	if startErr := app.Start(); startErr != nil {
 		logging.New(app).

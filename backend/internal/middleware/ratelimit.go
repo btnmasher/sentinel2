@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"strings"
 	"sync"
 	"time"
 
@@ -50,18 +49,7 @@ func RateLimit(limiter *RateLimiter, keyFunc func(*core.RequestEvent) string) fu
 }
 
 func clientIP(c *core.RequestEvent) string {
-	realIP := c.RealIP()
-	if realIP != "" {
-		return realIP
-	}
-	forwarded := c.Request.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			return strings.TrimSpace(parts[0])
-		}
-	}
-	return c.Request.RemoteAddr
+	return c.RealIP()
 }
 
 func LimitPerHour(count int) rate.Limit {

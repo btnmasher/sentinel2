@@ -55,14 +55,15 @@ type Config struct {
 	IntelReportHashSlots int    `long:"intel-report-hash-slots" env:"INTEL_REPORT_HASH_SLOTS" default:"20"`
 	UploaderGitHubRepo   string `long:"uploader-github-repo" env:"UPLOADER_GITHUB_REPO" default:"btnmasher/sentinel2-uploader"`
 
-	FrontendDevProxy string `long:"dev-proxy" env:"DEV_PROXY"`
-	DebugEnabled     bool   `long:"dev" env:"DEBUG_ENABLED"`
-	LogLevel         string `long:"log-level" env:"LOG_LEVEL" default:"info" choice:"debug" choice:"info" choice:"warn" choice:"error"`
-	LogPretty        bool   `long:"log-pretty" env:"LOG_PRETTY"`
-	LogPrettyPB      bool   `long:"log-pretty-pb" env:"LOG_PRETTY_PB"`
-	LogJSON          bool   `long:"log-json" env:"LOG_JSON"`
-	LogJSONPath      string `long:"log-json-path" env:"LOG_JSON_PATH"`
-	LogJSONPB        bool   `long:"log-json-pb" env:"LOG_JSON_PB"`
+	FrontendDevProxy    string   `long:"dev-proxy" env:"DEV_PROXY"`
+	DebugEnabled        bool     `long:"dev" env:"DEBUG_ENABLED"`
+	LogLevel            string   `long:"log-level" env:"LOG_LEVEL" default:"info" choice:"debug" choice:"info" choice:"warn" choice:"error"`
+	LogPretty           bool     `long:"log-pretty" env:"LOG_PRETTY"`
+	LogPrettyPB         bool     `long:"log-pretty-pb" env:"LOG_PRETTY_PB"`
+	LogJSON             bool     `long:"log-json" env:"LOG_JSON"`
+	LogJSONPath         string   `long:"log-json-path" env:"LOG_JSON_PATH"`
+	LogJSONPB           bool     `long:"log-json-pb" env:"LOG_JSON_PB"`
+	TrustedProxyHeaders []string `long:"trusted-proxy-headers" env:"TRUSTED_PROXY_HEADERS" env-delim:"," default:"CF-Connecting-IP" default:"True-Client-IP"`
 }
 
 func Load() Config {

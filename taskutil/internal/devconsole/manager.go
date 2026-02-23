@@ -148,7 +148,7 @@ func newProcessManager(cfg project.Config, runMigrations bool, events chan tea.M
 					name:    "backend",
 					dir:     cfg.BinDir(),
 					command: cfg.BackendBinary(),
-					args:    []string{"serve", "--dev"},
+					args:    []string{"serve", "--dev", "--http=0.0.0.0:8090"},
 					env: []string{
 						"DEV_PROXY=" + devProxy,
 						"LOG_PRETTY_PB=1",

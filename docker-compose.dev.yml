@@ -36,7 +36,7 @@ services:
     command:
       - bash
       - -lc
-      - task build:backend:skip-embed && cd /app/bin && ./sentinel2-server serve --dev
+      - task build:backend:skip-embed && cd /app/bin && ./sentinel2-server serve --dev --http=0.0.0.0:8090
     depends_on:
       - frontend-dev
     volumes:
