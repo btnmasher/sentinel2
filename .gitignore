@@ -39,6 +39,7 @@ sentinel2-*
 *.zip
 .cache/
 .gocache/
+*.syso
 
 # local dev artifacts
 pb_data/

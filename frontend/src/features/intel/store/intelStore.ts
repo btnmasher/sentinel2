@@ -10,6 +10,7 @@ import {
 } from "../utils/intelReportUtils";
 import {
   INTEL_UPLOADER_COUNT_TOPIC,
+  REALTIME_KEEPALIVE_TOPIC,
   normalizeUploaderCountMessage,
 } from "../utils/intelRealtimeUtils";
 
@@ -38,6 +39,7 @@ type IntelState = {
   intelStatus: "connecting" | "connected" | "disconnected";
   reportsRealtimeUnsubscribe?: () => Promise<void>;
   uploadersRealtimeUnsubscribe?: () => Promise<void>;
+  keepaliveRealtimeUnsubscribe?: () => Promise<void>;
   logFilters: IntelFilters;
   // Maps system_id -> latest report unix timestamp (seconds)
   lastIntelSystems: Record<number, number>;
@@ -148,6 +150,7 @@ export const useIntelStore = create<IntelState>()(
         intelStatus: "connecting",
         reportsRealtimeUnsubscribe: undefined,
         uploadersRealtimeUnsubscribe: undefined,
+        keepaliveRealtimeUnsubscribe: undefined,
         logFilters: {
           includeSystemLogs: true,
           includeSystemAlarm: true,
@@ -256,7 +259,8 @@ export const useIntelStore = create<IntelState>()(
         connectRealtime: async () => {
           if (
             get().reportsRealtimeUnsubscribe ||
-            get().uploadersRealtimeUnsubscribe
+            get().uploadersRealtimeUnsubscribe ||
+            get().keepaliveRealtimeUnsubscribe
           ) {
             return "ok";
           }
@@ -298,9 +302,16 @@ export const useIntelStore = create<IntelState>()(
               });
             const uploadersUnsubscribe =
               await ensureUploadersRealtimeSubscription();
+            const keepaliveUnsubscribe = await pb.realtime.subscribe(
+              REALTIME_KEEPALIVE_TOPIC,
+              () => {
+                // Keepalive events intentionally carry no UI state updates.
+              },
+            );
             set({
               reportsRealtimeUnsubscribe: reportsUnsubscribe,
               uploadersRealtimeUnsubscribe: uploadersUnsubscribe,
+              keepaliveRealtimeUnsubscribe: keepaliveUnsubscribe,
               intelStatus: "connected",
             });
             return "ok";
@@ -317,9 +328,11 @@ export const useIntelStore = create<IntelState>()(
         disconnectRealtime: async () => {
           const reportsUnsubscribe = get().reportsRealtimeUnsubscribe;
           const uploadersUnsubscribe = get().uploadersRealtimeUnsubscribe;
+          const keepaliveUnsubscribe = get().keepaliveRealtimeUnsubscribe;
           set({
             reportsRealtimeUnsubscribe: undefined,
             uploadersRealtimeUnsubscribe: undefined,
+            keepaliveRealtimeUnsubscribe: undefined,
             intelStatus: "disconnected",
           });
           if (reportsUnsubscribe) {
@@ -327,6 +340,9 @@ export const useIntelStore = create<IntelState>()(
           }
           if (uploadersUnsubscribe) {
             await uploadersUnsubscribe().catch(() => undefined);
+          }
+          if (keepaliveUnsubscribe) {
+            await keepaliveUnsubscribe().catch(() => undefined);
           }
         },
       };

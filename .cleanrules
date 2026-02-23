@@ -12,6 +12,7 @@ backend/internal/web/dist
 .tmp/stamps
 .task
 .bun
+**.syso
 .tmp/bin/**
 !.tmp/bin/taskutil
 !.tmp/bin/taskutil.exe

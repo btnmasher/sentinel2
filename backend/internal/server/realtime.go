@@ -16,12 +16,15 @@ import (
 )
 
 const uploaderCountRecomputeInterval = 30 * time.Second
+const realtimeKeepaliveInterval = 30 * time.Second
 
 func registerRealtime(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher) {
 	registerUploaderConfigTopicAuth(app, intelService)
 	registerIntelUploadersTopic(app, intelService)
+	registerKeepaliveTopicAuth(app)
 	registerUploaderConfigBroadcasts(app, intelService, publisher)
 	startIntelUploaderHeartbeatCountBroadcasts(app, intelService, publisher)
+	startRealtimeKeepaliveBroadcasts(app, publisher)
 }
 
 func registerUploaderConfigTopicAuth(app *pocketbase.PocketBase, intelService *intel.IntelService) {
@@ -90,6 +93,18 @@ func registerIntelUploadersTopic(app *pocketbase.PocketBase, intelService *intel
 	})
 }
 
+func registerKeepaliveTopicAuth(app *pocketbase.PocketBase) {
+	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
+		if !subscriptionContainsTopic(e.Subscriptions, realtime.TopicKeepalive) {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return e.ForbiddenError("Realtime keepalive subscription requires authentication.", nil)
+		}
+		return e.Next()
+	})
+}
+
 func startIntelUploaderHeartbeatCountBroadcasts(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher) {
 	if app == nil || intelService == nil || publisher == nil {
 		return
@@ -104,6 +119,26 @@ func startIntelUploaderHeartbeatCountBroadcasts(app *pocketbase.PocketBase, inte
 		go func() {
 			defer ticker.Stop()
 			runIntelUploaderHeartbeatLoop(app, intelService, publisher, ticker.C)
+		}()
+
+		return nil
+	})
+}
+
+func startRealtimeKeepaliveBroadcasts(app *pocketbase.PocketBase, publisher *realtime.Publisher) {
+	if app == nil || publisher == nil {
+		return
+	}
+
+	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+
+		ticker := time.NewTicker(realtimeKeepaliveInterval)
+		go func() {
+			defer ticker.Stop()
+			runRealtimeKeepaliveLoop(app, publisher, ticker.C)
 		}()
 
 		return nil
@@ -192,6 +227,18 @@ func runIntelUploaderHeartbeatLoop(app *pocketbase.PocketBase, intelService *int
 func publishIntelUploaderCount(publisher *realtime.Publisher, count int) error {
 	_, err := publisher.PublishJSON(realtime.TopicIntelUploaders, map[string]any{"uploaders": count})
 	return err
+}
+
+func runRealtimeKeepaliveLoop(app *pocketbase.PocketBase, publisher *realtime.Publisher, ticks <-chan time.Time) {
+	for tick := range ticks {
+		if _, err := publisher.PublishJSON(realtime.TopicKeepalive, map[string]any{
+			"ts": tick.UTC().Unix(),
+		}); err != nil {
+			logging.New(app).
+				WithErr(err).
+				Warn("realtime keepalive publish failed")
+		}
+	}
 }
 
 func resolveRecord(model core.Model) *core.Record {

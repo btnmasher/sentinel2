@@ -158,6 +158,7 @@ func (c Config) defaultCleanRules() string {
 		".tmp/bun-install",
 		".tmp/stamps",
 		".task",
+		"**.syso",
 		".tmp/bin/**",
 		"!.tmp/bin/taskutil",
 		"!.tmp/bin/taskutil.exe",

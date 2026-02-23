@@ -12,6 +12,7 @@ import (
 const (
 	TopicUploaderConfig = "uploader.config"
 	TopicIntelUploaders = "intel.uploaders_count"
+	TopicKeepalive      = "realtime.keepalive"
 	DefaultQueueSize    = 256
 )
 

@@ -1,4 +1,5 @@
 export const INTEL_UPLOADER_COUNT_TOPIC = "intel.uploaders_count";
+export const REALTIME_KEEPALIVE_TOPIC = "realtime.keepalive";
 
 export type IntelUploaderCountMessage = {
   uploaders: number;
