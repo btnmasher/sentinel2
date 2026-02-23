@@ -4,6 +4,7 @@ import {
   useCorporationLogo,
 } from "@/hooks/useEveImage";
 import { useAuthStore } from "@/app/store/authStore";
+import HoverCard from "@/components/HoverCard";
 
 type CharacterInfo = {
   name: string;
@@ -104,12 +105,19 @@ export default function CharacterCard({
           <span>Character ID {characterId}</span>
           <span className="flex items-center gap-1">
             <span>ESI:</span>
-            <span
-              className={`tooltip tooltip-bottom badge badge-sm ${esiBadgeStyle}`}
-              data-tip={esiTooltip}
+            <HoverCard
+              trigger={
+                <span
+                  className={`badge badge-sm cursor-help ${esiBadgeStyle}`}
+                  tabIndex={0}
+                >
+                  {esiBadgeLabel}
+                </span>
+              }
+              className="hover-card-surface rounded-md p-2 text-xs max-w-80"
             >
-              {esiBadgeLabel}
-            </span>
+              <div className="whitespace-pre-line">{esiTooltip}</div>
+            </HoverCard>
           </span>
         </div>
       </div>

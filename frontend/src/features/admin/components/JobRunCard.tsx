@@ -5,6 +5,7 @@ import {
 } from "../utils/formatters";
 import type { JobRunEntry } from "../types";
 import JobStatusBadge from "./JobStatusBadge";
+import HoverCard from "@/components/HoverCard";
 
 const sortSteps = (steps: JobRunEntry[]) =>
   steps.slice().sort((a, b) => {
@@ -28,6 +29,40 @@ const resolveDuration = (parent: JobRunEntry, now: number) =>
           ? now - Date.parse(parent.started_at)
           : undefined,
   );
+
+const stepStatusDetails = (step: JobRunEntry) =>
+  step.status === "skipped" && step.error
+    ? `Skipped: ${step.error}`
+    : step.status
+      ? step.status[0].toUpperCase() + step.status.slice(1)
+      : step.error
+        ? `Error: ${step.error}`
+        : "";
+
+function JobStepStatusBadge({ step }: { step: JobRunEntry }) {
+  const details = stepStatusDetails(step);
+  const badge = (
+    <span
+      className={`badge badge-xs ${getJobStatusClass(step.status || "")} ${
+        details ? "cursor-help" : ""
+      }`}
+      tabIndex={details ? 0 : -1}
+    >
+      {step.step}
+    </span>
+  );
+
+  if (!details) return badge;
+
+  return (
+    <HoverCard
+      trigger={badge}
+      className="hover-card-surface rounded-md p-2 text-xs max-w-96"
+    >
+      {details}
+    </HoverCard>
+  );
+}
 
 type JobRunCardProps = {
   parent: JobRunEntry;
@@ -69,21 +104,7 @@ export default function JobRunCard({
       {steps.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {sortSteps(steps).map((step) => (
-            <span
-              key={step.id}
-              className={`badge badge-xs ${getJobStatusClass(step.status || "")}`}
-              title={
-                step.status === "skipped" && step.error
-                  ? `Skipped: ${step.error}`
-                  : step.status
-                    ? step.status[0].toUpperCase() + step.status.slice(1)
-                    : step.error
-                      ? `Error: ${step.error}`
-                      : undefined
-              }
-            >
-              {step.step}
-            </span>
+            <JobStepStatusBadge key={step.id} step={step} />
           ))}
         </div>
       )}

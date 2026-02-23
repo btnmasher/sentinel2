@@ -1,4 +1,5 @@
 import { getJobStatusClass } from "../utils/formatters";
+import HoverCard from "@/components/HoverCard";
 
 const statusLabel = (status?: string) => {
   switch (status) {
@@ -34,7 +35,7 @@ export default function JobStatusBadge({
 }: JobStatusBadgeProps) {
   if (!status) return null;
   const label = statusLabel(status);
-  const title =
+  const details =
     status === "skipped" && error
       ? `Skipped: ${error}`
       : error
@@ -42,13 +43,20 @@ export default function JobStatusBadge({
         : label;
 
   return (
-    <span
-      className={`badge badge-xs ${getJobStatusClass(status)} ${
-        className ?? ""
-      }`.trim()}
-      title={title}
+    <HoverCard
+      trigger={
+        <span
+          className={`badge badge-xs cursor-help ${getJobStatusClass(status)} ${
+            className ?? ""
+          }`.trim()}
+          tabIndex={0}
+        >
+          {label}
+        </span>
+      }
+      className="hover-card-surface rounded-md p-2 text-xs max-w-96"
     >
-      {label}
-    </span>
+      {details}
+    </HoverCard>
   );
 }

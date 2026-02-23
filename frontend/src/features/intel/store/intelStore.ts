@@ -32,6 +32,7 @@ type IntelFilters = {
 
 type IntelState = {
   reports: IntelReport[];
+  reportCount: number;
   lastReports: IntelReport[];
   reportsFetchedAt?: number;
   uploaders: number;
@@ -143,6 +144,7 @@ export const useIntelStore = create<IntelState>()(
 
       return {
         reports: [],
+        reportCount: 0,
         lastReports: [],
         reportsFetchedAt: undefined,
         uploaders: 0,
@@ -163,12 +165,13 @@ export const useIntelStore = create<IntelState>()(
         lastIntelSystems: {},
         lastClearSystems: {},
         setReports: (reports) =>
-          set(() => {
+          set((state) => {
             const nextReports = normalizeReports(reports);
             const { latestBySystem, latestClearBySystem } =
               computeIntelSystemSignals(nextReports);
             return {
               reports: nextReports,
+              reportCount: Math.max(state.reportCount, nextReports.length),
               lastReports: nextReports,
               lastIntelSystems: latestBySystem,
               lastClearSystems: latestClearBySystem,
@@ -190,6 +193,7 @@ export const useIntelStore = create<IntelState>()(
             computeIntelSystemSignals(nextReports);
           set({
             reports: nextReports,
+            reportCount: get().reportCount + 1,
             lastReports: [report],
             lastIntelSystems: latestBySystem,
             lastClearSystems: latestClearBySystem,
@@ -359,6 +363,12 @@ export const useIntelStore = create<IntelState>()(
           reports: Array.isArray(state.reports)
             ? normalizeReports(state.reports)
             : [],
+          reportCount:
+            typeof state.reportCount === "number" && state.reportCount > 0
+              ? state.reportCount
+              : Array.isArray(state.reports)
+                ? normalizeReports(state.reports).length
+                : 0,
           lastIntelSystems:
             state.lastIntelSystems && typeof state.lastIntelSystems === "object"
               ? state.lastIntelSystems
@@ -382,6 +392,7 @@ export const useIntelStore = create<IntelState>()(
       partialize: (state) => ({
         logFilters: state.logFilters,
         reports: normalizeReports(state.reports),
+        reportCount: state.reportCount,
         lastIntelSystems: state.lastIntelSystems,
         lastClearSystems: state.lastClearSystems,
       }),

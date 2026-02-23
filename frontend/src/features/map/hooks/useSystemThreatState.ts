@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntelStore } from "@/features/intel";
 import { useSettingsStore } from "@/app/store/settingsStore";
-import { colorForAge } from "../utils/mapUtils";
+import { colorForAge, threatStageForAge } from "../utils/mapUtils";
 
 const clampSeconds = (value: number) => Math.max(0, Math.floor(value));
 const CLEAR_FLASH_SECONDS = 5;
@@ -126,10 +126,14 @@ export function useSystemThreatState(systemId: number) {
     () => colorForAge(intelAgeSeconds, threatTimings),
     [intelAgeSeconds, threatTimings],
   );
+  const threatStage = useMemo(
+    () => threatStageForAge(intelAgeSeconds, threatTimings),
+    [intelAgeSeconds, threatTimings],
+  );
 
   const alerting =
     intelAgeSeconds !== undefined &&
     intelAgeSeconds < clampSeconds(threatTimings.flash);
 
-  return { intelAgeSeconds, systemFill, alerting, clearFlashing };
+  return { intelAgeSeconds, systemFill, threatStage, alerting, clearFlashing };
 }

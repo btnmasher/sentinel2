@@ -47,6 +47,7 @@ export default function MapCanvas() {
   const [isDragging, setIsDragging] = useState(false);
   const panStart = useRef<{ x: number; y: number } | null>(null);
   const hasPointerCapture = useRef(false);
+  const lastCenteredSearch = useRef<string | undefined>(undefined);
   const [searchClearable, setSearchClearable] = useState(true);
   const hasCentered = useRef(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
@@ -329,11 +330,19 @@ export default function MapCanvas() {
   }, [centerMap, regions]);
 
   useEffect(() => {
-    if (systemSearchPosition) {
-      centerOn(systemSearchPosition.x, systemSearchPosition.y, 0);
-      setSearchClearable(true);
+    if (!systemSearch || !systemSearchPosition) {
+      lastCenteredSearch.current = undefined;
+      return;
     }
-  }, [centerOn, systemSearchPosition]);
+
+    if (lastCenteredSearch.current === systemSearch) {
+      return;
+    }
+
+    centerOn(systemSearchPosition.x, systemSearchPosition.y, 0);
+    setSearchClearable(true);
+    lastCenteredSearch.current = systemSearch;
+  }, [centerOn, systemSearch, systemSearchPosition]);
 
   const zoomBy = useCallback(
     (delta: number) => {

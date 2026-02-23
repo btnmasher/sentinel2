@@ -9,6 +9,7 @@ import {
 import { useUIStore } from "@/features/ui";
 import { isClearIntelReport } from "../utils/intelReportUtils";
 import { useSettingsStore } from "@/app/store/settingsStore";
+import HoverCard from "@/components/HoverCard";
 
 function timeSuffix(minutes: number) {
   if (minutes <= 0) return "now";
@@ -79,11 +80,14 @@ export default function ReportItem({
     return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")}`;
   }, [log.time]);
 
-  const channelTooltip = useMemo(() => {
-    if (!log.channel_id) return "";
-    const channelName = channelNames[log.channel_id];
-    if (channelName) return `Channel: ${channelName}`;
-    return `Channel ID: ${log.channel_id}`;
+  const localTimestamp = useMemo(() => {
+    const date = new Date(log.time * 1000);
+    return date.toLocaleString();
+  }, [log.time]);
+
+  const reportChannel = useMemo(() => {
+    if (!log.channel_id) return "Unknown";
+    return channelNames[log.channel_id] ?? `ID: ${log.channel_id}`;
   }, [channelNames, log.channel_id]);
 
   const isClearReport = useMemo(() => isClearIntelReport(log), [log]);
@@ -155,17 +159,31 @@ export default function ReportItem({
     <article
       className="border border-slate-800 rounded-lg p-3 bg-base-300/40"
       onContextMenu={showMenu}
-      title={channelTooltip}
     >
       <div className="flex items-center justify-between text-xs text-slate-400">
-        <span style={{ color: timeColor }}>{timeSuffix(timePassed)}</span>
+        <span
+          className="report-item-relative-time"
+          style={{ color: timeColor }}
+        >
+          {timeSuffix(timePassed)}
+        </span>
         <div className="flex items-center gap-2">
           {isClearReport && (
-            <span className="rounded border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-300">
+            <span className="report-item-cleared-badge rounded border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-300">
               Cleared
             </span>
           )}
-          <span>{timestamp}</span>
+          <HoverCard
+            trigger={
+              <span className="report-item-time cursor-help" tabIndex={0}>
+                {timestamp}
+              </span>
+            }
+            className="hover-card-surface report-time-hover-card"
+          >
+            <span>Local: {localTimestamp}</span>
+            <span>Channel: {reportChannel}</span>
+          </HoverCard>
         </div>
       </div>
       <p className="text-sm text-slate-200 mt-1">
@@ -242,7 +260,7 @@ export default function ReportItem({
             <span key={idx}>
               {idx > 0 ? " " : ""}
               <button
-                className="text-sky-300"
+                className="report-item-system-link"
                 onClick={() => setSystemSearch(system.system)}
                 onContextMenu={(event) =>
                   openSystemContextMenu(

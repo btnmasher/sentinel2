@@ -34,7 +34,7 @@ export default function MapSystem({
   });
 
   const logFilters = useIntelStore((s) => s.logFilters);
-  const { systemFill, alerting, clearFlashing } =
+  const { systemFill, threatStage, alerting, clearFlashing } =
     useSystemThreatState(systemId);
 
   const system = systems[systemId];
@@ -46,7 +46,8 @@ export default function MapSystem({
 
   if (!system) return null;
 
-  const opacity = jumpranges.enabled ? 1 : 0.65;
+  const hasThreatOverlay = threatStage !== "normal";
+  const opacity = jumpranges.enabled ? 1 : hasThreatOverlay ? 0.82 : 0.65;
   const textColor = logFilters.system.includes(systemId)
     ? colorToHex("green lighten-1")
     : "rgba(255, 255, 255, 0.8)";
@@ -93,6 +94,7 @@ export default function MapSystem({
         <rect
           className={[
             "map-system-core",
+            `map-threat-${threatStage}`,
             alerting ? "map-system-alert" : "",
             clearFlashing ? "map-system-clear-flash" : "",
           ]

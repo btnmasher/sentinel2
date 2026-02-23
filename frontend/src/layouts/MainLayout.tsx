@@ -82,8 +82,11 @@ export default function MainLayout({ children }: { children: ReactNode }) {
                 S2
               </div>
               <div>
-                <h1 className="font-display text-base md:text-lg leading-tight">
-                  Sentinel 2
+                <h1 className="font-display text-base md:text-lg leading-tight flex items-center gap-2">
+                  <span>Sentinel 2</span>
+                  <span className="inline-flex h-4 items-center rounded-full border border-amber-400/45 bg-amber-500/12 px-1.5 text-[9px] font-semibold uppercase leading-none tracking-[0.12em] text-amber-300">
+                    beta
+                  </span>
                 </h1>
                 <p className="hidden md:block text-[11px] text-slate-400">
                   intel & navigation control

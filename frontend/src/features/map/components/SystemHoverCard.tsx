@@ -1,24 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { CircleHelp, Droplets, Globe2, Moon } from "lucide-react";
 import { createPortal } from "react-dom";
-import {
-  countdownTone,
-  formatCountdown,
-  formatStageLabel,
-  formatStanding,
-  formatStructureType,
-  formatTimerDateParts,
-  severityBadgeClass,
-  stageBadgeClass,
-  standingBadgeClass,
-  structureBadgeClassByType,
-  structureByValue,
-  timerKindLabels,
-  hostilityRowToneClass,
-} from "../../timers";
-import type { TimerStageLabel, TimerStandingType } from "../../timers/types";
 import type { SystemCharacterBadge } from "../hooks/useSystemCharacters";
 import type { TimerSignal, TimerSignalPreview } from "../types";
+import TimerHoverPanel, { readTimerUse24Hour } from "./TimerHoverPanel";
 
 type SystemHoverCardProps = {
   open: boolean;
@@ -109,7 +93,7 @@ export default function SystemHoverCard({
   return createPortal(
     <div
       ref={cardRef}
-      className="map-system-hover-card"
+      className="hover-card-surface map-system-hover-card"
       style={{ top: position.top, left: position.left }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -147,10 +131,10 @@ export default function SystemHoverCard({
           <div className="map-system-hover-section-label">Timers</div>
           <>
             {timerPreviews.map((timer, index) => (
-              <TimerEntry
+              <TimerHoverPanel
                 key={`${timer.next_expires_at}-${timer.title ?? "timer"}-${index}`}
                 timer={timer}
-                systemName={systemName}
+                baseSystemName={systemName}
                 nowMs={nowMs}
                 use24Hour={use24Hour}
               />
@@ -165,164 +149,6 @@ export default function SystemHoverCard({
       ) : null}
     </div>,
     document.body,
-  );
-}
-
-function TimerEntry({
-  timer,
-  systemName,
-  nowMs,
-  use24Hour,
-}: {
-  timer: TimerSignalPreview;
-  systemName: string;
-  nowMs: number;
-  use24Hour: boolean;
-}) {
-  const countdownClass = countdownTone(timer.next_expires_at, nowMs);
-  const timestamp = formatTimerDateParts(timer.next_expires_at, use24Hour);
-  const stageLabel = (timer.stage_label ?? "not_applicable") as TimerStageLabel;
-  const title = compactTimerTitle(timer.title, systemName, timer);
-  const structureType = timer.structure_type ?? "custom";
-  const structure = structureByValue.get(structureType as never);
-  const StructureIcon = structure?.icon ?? CircleHelp;
-
-  return (
-    <div
-      className={`map-system-hover-timer-panel ${hostilityRowToneClass(timer.standing_type)}`}
-    >
-      <div className="map-system-hover-timer-head">
-        <div className="map-system-hover-timer-title">{title}</div>
-        <span
-          className={`badge timer-row-badge map-system-hover-timer-priority ${severityBadgeClass(timer.severity)}`}
-        >
-          {humanize(timer.severity)}
-        </span>
-      </div>
-      <div className={`map-system-hover-timer-countdown ${countdownClass}`}>
-        {formatCountdown(timer.next_expires_at, nowMs)}
-      </div>
-      <div className="map-system-hover-static-row">
-        {timestamp ? (
-          <>
-            <StyledDateText parts={timestamp.local} />
-            <span className="map-system-hover-static-paren">(</span>
-            <StyledDateText
-              parts={{
-                ...timestamp.eve,
-                timezone: "EVE TIME",
-              }}
-            />
-            <span className="map-system-hover-static-paren">)</span>
-          </>
-        ) : (
-          <span className="map-system-hover-fallback-time">
-            {timer.next_expires_at}
-          </span>
-        )}
-      </div>
-      <div className="map-system-hover-timer-badges">
-        <span
-          className={`badge timer-row-badge ${standingBadgeClass(timer.standing_type)}`}
-        >
-          {formatStanding(timer.standing_type as TimerStandingType)}
-        </span>
-        <span
-          className={`badge timer-row-badge ${structureBadgeClassByType(structureType)}`}
-        >
-          <StructureIcon className="h-3 w-3" />{" "}
-          {formatStructureType(structureType)}
-        </span>
-        {showSkyhookFullnessBadge(timer) ? (
-          <span className="badge timer-row-badge timer-skyhook-fullness-badge">
-            <Droplets className="h-3 w-3" />{" "}
-            {Math.round(Number(timer.skyhook_fullness_pct))}% Full
-          </span>
-        ) : null}
-        {stageLabel !== "not_applicable" ? (
-          <span
-            className={`badge timer-row-badge ${stageBadgeClass(timer.stage_label)}`}
-          >
-            {formatStageLabel(stageLabel)}
-          </span>
-        ) : null}
-      </div>
-      <TimerCelestialMeta
-        planetName={timer.planet_name}
-        moonName={timer.moon_name}
-      />
-    </div>
-  );
-}
-
-function TimerCelestialMeta({
-  planetName,
-  moonName,
-}: {
-  planetName?: string;
-  moonName?: string;
-}) {
-  if (moonName) {
-    return (
-      <div className="map-system-hover-timer-meta">
-        <span className="map-system-hover-timer-meta-chip">
-          <Moon className="h-3 w-3" />
-          <span className="map-system-hover-timer-meta-label">Moon</span>
-        </span>
-        <span className="map-system-hover-timer-meta-value">{moonName}</span>
-      </div>
-    );
-  }
-
-  if (planetName) {
-    return (
-      <div className="map-system-hover-timer-meta">
-        <span className="map-system-hover-timer-meta-chip">
-          <Globe2 className="h-3 w-3" />
-          <span className="map-system-hover-timer-meta-label">Planet</span>
-        </span>
-        <span className="map-system-hover-timer-meta-value">{planetName}</span>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-function StyledDateText({
-  parts,
-}: {
-  parts: {
-    year: string;
-    month: string;
-    day: string;
-    hour: string;
-    minute: string;
-    second: string;
-    suffix?: string;
-    timezone?: string;
-  };
-}) {
-  return (
-    <span className="timer-styled-date">
-      <span>{parts.year}</span>
-      <span className="text-success/85">-</span>
-      <span>{parts.month}</span>
-      <span className="text-success/85">-</span>
-      <span>{parts.day}</span>
-      <span className="timer-styled-date-divider">|</span>
-      <span>{parts.hour}</span>
-      <span className="text-success/85">:</span>
-      <span>{parts.minute}</span>
-      <span className="text-success/85">:</span>
-      <span>{parts.second}</span>
-      {parts.suffix ? (
-        <span className="timer-styled-date-suffix">{parts.suffix}</span>
-      ) : null}
-      {parts.timezone ? (
-        <span className="timer-styled-date-suffix">{parts.timezone}</span>
-      ) : null}
-    </span>
   );
 }
 
@@ -358,62 +184,4 @@ function buildTimerPreviews(timerSignal?: TimerSignal): TimerSignalPreview[] {
       (a, b) => Date.parse(a.next_expires_at) - Date.parse(b.next_expires_at),
     )
     .slice(0, 3);
-}
-
-function showSkyhookFullnessBadge(timer: TimerSignalPreview): boolean {
-  const isSkyhookExtraction =
-    timer.structure_type === "orbital_skyhook" &&
-    (timer.timer_kind === "extraction" || timer.timer_kind === "skyhook");
-  return (
-    isSkyhookExtraction &&
-    Number.isFinite(timer.skyhook_fullness_pct) &&
-    Number(timer.skyhook_fullness_pct) > 0
-  );
-}
-
-function timerKindLabel(kind: string): string {
-  return (
-    timerKindLabels[kind as keyof typeof timerKindLabels] ?? humanize(kind)
-  );
-}
-
-function readTimerUse24Hour(): boolean {
-  if (typeof window === "undefined") return true;
-  const stored = window.localStorage.getItem("timers:use24Hour");
-  return stored ? stored === "true" : true;
-}
-
-function compactTimerTitle(
-  rawTitle: string | undefined,
-  systemName: string,
-  timer: TimerSignalPreview,
-): string {
-  const cleaned = (rawTitle ?? "").trim();
-  if (cleaned) {
-    const withSeparator = `${systemName} `;
-    if (cleaned.startsWith(withSeparator)) {
-      const stripped = cleaned.slice(withSeparator.length).trim();
-      if (stripped) return stripped;
-    }
-    if (cleaned === systemName) {
-      return fallbackTitle(timer);
-    }
-    return cleaned;
-  }
-  return fallbackTitle(timer);
-}
-
-function fallbackTitle(timer: TimerSignalPreview): string {
-  const structure = formatStructureType(timer.structure_type ?? "custom");
-  const kind = timerKindLabel(timer.timer_kind);
-  return `${structure} ${kind}`;
-}
-
-function humanize(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "Unknown";
-  return trimmed
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

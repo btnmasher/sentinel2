@@ -30,19 +30,27 @@ export function colorForAge(
   elapsedSeconds: number | undefined,
   threatTimings: IntelThreatTimings,
 ) {
+  const stage = threatStageForAge(elapsedSeconds, threatTimings);
+  return INTEL_THREAT_STAGE_COLORS[stage];
+}
+
+export function threatStageForAge(
+  elapsedSeconds: number | undefined,
+  threatTimings: IntelThreatTimings,
+) {
   if (elapsedSeconds === undefined) {
-    return INTEL_THREAT_STAGE_COLORS.normal;
+    return "normal";
   }
   let elapsed = Math.max(0, Math.floor(elapsedSeconds));
   for (const stage of INTEL_THREAT_STAGE_ORDER) {
     const duration = Math.max(0, Math.floor(threatTimings[stage]));
     if (duration <= 0) continue;
     if (elapsed < duration) {
-      return INTEL_THREAT_STAGE_COLORS[stage];
+      return stage;
     }
     elapsed -= duration;
   }
-  return INTEL_THREAT_STAGE_COLORS.normal;
+  return "normal";
 }
 
 export function hashString(str: string) {
