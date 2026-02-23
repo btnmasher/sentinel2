@@ -34,7 +34,8 @@ export default function MapSystem({
   });
 
   const logFilters = useIntelStore((s) => s.logFilters);
-  const { systemFill, alerting } = useSystemThreatState(systemId);
+  const { systemFill, alerting, clearFlashing } =
+    useSystemThreatState(systemId);
 
   const system = systems[systemId];
   const timerSignal = displayTimers ? timerSignals[systemId] : undefined;
@@ -90,7 +91,11 @@ export default function MapSystem({
       />
       <g opacity={opacity}>
         <rect
-          className={["map-system-core", alerting ? "map-system-alert" : ""]
+          className={[
+            "map-system-core",
+            alerting ? "map-system-alert" : "",
+            clearFlashing ? "map-system-clear-flash" : "",
+          ]
             .filter(Boolean)
             .join(" ")}
           x={-8}

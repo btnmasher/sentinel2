@@ -38,6 +38,8 @@ type IntelState = {
   logFilters: IntelFilters;
   // Maps system_id -> latest report unix timestamp (seconds)
   lastIntelSystems: Record<number, number>;
+  // Maps system_id -> latest clear report unix timestamp (seconds)
+  lastClearSystems: Record<number, number>;
   setReports: (reports: IntelReport[]) => void;
   pushReport: (report: IntelReport) => void;
   setUploaders: (count: number) => void;
@@ -50,8 +52,9 @@ type IntelState = {
   disconnectRealtime: () => Promise<void>;
 };
 
-const computeLastIntelSystems = (reports: IntelReport[]) => {
+const computeIntelSystemSignals = (reports: IntelReport[]) => {
   const latestBySystem: Record<number, number> = {};
+  const latestClearBySystem: Record<number, number> = {};
   const ordered = [...reports].sort((a, b) => {
     if (a.time !== b.time) return a.time - b.time;
     return a.id - b.id;
@@ -59,6 +62,7 @@ const computeLastIntelSystems = (reports: IntelReport[]) => {
   for (const log of ordered) {
     if (isClearIntelReport(log)) {
       for (const system of log.systems) {
+        latestClearBySystem[system.system] = log.time;
         delete latestBySystem[system.system];
       }
       continue;
@@ -67,7 +71,10 @@ const computeLastIntelSystems = (reports: IntelReport[]) => {
       latestBySystem[system.system] = log.time;
     }
   }
-  return latestBySystem;
+  return {
+    latestBySystem,
+    latestClearBySystem,
+  };
 };
 
 const normalizeReports = (reports: IntelReport[], max = 100) => {
@@ -128,13 +135,17 @@ export const useIntelStore = create<IntelState>()(
         system: [],
       },
       lastIntelSystems: {},
+      lastClearSystems: {},
       setReports: (reports) =>
         set(() => {
           const nextReports = normalizeReports(reports);
+          const { latestBySystem, latestClearBySystem } =
+            computeIntelSystemSignals(nextReports);
           return {
             reports: nextReports,
             lastReports: nextReports,
-            lastIntelSystems: computeLastIntelSystems(nextReports),
+            lastIntelSystems: latestBySystem,
+            lastClearSystems: latestClearBySystem,
             reportsFetchedAt: Date.now(),
           };
         }),
@@ -147,10 +158,13 @@ export const useIntelStore = create<IntelState>()(
           return;
         }
         const nextReports = normalizeReports([report, ...existing]);
+        const { latestBySystem, latestClearBySystem } =
+          computeIntelSystemSignals(nextReports);
         set({
           reports: nextReports,
           lastReports: [report],
-          lastIntelSystems: computeLastIntelSystems(nextReports),
+          lastIntelSystems: latestBySystem,
+          lastClearSystems: latestClearBySystem,
         });
       },
       setUploaders: (count) => set({ uploaders: count }),
@@ -274,6 +288,10 @@ export const useIntelStore = create<IntelState>()(
             state.lastIntelSystems && typeof state.lastIntelSystems === "object"
               ? state.lastIntelSystems
               : {},
+          lastClearSystems:
+            state.lastClearSystems && typeof state.lastClearSystems === "object"
+              ? state.lastClearSystems
+              : {},
           logFilters: {
             includeSystemLogs: true,
             includeSystemAlarm: true,
@@ -290,6 +308,7 @@ export const useIntelStore = create<IntelState>()(
         logFilters: state.logFilters,
         reports: normalizeReports(state.reports),
         lastIntelSystems: state.lastIntelSystems,
+        lastClearSystems: state.lastClearSystems,
       }),
     },
   ),

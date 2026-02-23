@@ -1741,6 +1741,13 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
   animation: intel-blink 1s ease-in-out infinite;
 }
 
+.map-system-core.map-system-clear-flash {
+  fill: #22c55e;
+  stroke: #22c55e;
+  filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.85));
+  animation: map-system-clear-pulse 0.8s ease-in-out infinite;
+}
+
 .map-system-border {
   transition:
     opacity 200ms ease,
@@ -1762,6 +1769,18 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
   }
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes map-system-clear-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.03);
   }
 }
 
