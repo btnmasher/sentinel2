@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useShallow } from "zustand/shallow";
 import useModal from "@/app/hooks/useModal";
 import { useModalBody } from "@/components/dialogs/ModalBodyContext";
-import PaginationControls from "@/components/PaginationControls";
+import CursorPagination from "@/components/CursorPagination";
 import SelectionDropdown from "@/components/SelectionDropdown";
 import { useAdminAuditStore } from "../store/adminAuditStore";
 import {
@@ -174,7 +174,7 @@ function AuditLogModalBody() {
         </ul>
       )}
       {(page > 1 || hasMore) && (
-        <PaginationControls
+        <CursorPagination
           page={page}
           hasMore={hasMore}
           loading={loading}

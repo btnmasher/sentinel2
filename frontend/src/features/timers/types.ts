@@ -37,25 +37,25 @@ export enum TimerKind {
 
 export enum TimerStageLabel {
   Armor = "armor",
-  Structure = "structure",
+  Hull = "hull",
+  Reinforcement = "reinforcement",
   InitialVulnerability = "initial_vulnerability",
   NotApplicable = "not_applicable",
   Anchoring = "anchoring",
   Unanchoring = "unanchoring",
   ExtractionWindow = "extraction_window",
-  PickupWindow = "pickup_window",
   Custom = "custom",
 }
 
 export enum TimerContextSelection {
   Armor = "armor",
   Hull = "hull",
+  Reinforcement = "reinforcement",
   InitialVulnerability = "initial_vulnerability",
   NotApplicable = "not_applicable",
   Anchoring = "anchoring",
   Unanchoring = "unanchoring",
   ExtractionWindow = "extraction_window",
-  PickupWindow = "pickup_window",
   Custom = "custom",
 }
 
@@ -100,6 +100,8 @@ export type TimerRecord = {
   owner_alliance_name: string;
   owner_alliance_ticker: string;
   skyhook_fullness_pct: number;
+  attackers_score_pct: number;
+  defender_score_pct: number;
   stage: number;
   total_stages: number;
   severity: TimerSeverity;
@@ -111,6 +113,7 @@ export type TimerRecord = {
   raw_text: string;
   replacement_action: TimerReplacementAction;
   created_by: string;
+  created_by_name: string;
   canceled_by: string;
   canceled_at: string;
   created: string;
@@ -135,7 +138,7 @@ export type TimerSystemOption = {
 };
 
 export type TimerEntityOption = {
-  type: "corporation" | "alliance" | string;
+  type: "corporation" | "alliance";
   id: number;
   name: string;
   ticker: string;

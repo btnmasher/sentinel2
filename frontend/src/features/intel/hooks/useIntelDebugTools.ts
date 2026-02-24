@@ -1,6 +1,13 @@
 import { useEffect } from "react";
 import { useIntelStore } from "@/features/intel";
 import { useMapStore } from "@/features/map";
+import {
+  TimerKind,
+  TimerSeverity,
+  TimerStandingType,
+  TimerStructureType,
+  timerSeverityRank,
+} from "@/features/timers";
 
 type DebugSystem = {
   system: number;
@@ -356,38 +363,55 @@ export default function useIntelDebugTools() {
 
       const { mapState, scopedSystems, scopeInfo } = scoped;
       const nowMs = Date.now();
-      const severityPool = ["low", "medium", "high", "critical"] as const;
+      const severityPool = [
+        TimerSeverity.Low,
+        TimerSeverity.Medium,
+        TimerSeverity.High,
+        TimerSeverity.Critical,
+      ] as const;
       const standingPool = [
-        "ours",
-        "friendly",
-        "neutral",
-        "complicated",
-        "hostile",
+        TimerStandingType.Ours,
+        TimerStandingType.Friendly,
+        TimerStandingType.Neutral,
+        TimerStandingType.Complicated,
+        TimerStandingType.Hostile,
       ] as const;
       const timerKindPool = includeAnsiblex
-        ? ["reinforcement", "anchoring", "moon_ore", "skyhook", "custom"]
-        : ["reinforcement", "anchoring", "moon_ore", "skyhook", "custom"];
-      const structurePool = includeAnsiblex
         ? [
-            "upwell_citadel_astrahus",
-            "upwell_citadel_fortizar",
-            "upwell_refinery_athanor",
-            "upwell_refinery_tatara",
-            "orbital_skyhook",
-            "customs_office_poco",
-            "metenox_moon_drill",
-            "ansiblex_jump_bridge",
-            "custom",
+            TimerKind.Reinforcement,
+            TimerKind.Anchoring,
+            TimerKind.Extraction,
+            TimerKind.Unanchoring,
+            TimerKind.Custom,
           ]
         : [
-            "upwell_citadel_astrahus",
-            "upwell_citadel_fortizar",
-            "upwell_refinery_athanor",
-            "upwell_refinery_tatara",
-            "orbital_skyhook",
-            "customs_office_poco",
-            "metenox_moon_drill",
-            "custom",
+            TimerKind.Reinforcement,
+            TimerKind.Anchoring,
+            TimerKind.Extraction,
+            TimerKind.Unanchoring,
+            TimerKind.Custom,
+          ];
+      const structurePool = includeAnsiblex
+        ? [
+            TimerStructureType.UpwellCitadelAstrahus,
+            TimerStructureType.UpwellCitadelFortizar,
+            TimerStructureType.UpwellRefineryAthanor,
+            TimerStructureType.UpwellRefineryTatara,
+            TimerStructureType.OrbitalSkyhook,
+            TimerStructureType.CustomsOfficePoco,
+            TimerStructureType.MetenoxMoonDrill,
+            TimerStructureType.AnsiblexJumpBridge,
+            TimerStructureType.Custom,
+          ]
+        : [
+            TimerStructureType.UpwellCitadelAstrahus,
+            TimerStructureType.UpwellCitadelFortizar,
+            TimerStructureType.UpwellRefineryAthanor,
+            TimerStructureType.UpwellRefineryTatara,
+            TimerStructureType.OrbitalSkyhook,
+            TimerStructureType.CustomsOfficePoco,
+            TimerStructureType.MetenoxMoonDrill,
+            TimerStructureType.Custom,
           ];
       const stagePool = [
         "armor",
@@ -397,13 +421,6 @@ export default function useIntelDebugTools() {
         "unanchoring",
         "not_applicable",
       ] as const;
-      const severityRank: Record<string, number> = {
-        low: 1,
-        medium: 2,
-        high: 3,
-        critical: 4,
-      };
-
       const generatedSignals: Record<number, FakeTimerSignal> = {};
       let imminentAssigned = 0;
       const imminentSystems = shuffled(scopedSystems);
@@ -485,7 +502,7 @@ export default function useIntelDebugTools() {
           current.standing_type = standing;
           current.skyhook_fullness_pct = skyhookFullnessPct;
         }
-        if (severityRank[severity] > (severityRank[current.severity] ?? 0)) {
+        if (timerSeverityRank(severity) > timerSeverityRank(current.severity)) {
           current.severity = severity;
         }
       }

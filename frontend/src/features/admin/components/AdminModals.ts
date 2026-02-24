@@ -6,6 +6,7 @@ import { AdminModalMove } from "./MoveCharacterModal";
 import { AdminModalMerge } from "./MergeAccountModal";
 import { AdminModalAudit } from "./AuditLogModal";
 import { AdminModalAnnouncement } from "./SiteAnnouncementModal";
+import { AdminModalAllowedOrganizations } from "./AllowedOrganizationsModal";
 
 export const AdminModals = {
   Access: AdminModalAccess,
@@ -13,6 +14,7 @@ export const AdminModals = {
   Merge: AdminModalMerge,
   Audit: AdminModalAudit,
   Announcement: AdminModalAnnouncement,
+  AllowedOrganizations: AdminModalAllowedOrganizations,
 } as const;
 
 const AdminModalByKey = {
@@ -21,6 +23,7 @@ const AdminModalByKey = {
   [ADMIN_MODAL.Merge]: AdminModalMerge,
   [ADMIN_MODAL.Audit]: AdminModalAudit,
   [ADMIN_MODAL.Announcement]: AdminModalAnnouncement,
+  [ADMIN_MODAL.AllowedOrganizations]: AdminModalAllowedOrganizations,
 } as const;
 
 export function useAdminModal(key: AdminModalKey) {

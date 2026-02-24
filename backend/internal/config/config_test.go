@@ -33,3 +33,26 @@ func TestTrustedProxyHeaders_ParsesEnvDelim(t *testing.T) {
 		t.Fatalf("headers = %v, want %v", got, want)
 	}
 }
+
+func TestTimersEnabled_DefaultTrue(t *testing.T) {
+	cfg := Config{TimersEnabled: true}
+	parser := flags.NewParser(&cfg, flags.Default)
+	if _, err := parser.ParseArgs(nil); err != nil {
+		t.Fatalf("ParseArgs() error = %v", err)
+	}
+	if !cfg.TimersEnabled {
+		t.Fatal("TimersEnabled = false, want true")
+	}
+}
+
+func TestTimersEnabled_ParsesEnvFalse(t *testing.T) {
+	t.Setenv("TIMERS_ENABLED", "false")
+	cfg := Config{TimersEnabled: true}
+	parser := flags.NewParser(&cfg, flags.Default)
+	if _, err := parser.ParseArgs(nil); err != nil {
+		t.Fatalf("ParseArgs() error = %v", err)
+	}
+	if cfg.TimersEnabled {
+		t.Fatal("TimersEnabled = true, want false")
+	}
+}

@@ -63,12 +63,21 @@ func (e *ESIProxyClient) CharacterAffiliation(ctx context.Context, characterID i
 	return 0, 0, ErrAffiliationUnsupported
 }
 
-func (e *ESIProxyClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool) (corporationIDs, allianceIDs []int, err error) {
+func (e *ESIProxyClient) CharacterNotifications(ctx context.Context, characterID int, accessToken, ifNoneMatch string) (notifications []CharacterNotification, etag string, notModified bool, err error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = ifNoneMatch
+	return []CharacterNotification{}, "", false, ErrNotificationsUnsupported
+}
+
+func (e *ESIProxyClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool, categories []string) (corporationIDs, allianceIDs []int, err error) {
 	_ = ctx
 	_ = characterID
 	_ = accessToken
 	_ = query
 	_ = strict
+	_ = categories
 	return []int{}, []int{}, ErrAffiliationUnsupported
 }
 

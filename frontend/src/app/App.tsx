@@ -47,11 +47,13 @@ export default function App() {
     loaded: configLoaded,
     standaloneAuth,
     defaultRegions,
+    timersEnabled,
   } = useAppConfigStore(
     useShallow((s) => ({
       loaded: s.loaded,
       standaloneAuth: s.standaloneAuth,
       defaultRegions: s.defaultRegions,
+      timersEnabled: s.timersEnabled,
     })),
   );
   const theme = useSettingsStore((s) => s.settings.theme);
@@ -166,9 +168,13 @@ export default function App() {
         <Route
           path="/timers"
           element={
-            <ErrorBoundary name="Timers">
-              <TimersPage />
-            </ErrorBoundary>
+            timersEnabled ? (
+              <ErrorBoundary name="Timers">
+                <TimersPage />
+              </ErrorBoundary>
+            ) : (
+              <Navigate to="/" />
+            )
           }
         />
         <Route

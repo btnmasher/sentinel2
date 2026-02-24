@@ -4,6 +4,7 @@ import { api } from "@/config/api";
 type AppConfigState = {
   authBackend: string;
   standaloneAuth: boolean;
+  timersEnabled: boolean;
   defaultRegions: string[];
   oidcPortalUrl: string;
   version: string;
@@ -15,6 +16,7 @@ type AppConfigState = {
 export const useAppConfigStore = create<AppConfigState>((set) => ({
   authBackend: "unknown",
   standaloneAuth: false,
+  timersEnabled: true,
   defaultRegions: [],
   oidcPortalUrl: "https://auth.pleaseignore.com",
   version: "",
@@ -26,6 +28,10 @@ export const useAppConfigStore = create<AppConfigState>((set) => ({
       set({
         authBackend: res.data.auth_backend || "unknown",
         standaloneAuth: Boolean(res.data.standalone_auth),
+        timersEnabled:
+          typeof res.data.timers_enabled === "boolean"
+            ? res.data.timers_enabled
+            : true,
         defaultRegions: Array.isArray(res.data.default_regions)
           ? res.data.default_regions
           : [],

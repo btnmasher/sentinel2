@@ -1,6 +1,11 @@
 import { useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useIntelStore } from "@/features/intel";
+import {
+  normalizeTimerSeverity,
+  timerSeverityDotColor,
+  timerSeverityRank,
+} from "@/features/timers";
 import { useMapStore } from "../store/mapStore";
 import { colorToHex, transformComponent } from "../utils/mapUtils";
 import { useSystemRouteState } from "../hooks/useSystemRouteState";
@@ -177,33 +182,11 @@ function isTimerImminent(expiresAt: string): boolean {
 }
 
 function timerSignalColor(severity: string): string {
-  switch (severity) {
-    case "critical":
-      return "#ef4444";
-    case "high":
-      return "#f59e0b";
-    case "medium":
-      return "#22c55e";
-    case "low":
-      return "#0ea5e9";
-    default:
-      return "#64748b";
-  }
+  return timerSeverityDotColor(severity);
 }
 
 function timerSeverityGlowClass(severity: string): string {
-  switch (severity) {
-    case "critical":
-      return "map-system-timer-badge-critical";
-    case "high":
-      return "map-system-timer-badge-high";
-    case "medium":
-      return "map-system-timer-badge-medium";
-    case "low":
-      return "map-system-timer-badge-low";
-    default:
-      return "map-system-timer-badge-unknown";
-  }
+  return `map-system-timer-badge-${normalizeTimerSeverity(severity)}`;
 }
 
 function highestSignalSeverity(signal: {
@@ -211,28 +194,13 @@ function highestSignalSeverity(signal: {
   timers?: Array<{ severity: string }>;
 }): string {
   let best = signal.severity;
-  let bestRank = severityRank(best);
+  let bestRank = timerSeverityRank(best);
   for (const timer of signal.timers ?? []) {
-    const rank = severityRank(timer.severity);
+    const rank = timerSeverityRank(timer.severity);
     if (rank > bestRank) {
       best = timer.severity;
       bestRank = rank;
     }
   }
   return best;
-}
-
-function severityRank(value: string): number {
-  switch (value) {
-    case "critical":
-      return 4;
-    case "high":
-      return 3;
-    case "medium":
-      return 2;
-    case "low":
-      return 1;
-    default:
-      return 0;
-  }
 }

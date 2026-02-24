@@ -93,6 +93,8 @@ type timerDTO struct {
 	OwnerAllianceName      string `json:"owner_alliance_name"`
 	OwnerAllianceTicker    string `json:"owner_alliance_ticker"`
 	SkyhookFullnessPct     int    `json:"skyhook_fullness_pct"`
+	AttackersScorePct      int    `json:"attackers_score_pct"`
+	DefenderScorePct       int    `json:"defender_score_pct"`
 	Stage                  int    `json:"stage"`
 	TotalStages            int    `json:"total_stages"`
 	Severity               string `json:"severity"`
@@ -104,6 +106,7 @@ type timerDTO struct {
 	RawText                string `json:"raw_text"`
 	ReplacementAction      string `json:"replacement_action"`
 	CreatedBy              string `json:"created_by"`
+	CreatedByName          string `json:"created_by_name"`
 	CanceledBy             string `json:"canceled_by"`
 	CanceledAt             string `json:"canceled_at"`
 	Created                string `json:"created"`

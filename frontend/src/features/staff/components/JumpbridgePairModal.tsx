@@ -111,7 +111,7 @@ export default function JumpbridgePairModal({
                 region: record.region ? String(record.region) : undefined,
               };
             })
-            .filter((item) => item.id > 0 && item.name !== "")
+            .filter((item: SearchSystem) => item.id > 0 && item.name !== "")
         : [];
       return systems.filter(
         (item) => !blockedSystemIds.has(item.id) && item.id !== otherSelectedId,

@@ -15,6 +15,7 @@ type AdminJobRunsState = {
   endDate?: string;
   startHour?: number;
   endHour?: number;
+  includeHidden: boolean;
   jobKindExclusions: string[];
   loadJobs: (page?: number, opts?: { silent?: boolean }) => Promise<void>;
   setDateRange: (range: {
@@ -24,6 +25,7 @@ type AdminJobRunsState = {
     endHour?: number;
   }) => void;
   setJobKinds: (kinds: string[]) => void;
+  setIncludeHidden: (include: boolean) => void;
   subscribe: () => Promise<() => void>;
   cancelJob: (jobId: string) => Promise<void>;
 };
@@ -38,6 +40,7 @@ export const useAdminJobRunsStore = create<AdminJobRunsState>((set, get) => ({
   endDate: undefined,
   startHour: undefined,
   endHour: undefined,
+  includeHidden: false,
   jobKindExclusions: [],
   loadJobs: async (page = get().page, opts) => {
     const silent = opts?.silent ?? (page === 1 && get().jobRuns.length > 0);
@@ -45,8 +48,14 @@ export const useAdminJobRunsStore = create<AdminJobRunsState>((set, get) => ({
       set({ loading: true });
     }
     try {
-      const { startDate, endDate, startHour, endHour, jobKindExclusions } =
-        get();
+      const {
+        startDate,
+        endDate,
+        startHour,
+        endHour,
+        includeHidden,
+        jobKindExclusions,
+      } = get();
       const startAt =
         startDate && startHour !== undefined
           ? `${startDate}T${String(startHour).padStart(2, "0")}:00:00Z`
@@ -67,6 +76,7 @@ export const useAdminJobRunsStore = create<AdminJobRunsState>((set, get) => ({
             jobKindExclusions.length > 0
               ? jobKindExclusions.join(",")
               : undefined,
+          includeHidden: includeHidden || undefined,
         },
         headers: get().etag ? { "If-None-Match": get().etag } : undefined,
       });
@@ -101,6 +111,14 @@ export const useAdminJobRunsStore = create<AdminJobRunsState>((set, get) => ({
   setJobKinds: (kinds) => {
     set((state) => ({
       jobKindExclusions: kinds,
+      etag: undefined,
+      page: 1,
+      jobRuns: state.page === 1 ? state.jobRuns : [],
+    }));
+  },
+  setIncludeHidden: (includeHidden) => {
+    set((state) => ({
+      includeHidden,
       etag: undefined,
       page: 1,
       jobRuns: state.page === 1 ? state.jobRuns : [],

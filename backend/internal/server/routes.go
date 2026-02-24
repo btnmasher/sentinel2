@@ -74,19 +74,21 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		intelGroup := apiGroup.Group("/intel")
 		intelGroup.GET("/reports", deps.intelHandler.ListReports).BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app), middleware.RateLimit(intelRetrieveLimiter, userKey))
 
-		timerGroup := apiGroup.Group("/timers")
-		timerGroup.BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))
-		timerGroup.GET("", deps.timers.List)
-		timerGroup.GET("/systems", deps.timers.SearchSystems)
-		timerGroup.GET("/entities", deps.timers.SearchEntities)
-		timerGroup.GET("/planets", deps.timers.SearchPlanets)
-		timerGroup.GET("/moons", deps.timers.SearchMoons)
-		timerGroup.POST("", deps.timers.Create)
-		timerGroup.PATCH("/{id}", deps.timers.Update).BindFunc(middleware.RequireStaff(app))
-		timerGroup.POST("/{id}/cancel", deps.timers.Cancel).BindFunc(middleware.RequireStaff(app))
-		timerGroup.POST("/{id}/uncancel", deps.timers.Uncancel).BindFunc(middleware.RequireStaff(app))
-		timerGroup.DELETE("/{id}", deps.timers.Delete).BindFunc(middleware.RequireStaff(app))
-		timerGroup.POST("/parse", deps.timers.Parse)
+		if cfg.TimersEnabled {
+			timerGroup := apiGroup.Group("/timers")
+			timerGroup.BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))
+			timerGroup.GET("", deps.timers.List)
+			timerGroup.GET("/systems", deps.timers.SearchSystems)
+			timerGroup.GET("/entities", deps.timers.SearchEntities)
+			timerGroup.GET("/planets", deps.timers.SearchPlanets)
+			timerGroup.GET("/moons", deps.timers.SearchMoons)
+			timerGroup.POST("", deps.timers.Create)
+			timerGroup.PATCH("/{id}", deps.timers.Update).BindFunc(middleware.RequireStaff(app))
+			timerGroup.POST("/{id}/cancel", deps.timers.Cancel).BindFunc(middleware.RequireStaff(app))
+			timerGroup.POST("/{id}/uncancel", deps.timers.Uncancel).BindFunc(middleware.RequireStaff(app))
+			timerGroup.DELETE("/{id}", deps.timers.Delete).BindFunc(middleware.RequireStaff(app))
+			timerGroup.POST("/parse", deps.timers.Parse)
+		}
 
 		uploaderGroup := apiGroup.Group("/uploader")
 		uploaderGroup.GET("/download-links", deps.uploaderHandler.DownloadLinks).BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))
@@ -124,6 +126,11 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		staffGroup.GET("/channels", deps.staffChannels.List)
 		staffGroup.POST("/channels", deps.staffChannels.Create)
 		staffGroup.DELETE("/channels/{id}", deps.staffChannels.Delete)
+		if cfg.TimersEnabled {
+			staffGroup.GET("/sovereignty-campaign-watchlist", deps.staffSovWatchlist.List)
+			staffGroup.POST("/sovereignty-campaign-watchlist", deps.staffSovWatchlist.Create)
+			staffGroup.DELETE("/sovereignty-campaign-watchlist/{id}", deps.staffSovWatchlist.Delete)
+		}
 		staffGroup.POST("/jumpbridges/import", deps.staffJumpbridges.Import)
 		staffGroup.POST("/jumpbridges/clear", deps.staffJumpbridges.Clear)
 		staffGroup.POST("/jumpbridges/add", deps.staffJumpbridges.Add)
@@ -155,8 +162,15 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 			adminGroup.POST("/map-data/region-layout", deps.adminMapDataUpdate.RunRegionLayout)
 			adminGroup.POST("/characters/refresh-all", deps.admin.RefreshAllCharacters)
 			adminGroup.POST("/jobs/cleanup", deps.admin.RunCleanupJob)
+			if cfg.TimersEnabled {
+				adminGroup.POST("/jobs/timers/sovereignty-campaign-sync", deps.admin.RunSovereigntyCampaignSyncJob)
+				adminGroup.POST("/jobs/timers/structure-notifications-sync", deps.admin.RunStructureNotificationsSyncJob)
+			}
 			adminGroup.POST("/announcement", deps.admin.CreateSiteAnnouncement)
 			adminGroup.POST("/announcement/archive-latest", deps.admin.ArchiveLatestSiteAnnouncement)
+			adminGroup.GET("/site-settings/allowed-organizations", deps.admin.ListAllowedOrganizations)
+			adminGroup.POST("/site-settings/allowed-organizations", deps.admin.UpsertAllowedOrganization)
+			adminGroup.DELETE("/site-settings/allowed-organizations/{type}/{eve_id}", deps.admin.DeleteAllowedOrganization)
 			if cfg.DebugEnabled {
 				adminGroup.POST("/debug/seed-search-users", deps.admin.SeedSearchUsers)
 			}

@@ -159,7 +159,10 @@ export default function CharacterCard({
               </button>
             )}
             {onRevoke && (
-              <button className="btn btn-xs btn-outline" onClick={onRevoke}>
+              <button
+                className="btn btn-xs btn-warning btn-outline"
+                onClick={onRevoke}
+              >
                 Revoke keys
               </button>
             )}

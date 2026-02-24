@@ -157,7 +157,30 @@ func (s *SDEImporter) ImportMoonsFromLatest(ctx context.Context) error {
 	return importErr
 }
 
-func (s *SDEImporter) importJSONLIfChanged(ctx context.Context, zipPath, name string, importFn func(io.Reader) error) (bool, string, error) {
+func (s *SDEImporter) ShouldImportJSONLFromLatest(ctx context.Context, name string) (shouldImport bool, reason string, err error) {
+	if ctx.Err() != nil {
+		return false, "", ctx.Err()
+	}
+	zipPath, loadErr := s.downloadSDEZip(ctx)
+	if loadErr != nil {
+		return false, "", loadErr
+	}
+	defer func() { _ = os.Remove(zipPath) }()
+
+	hash, hashErr := hashJSONLInZip(zipPath, name)
+	if hashErr != nil {
+		return false, "", hashErr
+	}
+
+	metaKey := sdeFileHashMetaKey(name)
+	previousHash := strings.TrimSpace(s.getMeta(metaKey))
+	if previousHash != "" && previousHash == hash {
+		return false, "skipped (hash unchanged)", nil
+	}
+	return true, "", nil
+}
+
+func (s *SDEImporter) importJSONLIfChanged(ctx context.Context, zipPath, name string, importFn func(io.Reader) error) (skipped bool, reason string, err error) {
 	if ctx.Err() != nil {
 		return false, "", ctx.Err()
 	}
@@ -189,29 +212,6 @@ func (s *SDEImporter) importJSONLIfChanged(ctx context.Context, zipPath, name st
 			Warn("failed to persist sde file hash meta")
 	}
 	return false, "", nil
-}
-
-func (s *SDEImporter) ShouldImportJSONLFromLatest(ctx context.Context, name string) (bool, string, error) {
-	if ctx.Err() != nil {
-		return false, "", ctx.Err()
-	}
-	zipPath, loadErr := s.downloadSDEZip(ctx)
-	if loadErr != nil {
-		return false, "", loadErr
-	}
-	defer func() { _ = os.Remove(zipPath) }()
-
-	hash, hashErr := hashJSONLInZip(zipPath, name)
-	if hashErr != nil {
-		return false, "", hashErr
-	}
-
-	metaKey := sdeFileHashMetaKey(name)
-	previousHash := strings.TrimSpace(s.getMeta(metaKey))
-	if previousHash != "" && previousHash == hash {
-		return false, "skipped (hash unchanged)", nil
-	}
-	return true, "", nil
 }
 
 func sdeFileHashMetaKey(name string) string {
@@ -590,48 +590,17 @@ func (row *systemRowData) payload() map[string]any {
 
 const moonGroupID = 8
 
+type planetImportStats struct {
+	saved                int
+	skippedMissingID     int
+	skippedMissingSystem int
+	skippedUnchanged     int
+}
+
 func (s *SDEImporter) importPlanets(ctx context.Context, r io.Reader) error {
-	var saved, skippedMissingID, skippedMissingSystem, skippedUnchanged int
+	stats := planetImportStats{}
 	rowCount, scanErr := forEachJSONLRow(r, func(i int, row map[string]any) error {
-		if i%1000 == 0 && ctx.Err() != nil {
-			return ctx.Err()
-		}
-		planet := parsePlanetRow(row)
-		if planet.id == 0 {
-			skippedMissingID++
-			return nil
-		}
-		if planet.systemID == 0 {
-			skippedMissingSystem++
-			return nil
-		}
-		systemName := ""
-		if system, err := s.findSystem(planet.systemID); err == nil {
-			systemName = system.GetString("name")
-		}
-		name := planet.name
-		if strings.TrimSpace(name) == "" {
-			name = derivePlanetName(systemName, planet.celestialIndex, planet.id)
-		}
-		changed, upsertErr := s.upsertNumberRecordIfChanged(store.CollectionPlanets, planet.id, map[string]any{
-			"eve_id":          planet.id,
-			"name":            name,
-			"system_id":       planet.systemID,
-			"system_name":     systemName,
-			"celestial_index": planet.celestialIndex,
-		})
-		if upsertErr != nil {
-			logging.New(s.App).WithErr(upsertErr).
-				WithFields(logging.Fields{"planet_id": planet.id, "system_id": planet.systemID}).
-				Error("planet upsert failed")
-			return upsertErr
-		}
-		if !changed {
-			skippedUnchanged++
-			return nil
-		}
-		saved++
-		return nil
+		return s.processPlanetRow(ctx, i, row, &stats)
 	})
 	if scanErr != nil {
 		return scanErr
@@ -641,11 +610,53 @@ func (s *SDEImporter) importPlanets(ctx context.Context, r io.Reader) error {
 		"row_count": rowCount,
 	})
 	log.WithFields(logging.Fields{
-		"saved_count":                     saved,
-		"skipped_missing_id_count":        skippedMissingID,
-		"skipped_missing_system_id_count": skippedMissingSystem,
-		"skipped_unchanged_count":         skippedUnchanged,
+		"saved_count":                     stats.saved,
+		"skipped_missing_id_count":        stats.skippedMissingID,
+		"skipped_missing_system_id_count": stats.skippedMissingSystem,
+		"skipped_unchanged_count":         stats.skippedUnchanged,
 	}).Info("planets import complete")
+	return nil
+}
+
+func (s *SDEImporter) processPlanetRow(ctx context.Context, i int, row map[string]any, stats *planetImportStats) error {
+	if i%1000 == 0 && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	planet := parsePlanetRow(row)
+	if planet.id == 0 {
+		stats.skippedMissingID++
+		return nil
+	}
+	if planet.systemID == 0 {
+		stats.skippedMissingSystem++
+		return nil
+	}
+	systemName := ""
+	if system, err := s.findSystem(planet.systemID); err == nil {
+		systemName = system.GetString("name")
+	}
+	name := planet.name
+	if strings.TrimSpace(name) == "" {
+		name = derivePlanetName(systemName, planet.celestialIndex, planet.id)
+	}
+	changed, upsertErr := s.upsertNumberRecordIfChanged(store.CollectionPlanets, planet.id, map[string]any{
+		"eve_id":          planet.id,
+		"name":            name,
+		"system_id":       planet.systemID,
+		"system_name":     systemName,
+		"celestial_index": planet.celestialIndex,
+	})
+	if upsertErr != nil {
+		logging.New(s.App).WithErr(upsertErr).
+			WithFields(logging.Fields{"planet_id": planet.id, "system_id": planet.systemID}).
+			Error("planet upsert failed")
+		return upsertErr
+	}
+	if !changed {
+		stats.skippedUnchanged++
+		return nil
+	}
+	stats.saved++
 	return nil
 }
 
@@ -972,7 +983,7 @@ func (s *SDEImporter) fetchETag(ctx context.Context, url string) (string, error)
 	return resp.Header.Get("ETag"), nil
 }
 
-func withJSONLFileFromZip(zipPath string, name string, fn func(io.Reader) error) error {
+func withJSONLFileFromZip(zipPath, name string, fn func(io.Reader) error) error {
 	if fn == nil {
 		return nil
 	}
@@ -994,8 +1005,12 @@ func withJSONLFileFromZip(zipPath string, name string, fn func(io.Reader) error)
 		if openErr != nil {
 			return openErr
 		}
-		defer func() { _ = rc.Close() }()
-		return fn(rc)
+		callErr := fn(rc)
+		closeErr := rc.Close()
+		if callErr != nil {
+			return callErr
+		}
+		return closeErr
 	}
 
 	return ErrMapJSONLNotFound

@@ -2039,7 +2039,7 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
 }
 
 .timer-static-time-row {
-  @apply mt-1 flex items-center gap-2 text-[11px] text-slate-700;
+  @apply mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-700;
 }
 
 .timer-static-time-icon {
@@ -2088,6 +2088,38 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
 
 .timer-countdown-critical {
   @apply text-red-600;
+}
+
+.timer-board-tab-row {
+  @apply relative z-20 -mb-px flex flex-wrap items-end gap-x-1 gap-y-0;
+}
+
+.timer-board-tab-btn {
+  @apply relative z-10 inline-flex h-9 min-h-9 cursor-pointer items-center gap-2 rounded-t-lg rounded-b-none border border-b-0 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40;
+}
+
+.timer-board-tab-btn.is-active {
+  @apply z-20;
+}
+
+.timer-board-tab-btn.is-inactive {
+  @apply border-slate-700/70 bg-base-300/40 text-base-content/75 hover:-translate-y-px hover:border-slate-600 hover:bg-base-300/70 hover:text-base-content;
+}
+
+.timer-board-tab-count {
+  @apply rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums;
+}
+
+.timer-board-tab-count.is-active {
+  @apply bg-primary-content/20 text-black;
+}
+
+.timer-board-tab-count.is-inactive {
+  @apply bg-base-100/70 text-base-content/70;
+}
+
+.timer-board-tab-pane {
+  @apply flex min-h-0 flex-1 flex-col rounded-b-xl rounded-tr-xl border border-slate-700/70 bg-base-300/20 p-3;
 }
 
 .timer-tone-btn-blue-active {
@@ -2172,15 +2204,56 @@ html[data-theme="sentinel-light"] .timer-badge-tone-blue {
 }
 
 .timer-row-badge {
-  @apply inline-flex items-center gap-1.5 leading-none align-middle;
+  @apply inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] leading-none align-middle;
 }
 
 .timer-row-badge svg {
   @apply shrink-0 align-middle;
 }
 
+@keyframes timer-badge-critical-pulse {
+  0%,
+  100% {
+    color: color-mix(
+      in oklab,
+      var(--color-error) 78%,
+      var(--color-base-content)
+    );
+    border-color: color-mix(in oklab, var(--color-error) 55%, transparent);
+    background-color: color-mix(
+      in oklab,
+      var(--color-error) 14%,
+      var(--color-base-100)
+    );
+    text-shadow: 0 0 0 color-mix(in oklab, var(--color-error) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-error) 0%, transparent);
+  }
+  50% {
+    color: color-mix(
+      in oklab,
+      var(--color-error) 92%,
+      var(--color-base-content)
+    );
+    border-color: color-mix(in oklab, var(--color-error) 72%, transparent);
+    background-color: color-mix(
+      in oklab,
+      var(--color-error) 22%,
+      var(--color-base-100)
+    );
+    text-shadow: 0 0 6px
+      color-mix(in oklab, var(--color-error) 30%, transparent);
+    box-shadow: 0 0 0 3px
+      color-mix(in oklab, var(--color-error) 25%, transparent);
+  }
+}
+
+.timer-badge-critical-pulse {
+  animation: timer-badge-critical-pulse 2.6s ease-in-out infinite;
+  will-change: color, border-color, background-color, box-shadow, text-shadow;
+}
+
 .timer-celestial-chip {
-  @apply inline-flex items-center gap-1 rounded-full border px-2 py-[1px] text-[10px] font-semibold;
+  @apply inline-flex items-center gap-1 rounded-full border px-1.5 py-0 text-[10px] font-semibold;
   border-color: rgba(100, 116, 139, 0.42);
   background: rgba(226, 232, 240, 0.75);
   color: #475569;
@@ -2205,11 +2278,11 @@ html[data-theme="sentinel-light"] .timer-badge-tone-blue {
 }
 
 .timer-title-text {
-  @apply mt-1 text-sm font-medium text-slate-700;
+  @apply mt-0.5 text-[13px] font-medium text-slate-700;
 }
 
 .timer-note-text {
-  @apply text-sm text-slate-700;
+  @apply text-xs text-slate-700;
 }
 
 html[data-theme="sentinel"] .timer-system-name {
@@ -2282,6 +2355,10 @@ html[data-theme="sentinel"] .timer-countdown-warning {
 }
 html[data-theme="sentinel"] .timer-countdown-critical {
   @apply text-red-300;
+}
+
+html[data-theme="sentinel"] .timer-board-tab-count.is-active {
+  @apply text-white;
 }
 
 html[data-theme="sentinel"] .timer-tone-btn-blue-active {

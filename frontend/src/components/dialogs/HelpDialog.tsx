@@ -508,27 +508,31 @@ function HelpDialogBody() {
           <div className="space-y-2">
             {[
               {
+                key: "flash",
                 label: "Flashing",
                 color: INTEL_THREAT_STAGE_COLORS.flash,
                 seconds: threatTimings.flash,
-                flashing: true,
               },
               {
+                key: "red",
                 label: "Red",
                 color: INTEL_THREAT_STAGE_COLORS.red,
                 seconds: threatTimings.red,
               },
               {
+                key: "orange",
                 label: "Orange",
                 color: INTEL_THREAT_STAGE_COLORS.orange,
                 seconds: threatTimings.orange,
               },
               {
+                key: "yellow",
                 label: "Yellow",
                 color: INTEL_THREAT_STAGE_COLORS.yellow,
                 seconds: threatTimings.yellow,
               },
               {
+                key: "green",
                 label: "Green",
                 color: INTEL_THREAT_STAGE_COLORS.green,
                 seconds: threatTimings.green,
@@ -546,7 +550,7 @@ function HelpDialogBody() {
                     fill={stage.color}
                     stroke={stage.color}
                     strokeWidth="1.5"
-                    className={stage.flashing ? "map-system-alert" : ""}
+                    className={stage.key === "flash" ? "map-system-alert" : ""}
                   />
                 </svg>
                 <span>

@@ -1,4 +1,12 @@
-import { structureByValue } from "../config/timerOptions";
+import {
+  hostilityByValue,
+  replacementByValue,
+  severityByValue,
+  structureByValue,
+} from "../config/timerOptions";
+import { normalizeTimerStanding } from "./timerStanding";
+import { normalizeTimerSeverity } from "./timerSeverity";
+import { timerStageTone } from "./timerStage";
 
 export type TimerBadgeTone =
   | "blue"
@@ -15,34 +23,17 @@ export function badgeToneClass(tone: TimerBadgeTone): string {
 }
 
 export function standingBadgeClass(standing: string): string {
-  const value = standing.trim().toLowerCase();
-  if (value === "ours") return badgeToneClass("blue");
-  if (value === "friendly") return badgeToneClass("green");
-  if (value === "complicated") return badgeToneClass("yellow");
-  if (value === "hostile") return badgeToneClass("red");
-  return badgeToneClass("gray");
+  const value = normalizeTimerStanding(standing);
+  return badgeToneClass(toBadgeTone(hostilityByValue.get(value)?.tone));
 }
 
 export function severityBadgeClass(severity: string): string {
-  const value = severity.trim().toLowerCase();
-  if (value === "critical") return badgeToneClass("red");
-  if (value === "high") return badgeToneClass("yellow");
-  if (value === "medium") return badgeToneClass("green");
-  if (value === "low") return badgeToneClass("blue");
-  return badgeToneClass("gray");
+  const value = normalizeTimerSeverity(severity);
+  return badgeToneClass(toBadgeTone(severityByValue.get(value as never)?.tone));
 }
 
 export function stageBadgeClass(stageLabel?: string): string {
-  const value = (stageLabel ?? "").trim().toLowerCase();
-  if (value === "armor") return badgeToneClass("yellow");
-  if (value === "structure") return badgeToneClass("red");
-  if (value === "initial_vulnerability") return badgeToneClass("purple");
-  if (value === "anchoring") return badgeToneClass("blue");
-  if (value === "unanchoring") return badgeToneClass("orange");
-  if (value === "extraction_window" || value === "pickup_window") {
-    return badgeToneClass("green");
-  }
-  return badgeToneClass("gray");
+  return badgeToneClass(toBadgeTone(timerStageTone(stageLabel)));
 }
 
 export function structureBadgeClassByType(structureType?: string): string {
@@ -67,8 +58,27 @@ export function structureBadgeClassByTone(tone: string): string {
 }
 
 export function replacementBadgeClass(value: string): string {
-  if (value === "logi_replacement") return badgeToneClass("blue");
-  if (value === "corp_replacement") return badgeToneClass("green");
-  if (value === "alliance_replacement") return badgeToneClass("purple");
-  return "badge-ghost";
+  const tone = replacementByValue.get(value as never)?.tone;
+  if (!tone) return "badge-ghost";
+  return badgeToneClass(toBadgeTone(tone));
+}
+
+function toBadgeTone(
+  tone: string | undefined,
+  fallback: TimerBadgeTone = "gray",
+): TimerBadgeTone {
+  switch (tone) {
+    case "lightblue":
+      return "lightblue";
+    case "blue":
+    case "yellow":
+    case "green":
+    case "purple":
+    case "gray":
+    case "red":
+    case "orange":
+      return tone;
+    default:
+      return fallback;
+  }
 }

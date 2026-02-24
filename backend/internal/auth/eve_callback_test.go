@@ -21,26 +21,35 @@ func (s stubESIClient) Characters(ctx context.Context, user *core.Record, access
 	return nil, nil
 }
 
-func (s stubESIClient) CharacterLocation(ctx context.Context, characterID string, accessToken string) (esi.CharacterLocation, error) {
+func (s stubESIClient) CharacterLocation(ctx context.Context, characterID, accessToken string) (esi.CharacterLocation, error) {
 	_ = ctx
 	_ = characterID
 	_ = accessToken
 	return esi.CharacterLocation{}, nil
 }
 
-func (s stubESIClient) CharacterAffiliation(ctx context.Context, characterID int) (int, int, error) {
+func (s stubESIClient) CharacterAffiliation(ctx context.Context, characterID int) (corporationID, allianceID int, err error) {
 	if s.affiliation == nil {
 		return 0, 0, nil
 	}
 	return s.affiliation(ctx, characterID)
 }
 
-func (s stubESIClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool) (corporationIDs, allianceIDs []int, err error) {
+func (s stubESIClient) CharacterNotifications(ctx context.Context, characterID int, accessToken, ifNoneMatch string) (notifications []esi.CharacterNotification, etag string, notModified bool, err error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = ifNoneMatch
+	return []esi.CharacterNotification{}, "", false, nil
+}
+
+func (s stubESIClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool, categories []string) (corporationIDs, allianceIDs []int, err error) {
 	_ = ctx
 	_ = characterID
 	_ = accessToken
 	_ = query
 	_ = strict
+	_ = categories
 	return nil, nil, nil
 }
 
@@ -90,7 +99,7 @@ func TestResolveCharacterAffiliationForCallbackFailsWithoutExistingCharacter(t *
 	}
 
 	_, _, err := provider.resolveCharacterAffiliationForCallback(context.Background(), 42, nil)
-	if err != ErrFailedFetchCharacter {
+	if !errors.Is(err, ErrFailedFetchCharacter) {
 		t.Fatalf("resolveCharacterAffiliationForCallback() error = %v, want %v", err, ErrFailedFetchCharacter)
 	}
 }

@@ -3,15 +3,15 @@ import {
   planetOnlyStructureTypes,
 } from "../../config/timerOptions";
 import { useTimerCelestials } from "../../hooks/useTimerCelestials";
+import { useTimerFormOptions } from "../../hooks/useTimerFormOptions";
+import { useTimerOwnerSuggestions } from "../../hooks/useTimerOwnerSuggestions";
+import { useTimerFormStore } from "../../store/useTimerFormStore";
 import {
   contextToneClass,
   replacementToneClass,
   severityToneClass,
   toneButtonClass,
-  useTimerFormOptions,
-} from "../../hooks/useTimerFormOptions";
-import { useTimerOwnerSuggestions } from "../../hooks/useTimerOwnerSuggestions";
-import { useTimerFormStore } from "../../store/useTimerFormStore";
+} from "../../utils/timerToneButtons";
 import StepContext from "./steps/StepContext";
 import StepLocation from "./steps/StepLocation";
 import StepOwner from "./steps/StepOwner";

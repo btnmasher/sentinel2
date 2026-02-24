@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -14,24 +13,20 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 
-	"sentinel2/internal/audit"
-	"sentinel2/internal/auth"
-	"sentinel2/internal/cleanup"
 	"sentinel2/internal/format"
-	"sentinel2/internal/jobs"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/shared/collections"
 	"sentinel2/internal/shared/pagination"
 	"sentinel2/internal/shared/queryhelpers"
-	"sentinel2/internal/store"
 )
 
 type jobRunsOptions struct {
-	page         int
-	limit        int
-	excludeKinds []string
-	startAt      *time.Time
-	endAt        *time.Time
+	page          int
+	limit         int
+	excludeKinds  []string
+	startAt       *time.Time
+	endAt         *time.Time
+	includeHidden bool
 }
 
 type cleanupCounts struct {
@@ -50,6 +45,10 @@ const (
 	adminRefreshAllTimeout    = 5 * time.Minute
 	refreshAllBatchSize       = 25
 	refreshAllBatchPause      = 350 * time.Millisecond
+	adminSovSyncTimeout       = 45 * time.Second
+	adminSkyhookSyncTimeout   = 45 * time.Second
+	adminSkyhookSyncWindow    = 2 * time.Minute
+	staleJobRunTimeout        = 30 * time.Minute
 )
 
 func parseJobRunsOptions(c *core.RequestEvent) (jobRunsOptions, error) {
@@ -59,11 +58,12 @@ func parseJobRunsOptions(c *core.RequestEvent) (jobRunsOptions, error) {
 		return jobRunsOptions{}, err
 	}
 	return jobRunsOptions{
-		page:         format.GetPositiveInt(values, "page", 1, 0),
-		limit:        format.GetPositiveInt(values, "limit", defaultJobRunsLimit, maxJobRunsLimit),
-		excludeKinds: format.GetQueryList(values, "kinds"),
-		startAt:      startAt,
-		endAt:        endAt,
+		page:          format.GetPositiveInt(values, "page", 1, 0),
+		limit:         format.GetPositiveInt(values, "limit", defaultJobRunsLimit, maxJobRunsLimit),
+		excludeKinds:  format.GetQueryList(values, "kinds"),
+		startAt:       startAt,
+		endAt:         endAt,
+		includeHidden: parseIncludeHidden(values.Get("includeHidden"), values.Get("include_hidden")),
 	}, nil
 }
 
@@ -77,7 +77,7 @@ func validateJobRunsRange(startAt, endAt *time.Time) error {
 	return nil
 }
 
-func buildJobRunsScanFilter(startAt, endAt *time.Time, excludeKinds []string) (string, dbx.Params) {
+func buildJobRunsScanFilter(startAt, endAt *time.Time, excludeKinds []string, includeHidden bool) (string, dbx.Params) {
 	scanParams := dbx.Params{}
 	dateFilter := ""
 	if startAt != nil {
@@ -102,7 +102,6 @@ func buildJobRunsScanFilter(startAt, endAt *time.Time, excludeKinds []string) (s
 		}
 	}
 
-	hiddenFilter := `(hidden = false || hidden = null)`
 	parentFilter := `(step = "" || step = null || kind = "map_data_step" || (kind = "character_refresh" && step ~ "user:%"))`
 	scanFilter := parentFilter
 	if dateFilter != "" {
@@ -111,7 +110,9 @@ func buildJobRunsScanFilter(startAt, endAt *time.Time, excludeKinds []string) (s
 	if kindFilter != "" {
 		scanFilter = queryhelpers.AppendAnd(scanFilter, kindFilter)
 	}
-	scanFilter = queryhelpers.AppendAnd(scanFilter, hiddenFilter)
+	if !includeHidden {
+		scanFilter = queryhelpers.AppendAnd(scanFilter, `(hidden = false || hidden = null)`)
+	}
 	return scanFilter, scanParams
 }
 
@@ -153,9 +154,12 @@ func paginateJobIDs(jobIDOrder []string, offset, limit int) ([]string, bool) {
 	return pagination.SliceByOffsetLimit(jobIDOrder, offset, limit)
 }
 
-func buildJobIDFilter(jobIDs []string) (string, dbx.Params) {
+func buildJobIDFilter(jobIDs []string, includeHidden bool) (string, dbx.Params) {
 	filter, params := queryhelpers.BuildOrEqualsFilter("job_id", jobIDs)
-	return queryhelpers.AppendAnd(filter, `(hidden = false || hidden = null)`), params
+	if !includeHidden {
+		filter = queryhelpers.AppendAnd(filter, `(hidden = false || hidden = null)`)
+	}
+	return filter, params
 }
 
 func groupJobRunRecords(records []*core.Record, jobIDs []string) (map[string]*jobRunGroup, []jobRunGroup, time.Time) {
@@ -179,9 +183,6 @@ func initJobRunGroups(jobIDs []string) map[string]*jobRunGroup {
 }
 
 func mapRecordToJobRunEntry(record *core.Record, groups map[string]*jobRunGroup) (jobRunEntry, bool) {
-	if record.GetBool("hidden") {
-		return jobRunEntry{}, false
-	}
 	group := groups[record.GetString("job_id")]
 	if group == nil {
 		return jobRunEntry{}, false
@@ -226,14 +227,23 @@ func orderJobRunGroups(groups map[string]*jobRunGroup, jobIDs []string) []jobRun
 			group.Parent = group.Steps[0]
 			group.Steps = group.Steps[1:]
 		}
+		if group.Parent.JobID == "" && len(group.Steps) == 0 {
+			continue
+		}
 		ordered = append(ordered, *group)
 	}
 	return ordered
 }
 
-func computeJobRunsETag(excludeKinds, jobIDs []string, groups map[string]*jobRunGroup) string {
+func computeJobRunsETag(excludeKinds, jobIDs []string, groups map[string]*jobRunGroup, includeHidden bool) string {
 	etagHasher := fnv.New64a()
 	_, _ = etagHasher.Write([]byte(strings.Join(excludeKinds, ",")))
+	_, _ = etagHasher.Write([]byte{0})
+	if includeHidden {
+		_, _ = etagHasher.Write([]byte("includeHidden=1"))
+	} else {
+		_, _ = etagHasher.Write([]byte("includeHidden=0"))
+	}
 	_, _ = etagHasher.Write([]byte{0})
 	for _, jobID := range jobIDs {
 		group := groups[jobID]
@@ -343,7 +353,7 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 	}
 	offset := pagination.OffsetForPage(opts.page, opts.limit)
 	targetCount := offset + opts.limit + 1
-	scanFilter, scanParams := buildJobRunsScanFilter(opts.startAt, opts.endAt, opts.excludeKinds)
+	scanFilter, scanParams := buildJobRunsScanFilter(opts.startAt, opts.endAt, opts.excludeKinds, opts.includeHidden)
 	jobIDOrder, collectErr := h.collectJobIDOrder(scanFilter, scanParams, targetCount)
 	if collectErr != nil {
 		return collectErr
@@ -357,7 +367,7 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 			"hasMore": hasMore,
 		})
 	}
-	filter, params := buildJobIDFilter(jobIDs)
+	filter, params := buildJobIDFilter(jobIDs, opts.includeHidden)
 	records, recordsErr := h.App.FindRecordsByFilter("job_runs", filter, "", 0, 0, params)
 	if recordsErr != nil {
 		return router.NewInternalServerError("Failed to load jobs.", logging.Fields{
@@ -365,7 +375,7 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 		})
 	}
 	groups, ordered, latest := groupJobRunRecords(records, jobIDs)
-	etag := computeJobRunsETag(opts.excludeKinds, jobIDs, groups)
+	etag := computeJobRunsETag(opts.excludeKinds, jobIDs, groups, opts.includeHidden)
 	if match := c.Request.Header.Get("If-None-Match"); match != "" && match == etag {
 		return c.NoContent(http.StatusNotModified)
 	}
@@ -382,423 +392,12 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 	})
 }
 
-func (h *Handler) RefreshCharacter(c *core.RequestEvent) error {
-	id := c.Request.PathValue("id")
-	record, recordErr := h.App.FindRecordById("characters", id)
-	if recordErr != nil {
-		return router.NewNotFoundError("Character not found.", logging.Fields{
-			"character_record_id": id,
-		})
-	}
-
-	userID := record.GetString("user")
-	actorID := actorIDFromRequest(c)
-	step := ""
-	if userID != "" {
-		pending, pendingErr := h.App.FindRecordsByFilter(
-			"job_runs",
-			"kind = {:kind} && step = {:step} && status = {:status}",
-			"",
-			1,
-			0,
-			dbx.Params{
-				"kind":   jobs.JobCharacterRefresh,
-				"step":   "character:" + record.Id,
-				"status": jobs.StatusRunning,
-			},
-		)
-		if pendingErr == nil && len(pending) > 0 {
-			return router.NewBadRequestError("Character refresh already running.", logging.Fields{
-				"character_record_id": id,
-				"user_id":             userID,
-			})
-		}
-		step = "user:" + userID
-	}
-
-	runner := h.newCharacterRefreshRunner(actorID, step, adminSingleRefreshTimeout)
-	jobID := runner.JobID()
-
-	go func(character *core.Record, jobID string) {
-		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
-			return stepper.Run("character:"+character.Id, true, func(ctx context.Context) error {
-				return h.Refresher.RefreshCharacter(ctx, character)
-			})
-		})
-		logging.New(h.App).WithFields(logging.Fields{
-			"job_id":              jobID,
-			"character_record_id": character.Id,
-			"character_id":        character.GetInt("eve_character_id"),
-			"user_id":             character.GetString("user"),
-		}).Info("single character refresh completed")
-	}(record, jobID)
-
-	h.logAction(
-		c,
-		&audit.Event{
-			Action:          audit.ActionCharacterRefresh,
-			Summary:         "Queued character refresh for " + record.GetString("eve_character_name") + " (job " + jobID + ")",
-			TargetUserID:    record.GetString("user"),
-			TargetCharacter: record,
-		},
-	)
-
-	return c.JSON(http.StatusAccepted, map[string]any{
-		"job_id":       jobID,
-		"character_id": record.GetInt("eve_character_id"),
-		"user_id":      record.GetString("user"),
-	})
-}
-
-func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
-	userID, payloadErr := parseRefreshAllUserID(c)
-	if payloadErr != nil {
-		return payloadErr
-	}
-	user, resolveErr := h.resolveRefreshAllTarget(userID)
-	if resolveErr != nil {
-		return resolveErr
-	}
-	if pendingErr := h.ensureNoRunningUserRefresh(userID); pendingErr != nil {
-		return pendingErr
-	}
-	filter, params, scope, step := refreshAllScope(userID)
-	records, recordsErr := h.loadRefreshAllCharacters(filter, params, userID)
-	if recordsErr != nil {
-		return recordsErr
-	}
-	if pendingErr := h.ensureNoRunningCharacterRefreshes(userID, records); pendingErr != nil {
-		return pendingErr
-	}
-	actorID := actorIDFromRequest(c)
-	runner := h.newCharacterRefreshRunner(actorID, step, adminRefreshAllTimeout)
-	jobID := runner.JobID()
-	targetName := ""
-	if user != nil {
-		targetName = user.GetString("eve_character_name")
-	}
-	h.logRefreshAllQueued(c, userID, targetName, len(records), jobID)
-	h.runRefreshAllAsync(records, userID, scope, runner, jobID)
-
-	return c.JSON(http.StatusAccepted, map[string]any{
-		"job_id": jobID,
-		"scope":  scope,
-	})
-}
-
-func (h *Handler) RunCleanupJob(c *core.RequestEvent) error {
-	actorID := actorIDFromRequest(c)
-
-	runner := jobs.NewRunner(h.App, &jobs.RunOptions{
-		JobName: jobs.JobCleanup,
-		JobOptions: jobs.JobOptions{
-			Kind:    jobs.JobCleanup,
-			Trigger: jobs.TriggerAdminManual,
-			ActorID: actorID,
-		},
-		Timeout: jobs.NoTimeout,
-	})
-
-	jobID := runner.JobID()
-	h.runCleanupAsync(runner)
-	targetUserName := ""
-	if c.Auth != nil {
-		targetUserName = c.Auth.GetString("eve_character_name")
-	}
-	h.logAction(
-		c,
-		&audit.Event{
-			Action:         audit.ActionJobCleanupRun,
-			Summary:        fmt.Sprintf("Triggered cleanup job %s", jobID),
-			TargetUserID:   actorID,
-			TargetUserName: targetUserName,
-			TargetType:     audit.TargetTypeJob,
-			TargetID:       jobID,
-			TargetLabel:    "cleanup",
-			TargetMeta: map[string]any{
-				"job_id": jobID,
-			},
-		},
-	)
-
-	return c.JSON(http.StatusAccepted, map[string]any{
-		"job_id": jobID,
-	})
-}
-func actorIDFromRequest(c *core.RequestEvent) string {
-	if c != nil && c.Auth != nil {
-		return c.Auth.Id
-	}
-	return ""
-}
-
-func parseRefreshAllUserID(c *core.RequestEvent) (string, error) {
-	payload := struct {
-		UserID string `json:"user_id"`
-	}{}
-	if c.Request.ContentLength > 0 {
-		if bindErr := c.BindBody(&payload); bindErr != nil {
-			return "", router.NewBadRequestError("Invalid payload.", logging.Fields{"error": bindErr})
+func parseIncludeHidden(values ...string) bool {
+	for _, value := range values {
+		switch strings.TrimSpace(strings.ToLower(value)) {
+		case "1", "true", "yes", "on":
+			return true
 		}
 	}
-	return strings.TrimSpace(payload.UserID), nil
-}
-
-func (h *Handler) resolveRefreshAllTarget(userID string) (*core.Record, error) {
-	if userID == "" {
-		return nil, nil
-	}
-	userRecord, userErr := h.App.FindRecordById(store.CollectionUsers, userID)
-	if userErr != nil {
-		return nil, router.NewNotFoundError("User not found.", logging.Fields{"user_id": userID})
-	}
-	return userRecord, nil
-}
-
-func (h *Handler) ensureNoRunningUserRefresh(userID string) error {
-	if userID == "" {
-		return nil
-	}
-	pending, pendingErr := h.App.FindRecordsByFilter(
-		"job_runs",
-		"kind = {:kind} && step = {:step} && status = {:status}",
-		"",
-		1,
-		0,
-		dbx.Params{
-			"kind":   jobs.JobCharacterRefresh,
-			"step":   "user:" + userID,
-			"status": jobs.StatusRunning,
-		},
-	)
-	if pendingErr == nil && len(pending) > 0 {
-		return router.NewBadRequestError("Character refresh already running for this user.", logging.Fields{"user_id": userID})
-	}
-	return nil
-}
-
-func refreshAllScope(userID string) (filter string, params dbx.Params, scope, step string) {
-	if userID == "" {
-		return "", dbx.Params{}, "all", ""
-	}
-	return "user = {:user}", dbx.Params{"user": userID}, "user", "user:" + userID
-}
-
-func (h *Handler) loadRefreshAllCharacters(filter string, params dbx.Params, userID string) ([]*core.Record, error) {
-	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionCharacters, filter, "", 0, 0, params)
-	if recordsErr != nil {
-		return nil, router.NewInternalServerError("Failed to load characters.", logging.Fields{"user_id": userID})
-	}
-	return records, nil
-}
-
-func (h *Handler) ensureNoRunningCharacterRefreshes(userID string, records []*core.Record) error {
-	if userID == "" || len(records) == 0 {
-		return nil
-	}
-	const chunkSize = 20
-	for start := 0; start < len(records); start += chunkSize {
-		end := start + chunkSize
-		end = min(end, len(records))
-		clauses := make([]string, 0, end-start)
-		params := dbx.Params{"kind": jobs.JobCharacterRefresh, "status": jobs.StatusRunning}
-		for i, rec := range records[start:end] {
-			key := fmt.Sprintf("step_%d", i)
-			clauses = append(clauses, fmt.Sprintf("step = {:%s}", key))
-			params[key] = "character:" + rec.Id
-		}
-		filter := fmt.Sprintf("kind = {:kind} && status = {:status} && (%s)", strings.Join(clauses, " || "))
-		pending, pendingErr := h.App.FindRecordsByFilter("job_runs", filter, "", 1, 0, params)
-		if pendingErr == nil && len(pending) > 0 {
-			return router.NewBadRequestError("Character refresh already running for this user.", logging.Fields{"user_id": userID})
-		}
-	}
-	return nil
-}
-
-func (h *Handler) newCharacterRefreshRunner(actorID, step string, timeout time.Duration) *jobs.Runner {
-	return jobs.NewRunner(h.App, &jobs.RunOptions{
-		JobName: "admin.character_refresh",
-		JobOptions: jobs.JobOptions{
-			Kind:    jobs.JobCharacterRefresh,
-			Step:    step,
-			Trigger: "admin.character_refresh",
-			ActorID: actorID,
-		},
-		Timeout: timeout,
-		JobFunc: func(ctx context.Context) context.Context {
-			return auth.WithRefreshJobMeta(ctx, "admin.character_refresh", actorID)
-		},
-	})
-}
-
-func buildRefreshAllSummary(userID, targetName string, count int, jobID string) string {
-	suffix := ""
-	if count != 1 {
-		suffix = "s"
-	}
-	summary := fmt.Sprintf("Queued refresh for %d character%s (job %s)", count, suffix, jobID)
-	if userID != "" && targetName != "" {
-		summary = fmt.Sprintf("Queued refresh for %s (%d character%s, job %s)", targetName, count, suffix, jobID)
-	}
-	return summary
-}
-
-func (h *Handler) logRefreshAllQueued(c *core.RequestEvent, userID, targetName string, count int, jobID string) {
-	summary := buildRefreshAllSummary(userID, targetName, count, jobID)
-	if userID != "" {
-		event := audit.Event{
-			Action:         audit.ActionCharacterRefreshAll,
-			Summary:        summary,
-			TargetUserID:   userID,
-			TargetUserName: targetName,
-		}
-		h.applyAccountTarget(&event, userID, targetName)
-		h.logAction(c, &event)
-		return
-	}
-	h.logAction(c, &audit.Event{Action: audit.ActionCharacterRefreshAll, Summary: summary})
-}
-
-func runRefreshAllSteps(ctx context.Context, stepper jobs.Stepper, records []*core.Record, refresher *auth.CharacterRefresher) (success, failed int, err error) {
-	for idx, character := range records {
-		if ctx.Err() != nil {
-			return success, failed, ctx.Err()
-		}
-		if character == nil {
-			continue
-		}
-		stepSuccess, stepFailed := runSingleRefreshStep(stepper, character, refresher)
-		success += stepSuccess
-		failed += stepFailed
-		if waitErr := waitRefreshBatchBoundary(ctx, idx+1, refreshAllBatchSize, refreshAllBatchPause); waitErr != nil {
-			return success, failed, waitErr
-		}
-	}
-	return success, failed, nil
-}
-
-func runSingleRefreshStep(stepper jobs.Stepper, character *core.Record, refresher *auth.CharacterRefresher) (success, failed int) {
-	stepName := "character:" + character.Id
-	stepErr := stepper.Run(stepName, false, func(ctx context.Context) error {
-		err := refresher.RefreshCharacter(ctx, character)
-		if err != nil {
-			failed++
-		} else {
-			success++
-		}
-		return err
-	})
-	if stepErr != nil {
-		failed++
-	}
-	return success, failed
-}
-
-func waitRefreshBatchBoundary(ctx context.Context, index, batchSize int, pause time.Duration) error {
-	if index%batchSize != 0 {
-		return nil
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(pause):
-		return nil
-	}
-}
-
-func (h *Handler) runRefreshAllAsync(records []*core.Record, userID, scope string, runner *jobs.Runner, jobID string) {
-	go func() {
-		start := time.Now()
-		var success int
-		var failed int
-		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
-			stepSuccess, stepFailed, runErr := runRefreshAllSteps(ctx, stepper, records, h.Refresher)
-			success, failed = stepSuccess, stepFailed
-			if runErr != nil {
-				return runErr
-			}
-			if failed > 0 {
-				stepper.Partial(fmt.Errorf("refresh completed with %d failures", failed))
-			}
-			return nil
-		})
-		logging.New(h.App).WithFields(logging.Fields{
-			"job_id":      jobID,
-			"scope":       scope,
-			"user_id":     userID,
-			"success":     success,
-			"failed":      failed,
-			"duration_ms": time.Since(start).Milliseconds(),
-		}).Info("character refresh completed")
-	}()
-}
-
-func (h *Handler) runCleanupAsync(runner *jobs.Runner) {
-	go func() {
-		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
-			counts, runErr := h.runCleanupSteps(stepper)
-			if runErr != nil {
-				return runErr
-			}
-			runner.WithFields(logging.Fields{
-				"intel_report_hash_count": counts.reportHashCount,
-				"intel_uploaders_count":   counts.intelUploaderCount,
-				"uploader_tokens_count":   counts.uploaderTokenCount,
-				"intel_reports_count":     counts.intelReportCount,
-				"timers_count":            counts.timerCount,
-				"stale_job_runs_count":    counts.staleJobRunCount,
-			})
-			return nil
-		})
-	}()
-}
-
-func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
-	counts := cleanupCounts{}
-	if err := stepper.Run("cleanup_report_hashes", false, func(ctx context.Context) error {
-		count, err := h.Cleanup.RemoveExpired(store.CollectionIntelReportHash)
-		if err == nil {
-			counts.reportHashCount = count
-		}
-		return err
-	}); err != nil {
-		return counts, err
-	}
-	if err := stepper.Run("cleanup_intel_uploaders", false, func(ctx context.Context) error {
-		count, err := h.Cleanup.RemoveExpired(store.CollectionIntelUploaders)
-		counts.intelUploaderCount = count
-		return err
-	}); err != nil {
-		return counts, err
-	}
-	if err := stepper.Run("cleanup_uploader_tokens", false, func(ctx context.Context) error {
-		count, err := h.Cleanup.RemoveRevokedUploaderTokens()
-		counts.uploaderTokenCount = count
-		return err
-	}); err != nil {
-		return counts, err
-	}
-	if err := stepper.Run("cleanup_intel_reports", false, func(ctx context.Context) error {
-		count, err := h.Cleanup.RemoveOldIntelReports(cleanup.IntelReportRetention)
-		counts.intelReportCount = count
-		return err
-	}); err != nil {
-		return counts, err
-	}
-	if err := stepper.Run("cleanup_timers", false, func(ctx context.Context) error {
-		count, err := h.Cleanup.RemoveOldTimers(cleanup.TimerInactiveRetention)
-		counts.timerCount = count
-		return err
-	}); err != nil {
-		return counts, err
-	}
-	if err := stepper.Run("cleanup_stale_job_runs", false, func(ctx context.Context) error {
-		count, err := jobs.NewJobTracker(h.App).MarkStaleRunningAsTimeout(30 * time.Minute)
-		counts.staleJobRunCount = count
-		return err
-	}); err != nil {
-		return counts, err
-	}
-	return counts, nil
+	return false
 }

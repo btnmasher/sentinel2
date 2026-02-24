@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { createPortal } from "react-dom";
-import type { DateRange } from "react-day-picker";
+import type { DateRange, Matcher } from "react-day-picker";
 
 const formatRangeLabel = (range?: DateRange) => {
   if (!range?.from && !range?.to) return "All dates";
@@ -132,17 +132,17 @@ export default function DateRangePicker({
     };
   }, [open, value, singleValue, startHour, endHour]);
 
-  const disabled = useMemo(() => {
-    const result: { after?: Date; before?: Date } = {};
+  const disabled = useMemo<Matcher[] | undefined>(() => {
+    const result: Matcher[] = [];
     if (disableFuture) {
-      result.after = new Date();
+      result.push({ after: new Date() });
     }
     if (disablePast) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      result.before = today;
+      result.push({ before: today });
     }
-    return Object.keys(result).length > 0 ? result : undefined;
+    return result.length > 0 ? result : undefined;
   }, [disableFuture, disablePast]);
 
   const triggerLabel =
@@ -167,23 +167,35 @@ export default function DateRangePicker({
             className="fixed z-[10000] rounded-lg border border-slate-800 bg-base-200 p-3 shadow-lg"
             style={{ top: position.top, left: position.left }}
           >
-            <DayPicker
-              mode={mode}
-              selected={mode === "single" ? pendingDate : pendingRange}
-              disabled={disabled}
-              captionLayout="dropdown"
-              endMonth={new Date()}
-              onSelect={(next) => {
-                if (mode === "single") {
-                  setPendingDate(next as Date | undefined);
-                  return;
-                }
-                setPendingRange(next as DateRange | undefined);
-              }}
-              numberOfMonths={1}
-              weekStartsOn={0}
-              showOutsideDays
-            />
+            {mode === "single" ? (
+              <DayPicker
+                mode="single"
+                selected={pendingDate}
+                disabled={disabled}
+                captionLayout="dropdown"
+                endMonth={new Date()}
+                onSelect={(next: Date | undefined) => {
+                  setPendingDate(next);
+                }}
+                numberOfMonths={1}
+                weekStartsOn={0}
+                showOutsideDays
+              />
+            ) : (
+              <DayPicker
+                mode="range"
+                selected={pendingRange}
+                disabled={disabled}
+                captionLayout="dropdown"
+                endMonth={new Date()}
+                onSelect={(next: DateRange | undefined) => {
+                  setPendingRange(next);
+                }}
+                numberOfMonths={1}
+                weekStartsOn={0}
+                showOutsideDays
+              />
+            )}
             {showTimeSelect && (
               <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
                 <label className="grid gap-1">

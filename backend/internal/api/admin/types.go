@@ -7,6 +7,7 @@ import (
 	"sentinel2/internal/auth"
 	"sentinel2/internal/cleanup"
 	"sentinel2/internal/intel"
+	timerssvc "sentinel2/internal/timers"
 )
 
 type Handler struct {
@@ -15,6 +16,7 @@ type Handler struct {
 	Provider  *auth.EVEProvider
 	Cleanup   *cleanup.Service
 	Intel     *intel.IntelService
+	Timers    *timerssvc.Service
 	Audit     *audit.Service
 }
 

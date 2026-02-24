@@ -131,9 +131,9 @@ func (s *Service) applyCreateInput(record, system *core.Record, input *CreateInp
 	regionID := system.GetInt("region_id")
 	record.Set("region_id", regionID)
 	record.Set("region_name", s.resolveRegionName(regionID, system.GetString("region_name")))
-	record.Set("standing_type", queryhelpers.ValueOrTrim(input.Standing, "hostile"))
-	record.Set("timer_kind", queryhelpers.ValueOrTrim(input.TimerKind, "reinforcement"))
-	record.Set("structure_type", queryhelpers.ValueOrTrim(input.StructureType, "custom"))
+	record.Set("standing_type", queryhelpers.ValueOrTrim(input.Standing, TimerStandingHostile))
+	record.Set("timer_kind", queryhelpers.ValueOrTrim(input.TimerKind, TimerKindReinforcement))
+	record.Set("structure_type", queryhelpers.ValueOrTrim(input.StructureType, TimerStructureCustom))
 	record.Set("stage_label", strings.TrimSpace(input.StageLabel))
 	record.Set("planet_id", input.PlanetID)
 	record.Set("planet_name", strings.TrimSpace(input.PlanetName))
@@ -148,9 +148,15 @@ func (s *Service) applyCreateInput(record, system *core.Record, input *CreateInp
 	if input.SkyhookFullnessPct != nil {
 		record.Set("skyhook_fullness_pct", *input.SkyhookFullnessPct)
 	}
+	if input.AttackersScorePct != nil {
+		record.Set("attackers_score_pct", *input.AttackersScorePct)
+	}
+	if input.DefenderScorePct != nil {
+		record.Set("defender_score_pct", *input.DefenderScorePct)
+	}
 	record.Set("stage", input.Stage)
 	record.Set("total_stages", max(1, input.TotalStages))
-	record.Set("severity", queryhelpers.ValueOrTrim(input.Severity, "medium"))
+	record.Set("severity", queryhelpers.ValueOrTrim(input.Severity, TimerSeverityMedium))
 	record.Set("status", queryhelpers.ValueOrTrim(input.Status, timerStatusActive))
 	record.Set("expires_at", input.ExpiresAt.UTC().Format(time.RFC3339))
 	record.Set("source", queryhelpers.ValueOrTrim(input.Source, "manual"))
@@ -158,9 +164,14 @@ func (s *Service) applyCreateInput(record, system *core.Record, input *CreateInp
 	record.Set("notes", strings.TrimSpace(input.Notes))
 	record.Set("raw_text", strings.TrimSpace(input.RawText))
 	record.Set("replacement_action", queryhelpers.ValueOrTrim(input.ReplacementAction, "not_replaceable"))
+	createdByName := ""
 	if auth != nil {
 		record.Set("created_by", auth.Id)
+		createdByName = strings.TrimSpace(auth.GetString("eve_character_name"))
+	} else if source := strings.TrimSpace(input.Source); source != "" && source != "manual" {
+		createdByName = systemCreatorName
 	}
+	record.Set("created_by_name", createdByName)
 }
 
 func trimValue(value string) any {

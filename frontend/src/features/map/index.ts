@@ -14,6 +14,10 @@ export { default as MapPageShell } from "./components/MapPageShell";
 export { default as MapShell } from "./components/MapShell";
 export { default as MapZoomControls } from "./components/MapZoomControls";
 export {
+  default as TimerHoverPanel,
+  readTimerUse24Hour,
+} from "./components/TimerHoverPanel";
+export {
   default as SystemSearchField,
   type MapRegionSearchResult,
   type MapSystemSearchResult,
@@ -55,4 +59,6 @@ export type {
   MapLayout,
   Region,
   System,
+  TimerSignal,
+  TimerSignalPreview,
 } from "./types";

@@ -229,9 +229,11 @@ func (h *MapHandler) fetchTimerSignals(regionIDs []int) (map[int]TimerSignal, er
 	}
 
 	out := make(map[int]TimerSignal, len(signals))
-	for systemID, signal := range signals {
+	for systemID := range signals {
+		signal := signals[systemID]
 		previews := make([]TimerPreview, 0, len(signal.Timers))
-		for _, timer := range signal.Timers {
+		for i := range signal.Timers {
+			timer := &signal.Timers[i]
 			previews = append(previews, TimerPreview{
 				Title:              timer.Title,
 				NextExpiresAt:      timer.ExpiresAt.Format(time.RFC3339),

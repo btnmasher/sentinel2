@@ -14,24 +14,38 @@ import (
 	"sentinel2/internal/store"
 )
 
-func (s *Service) searchEntitiesFromESI(ctx context.Context, query string, limit int, requester *EntitySearchRequester) ([]EntitySearchItem, error) {
+func (s *Service) searchEntitiesFromESI(
+	ctx context.Context,
+	query string,
+	limit int,
+	requester *EntitySearchRequester,
+	scope EntitySearchScope,
+) ([]EntitySearchItem, error) {
 	q := strings.TrimSpace(query)
 	if s == nil || s.App == nil || limit <= 0 || q == "" {
 		return []EntitySearchItem{}, nil
 	}
-	return s.searchEntitiesFromAuthenticatedSearch(ctx, q, limit, requester)
+	return s.searchEntitiesFromAuthenticatedSearch(ctx, q, limit, requester, scope)
 }
 
-func (s *Service) searchEntitiesFromAuthenticatedSearch(ctx context.Context, query string, limit int, requester *EntitySearchRequester) ([]EntitySearchItem, error) {
+func (s *Service) searchEntitiesFromAuthenticatedSearch(
+	ctx context.Context,
+	query string,
+	limit int,
+	requester *EntitySearchRequester,
+	scope EntitySearchScope,
+) ([]EntitySearchItem, error) {
 	if s == nil || s.App == nil || s.ESI == nil || limit <= 0 || requester == nil {
 		return []EntitySearchItem{}, nil
 	}
+	categories := entitySearchCategories(scope)
 	corporationIDs, allianceIDs, err := s.ESI.SearchOrganizations(
 		ctx,
 		requester.CharacterID,
 		requester.AccessToken,
 		query,
 		false,
+		categories,
 	)
 	if err != nil {
 		if errors.Is(err, esipkg.ErrAffiliationUnsupported) {
@@ -46,13 +60,28 @@ func (s *Service) searchEntitiesFromAuthenticatedSearch(ctx context.Context, que
 		slog.Int("corporation_match_count", len(corporationIDs)),
 		slog.Int("alliance_match_count", len(allianceIDs)),
 	)
-	return s.resolveEntityMatches(ctx, query, limit, corporationIDs, allianceIDs, "authenticated")
+	return s.resolveEntityMatches(ctx, query, limit, corporationIDs, allianceIDs, "authenticated", scope)
 }
 
-func (s *Service) resolveEntityMatches(ctx context.Context, query string, limit int, corporationIDs, allianceIDs []int, source string) ([]EntitySearchItem, error) {
+func (s *Service) resolveEntityMatches(
+	ctx context.Context,
+	query string,
+	limit int,
+	corporationIDs,
+	allianceIDs []int,
+	source string,
+	scope EntitySearchScope,
+) ([]EntitySearchItem, error) {
 	results := make([]EntitySearchItem, 0, limit)
-	results = s.resolveCorporationMatches(ctx, source, corporationIDs, results, limit)
-	results = s.resolveAllianceMatches(ctx, source, allianceIDs, results, limit)
+	switch scope {
+	case EntitySearchScopeAlliance:
+		results = s.resolveAllianceMatches(ctx, source, allianceIDs, results, limit)
+	case EntitySearchScopeCorporation:
+		results = s.resolveCorporationMatches(ctx, source, corporationIDs, results, limit)
+	default:
+		results = s.resolveCorporationMatches(ctx, source, corporationIDs, results, limit)
+		results = s.resolveAllianceMatches(ctx, source, allianceIDs, results, limit)
+	}
 
 	s.App.Logger().Debug(
 		"timer entity search esi resolved matches",
@@ -61,6 +90,17 @@ func (s *Service) resolveEntityMatches(ctx context.Context, query string, limit 
 		slog.Int("result_count", len(results)),
 	)
 	return results, nil
+}
+
+func entitySearchCategories(scope EntitySearchScope) []string {
+	switch scope {
+	case EntitySearchScopeAlliance:
+		return []string{"alliance"}
+	case EntitySearchScopeCorporation:
+		return []string{"corporation"}
+	default:
+		return []string{"corporation", "alliance"}
+	}
 }
 
 func (s *Service) resolveCorporationMatches(ctx context.Context, source string, corporationIDs []int, results []EntitySearchItem, limit int) []EntitySearchItem {

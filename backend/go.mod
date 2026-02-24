@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/fnt-eve/goesi-openapi v0.0.20
+	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/goccy/go-graphviz v0.2.10
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/joho/godotenv v1.5.1
@@ -16,6 +17,7 @@ require (
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/term v0.40.0
 	golang.org/x/time v0.14.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -36,7 +38,6 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/ganigeorgiev/fexpr v0.5.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
-	github.com/go-ozzo/ozzo-validation/v4 v4.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

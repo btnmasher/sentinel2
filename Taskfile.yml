@@ -220,7 +220,8 @@ tasks:
       BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
       - bun run lint
-    desc: Run frontend lint.
+      - bun run typecheck
+    desc: Run frontend lint and type checking.
 
   lint:frontend:fix:
     deps: [setup:deps:frontend]
@@ -230,7 +231,8 @@ tasks:
       BUN_INSTALL: "{{.BUN_INSTALL_DEFAULT}}"
     cmds:
       - bun run lint -- --fix
-    desc: Run frontend lint with auto-fix (local only).
+      - bun run typecheck
+    desc: Run frontend lint with auto-fix and type checking (local only).
 
   docker:build:
     deps: [setup:taskutil]

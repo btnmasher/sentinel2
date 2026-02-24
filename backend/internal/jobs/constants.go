@@ -25,6 +25,8 @@ const (
 	JobCleanup          = "cleanup"
 	JobCharacterRefresh = "character_refresh"
 	JobUploaderReleases = "uploader_releases"
+	JobSovCampaignSync  = "sov_campaign_sync"
+	JobSkyhookSync      = "skyhook_sync"
 
 	TriggerCronSchedule          = "cron.schedule"
 	TriggerServerStartup         = "server.startup"

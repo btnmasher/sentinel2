@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/config/api";
-import PaginationControls from "@/components/PaginationControls";
+import CursorPagination from "@/components/CursorPagination";
 import StartsWithFilter from "@/components/StartsWithFilter";
 import ShadowedScrollArea from "@/components/ShadowedScrollArea";
 import { useUIStore } from "@/app/store/uiStore";
@@ -237,7 +237,7 @@ export default function UserSearchSection() {
         )}
       </div>
       {(page > 1 || hasMore) && (
-        <PaginationControls
+        <CursorPagination
           page={page}
           hasMore={hasMore}
           loading={loading}

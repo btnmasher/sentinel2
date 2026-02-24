@@ -1,3 +1,11 @@
+import type {
+  TimerKind,
+  TimerSeverity,
+  TimerStageLabel,
+  TimerStandingType,
+  TimerStructureType,
+} from "@/features/timers";
+
 export type Region = {
   region: number;
   name: string;
@@ -44,24 +52,12 @@ export type TimerSignal = {
   count: number;
   remaining_count?: number;
   next_expires_at: string;
-  severity: "low" | "medium" | "high" | "critical" | string;
-  standing_type:
-    | "ours"
-    | "friendly"
-    | "hostile"
-    | "neutral"
-    | "complicated"
-    | string;
-  timer_kind:
-    | "reinforcement"
-    | "anchoring"
-    | "moon_ore"
-    | "skyhook"
-    | "custom"
-    | string;
+  severity: TimerSeverity | string;
+  standing_type: TimerStandingType | string;
+  timer_kind: TimerKind | string;
   title?: string;
-  structure_type?: string;
-  stage_label?: string;
+  structure_type?: TimerStructureType | string;
+  stage_label?: TimerStageLabel | string;
   planet_name?: string;
   moon_name?: string;
   skyhook_fullness_pct?: number;
@@ -71,23 +67,11 @@ export type TimerSignal = {
 export type TimerSignalPreview = {
   title?: string;
   next_expires_at: string;
-  severity: "low" | "medium" | "high" | "critical" | string;
-  standing_type:
-    | "ours"
-    | "friendly"
-    | "hostile"
-    | "neutral"
-    | "complicated"
-    | string;
-  timer_kind:
-    | "reinforcement"
-    | "anchoring"
-    | "moon_ore"
-    | "skyhook"
-    | "custom"
-    | string;
-  structure_type?: string;
-  stage_label?: string;
+  severity: TimerSeverity | string;
+  standing_type: TimerStandingType | string;
+  timer_kind: TimerKind | string;
+  structure_type?: TimerStructureType | string;
+  stage_label?: TimerStageLabel | string;
   planet_name?: string;
   moon_name?: string;
   skyhook_fullness_pct?: number;

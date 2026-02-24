@@ -9,6 +9,8 @@ const (
 	TargetTypeJumpbridgeSet  = "jumpbridge_set"
 	TargetTypeJumpbridgePair = "jumpbridge_pair"
 	TargetTypeTimer          = "timer"
+	TargetTypeSovWatchEntity = "sov_campaign_watchlist_entity"
+	TargetTypeAllowedOrg     = "allowed_organization"
 )
 
 const (
@@ -29,10 +31,14 @@ const (
 	ActionUserRegenerateUploadToken = "user.regenerate_upload_token"
 	ActionJobCancel                 = "job.cancel"
 	ActionJobCleanupRun             = "job.cleanup_run"
+	ActionJobSovCampaignSyncRun     = "job.sov_campaign_sync_run"
+	ActionJobSkyhookSyncRun         = "job.skyhook_sync_run"
 	ActionAnnouncementCreate        = "announcement.create"
 	ActionAnnouncementArchiveLatest = "announcement.archive_latest"
 	ActionAdminMapDataRunAll        = "admin.map_data.run_all"
 	ActionAdminMapDataRunStep       = "admin.map_data.run_step"
+	ActionAdminAllowedOrgAdd        = "admin.allowed_org.add"
+	ActionAdminAllowedOrgDelete     = "admin.allowed_org.delete"
 	ActionStaffChannelCreate        = "staff.channel.create"
 	ActionStaffChannelDelete        = "staff.channel.delete"
 	ActionStaffJumpbridgeImport     = "staff.jumpbridge.import"
@@ -40,6 +46,8 @@ const (
 	ActionStaffJumpbridgeAdd        = "staff.jumpbridge.add"
 	ActionStaffJumpbridgeRemove     = "staff.jumpbridge.remove"
 	ActionStaffJumpbridgeUpdate     = "staff.jumpbridge.update"
+	ActionStaffSovWatchlistAdd      = "staff.sov_watchlist.add"
+	ActionStaffSovWatchlistDelete   = "staff.sov_watchlist.delete"
 	ActionTimerCreate               = "timer.create"
 	ActionTimerUpdate               = "timer.update"
 	ActionTimerCancel               = "timer.cancel"

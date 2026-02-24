@@ -11,6 +11,11 @@ import { isClearIntelReport } from "../utils/intelReportUtils";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import HoverCard from "@/components/HoverCard";
 
+type SplitTextChunk =
+  | string
+  | { kind: "system"; text: string; system: IntelReport["systems"][number] }
+  | { kind: "tooltip"; text: string; tooltip: string };
+
 function timeSuffix(minutes: number) {
   if (minutes <= 0) return "now";
   if (minutes > 60) return `${Math.floor(minutes / 60)}h`;
@@ -52,7 +57,7 @@ export default function ReportItem({
     [threatTimings, timePassed],
   );
 
-  const splitText = useMemo(() => {
+  const splitText = useMemo<SplitTextChunk[]>(() => {
     const words = log.text.split(" ");
     return words.map((word) => {
       if (word.length < 3) return word;
@@ -61,12 +66,31 @@ export default function ReportItem({
         system.name.toLowerCase().startsWith(cleaned),
       );
       if (matches.length === 0) return word;
-      if (matches.length === 1) return { text: word, system: matches[0] };
+      if (matches.length === 1) {
+        return { kind: "system", text: word, system: matches[0] };
+      }
       const loaded = matches
         .map((system) => systems[system.system])
-        .filter(Boolean);
-      if (loaded.length === 1) return { text: word, system: loaded[0] };
-      return { text: word, tooltip: "Multiple systems returned" };
+        .filter(
+          (system): system is NonNullable<typeof system> => system != null,
+        );
+      if (loaded.length === 1) {
+        return {
+          kind: "system",
+          text: word,
+          system: {
+            system: loaded[0].system,
+            name: loaded[0].name,
+            constellation: loaded[0].constellation,
+            region: loaded[0].region,
+          },
+        };
+      }
+      return {
+        kind: "tooltip",
+        text: word,
+        tooltip: "Multiple systems returned",
+      };
     });
   }, [log.systems, log.text, systems]);
 
@@ -199,7 +223,7 @@ export default function ReportItem({
               </span>
             );
           }
-          if ("tooltip" in chunk) {
+          if (chunk.kind === "tooltip") {
             return (
               <span
                 key={idx}

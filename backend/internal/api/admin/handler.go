@@ -22,15 +22,17 @@ import (
 	"sentinel2/internal/logging"
 	"sentinel2/internal/middleware"
 	"sentinel2/internal/store"
+	"sentinel2/internal/timers"
 )
 
-func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, auditSvc *audit.Service) *Handler {
+func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, timerSvc *timers.Service, auditSvc *audit.Service) *Handler {
 	return &Handler{
 		App:       app,
 		Refresher: refresher,
 		Provider:  provider,
 		Cleanup:   cleanupSvc,
 		Intel:     intelSvc,
+		Timers:    timerSvc,
 		Audit:     auditSvc,
 	}
 }

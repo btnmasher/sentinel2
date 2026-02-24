@@ -16,6 +16,7 @@ export type MapNavItem = {
   auth?: boolean;
   staff?: boolean;
   admin?: boolean;
+  timers?: boolean;
 };
 
 type MapShellProps = {
@@ -154,12 +155,14 @@ export default function MapShell({
     standaloneAuth,
     authBackend,
     oidcPortalUrl,
+    timersEnabled,
   } = useAppConfigStore(
     useShallow((s) => ({
       loaded: s.loaded,
       standaloneAuth: s.standaloneAuth,
       authBackend: s.authBackend,
       oidcPortalUrl: s.oidcPortalUrl,
+      timersEnabled: s.timersEnabled,
     })),
   );
   const isPanelOpen = panelOpen ?? Boolean(panel);
@@ -170,6 +173,7 @@ export default function MapShell({
       if (item.staff && !(authLoaded && isStaff)) return false;
       if (item.admin && !(authLoaded && isAdmin)) return false;
       if (item.auth && !(authLoaded && isAuthenticated)) return false;
+      if (item.timers && !timersEnabled) return false;
       return true;
     })
     .map((item) => {

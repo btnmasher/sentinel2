@@ -23,7 +23,7 @@ export default function AdminPage() {
                 <JobRunsSection />
               </SectionErrorBoundary>
             </div>
-            <SectionErrorBoundary fallbackTitle="Job Actions">
+            <SectionErrorBoundary fallbackTitle="Admin Actions">
               <JobActionsSection />
             </SectionErrorBoundary>
           </div>

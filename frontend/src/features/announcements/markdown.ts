@@ -1,11 +1,11 @@
 export const markdownToPlainText = (input: string): string =>
   input
-    .replaceAll(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
-    .replaceAll(/`([^`]+)`/g, "$1")
-    .replaceAll(/\*\*([^*]+)\*\*/g, "$1")
-    .replaceAll(/\*([^*]+)\*/g, "$1")
-    .replaceAll(/^#{1,6}\s+/gm, "")
-    .replaceAll(/^[-*]\s+/gm, "")
-    .replaceAll(/\r\n/g, "\n")
-    .replaceAll(/\n+/g, " ")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n+/g, " ")
     .trim();

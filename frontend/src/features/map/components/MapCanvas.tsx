@@ -47,7 +47,7 @@ export default function MapCanvas() {
   const [isDragging, setIsDragging] = useState(false);
   const panStart = useRef<{ x: number; y: number } | null>(null);
   const hasPointerCapture = useRef(false);
-  const lastCenteredSearch = useRef<string | undefined>(undefined);
+  const lastCenteredSearch = useRef<number | undefined>(undefined);
   const [searchClearable, setSearchClearable] = useState(true);
   const hasCentered = useRef(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });

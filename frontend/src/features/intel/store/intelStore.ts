@@ -14,7 +14,7 @@ import {
   normalizeUploaderCountMessage,
 } from "../utils/intelRealtimeUtils";
 
-export const INTEL_STORE_VERSION = 2;
+export const INTEL_STORE_VERSION = 3;
 const MAX_REPORT_AGE_SECONDS = 30 * 60;
 const UPLOADER_RESYNC_THROTTLE_MS = 15_000;
 let uploaderResyncInFlight: Promise<void> | null = null;
@@ -279,7 +279,7 @@ export const useIntelStore = create<IntelState>()(
                   ? res.data.intel
                       .map((report: unknown) => normalizeIntelReport(report))
                       .filter(
-                        (report): report is NonNullable<typeof report> =>
+                        (report: IntelReport | null): report is IntelReport =>
                           report !== null,
                       )
                   : [];
@@ -360,23 +360,12 @@ export const useIntelStore = create<IntelState>()(
           state.logFilters ?? ({} as Partial<IntelFilters>);
         return {
           ...state,
-          reports: Array.isArray(state.reports)
-            ? normalizeReports(state.reports)
-            : [],
-          reportCount:
-            typeof state.reportCount === "number" && state.reportCount > 0
-              ? state.reportCount
-              : Array.isArray(state.reports)
-                ? normalizeReports(state.reports).length
-                : 0,
-          lastIntelSystems:
-            state.lastIntelSystems && typeof state.lastIntelSystems === "object"
-              ? state.lastIntelSystems
-              : {},
-          lastClearSystems:
-            state.lastClearSystems && typeof state.lastClearSystems === "object"
-              ? state.lastClearSystems
-              : {},
+          reports: [],
+          reportCount: 0,
+          lastReports: [],
+          lastIntelSystems: {},
+          lastClearSystems: {},
+          reportsFetchedAt: undefined,
           logFilters: {
             includeSystemLogs: true,
             includeSystemAlarm: true,
@@ -391,10 +380,6 @@ export const useIntelStore = create<IntelState>()(
       },
       partialize: (state) => ({
         logFilters: state.logFilters,
-        reports: normalizeReports(state.reports),
-        reportCount: state.reportCount,
-        lastIntelSystems: state.lastIntelSystems,
-        lastClearSystems: state.lastClearSystems,
       }),
     },
   ),

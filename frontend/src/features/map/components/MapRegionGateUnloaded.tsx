@@ -27,7 +27,7 @@ export default function MapRegionGateUnloaded({ gate }: { gate: Gate }) {
   const gateX = gate[`${loadedSide}_dotlan_x`] ?? gate[`${loadedSide}_metro_x`];
   const gateY = gate[`${loadedSide}_dotlan_y`] ?? gate[`${loadedSide}_metro_y`];
   let direction;
-  if (gateX || gateY) {
+  if (gateX != null && gateY != null) {
     const base = {
       x: loadedRegion.position.x + gateX,
       y: loadedRegion.position.y + gateY,

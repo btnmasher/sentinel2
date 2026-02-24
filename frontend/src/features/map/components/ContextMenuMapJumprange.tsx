@@ -18,10 +18,12 @@ export default function MapJumprangeMenu() {
   const setMenu = useUIStore((s) => s.setContextMenu);
   const menu = useUIStore((s) => s.contextMenu);
 
-  const ranges = Object.values(JUMPRANGES);
-  const noneRange = { name: "None", value: undefined } as const;
+  type JumprangeOption = { name: string; value: number | undefined };
+  const ranges: JumprangeOption[] = Object.values(JUMPRANGES);
+  const noneRange: JumprangeOption = { name: "None", value: undefined };
   const secondaryRanges = ranges.filter(
-    (range) => (jumpranges.primary ?? 0) < range.value,
+    (range) =>
+      range.value !== undefined && (jumpranges.primary ?? 0) < range.value,
   );
 
   return (

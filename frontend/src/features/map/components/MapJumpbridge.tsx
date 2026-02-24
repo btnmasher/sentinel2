@@ -44,22 +44,22 @@ export default function MapJumpbridge({
 
   const bridgedSystems = useMemo(() => {
     if (!systems[jumpbridge.to]) {
-      const missingRegion =
-        jumpbridge.to_region &&
-        REGIONS.find(
-          (region) => region.region === String(jumpbridge.to_region),
-        );
+      const missingRegion = jumpbridge.to_region
+        ? REGIONS.find(
+            (region) => region.region === String(jumpbridge.to_region),
+          )
+        : undefined;
       return {
         from: systems[jumpbridge.from],
         missing: missingRegion,
       };
     }
     if (!systems[jumpbridge.from]) {
-      const missingRegion =
-        jumpbridge.from_region &&
-        REGIONS.find(
-          (region) => region.region === String(jumpbridge.from_region),
-        );
+      const missingRegion = jumpbridge.from_region
+        ? REGIONS.find(
+            (region) => region.region === String(jumpbridge.from_region),
+          )
+        : undefined;
       return {
         from: systems[jumpbridge.to],
         missing: missingRegion,

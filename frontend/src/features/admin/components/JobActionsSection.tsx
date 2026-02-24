@@ -1,16 +1,26 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useConfirm from "@/app/hooks/useConfirm";
 import Panel from "@/components/Panel";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useAdminMapDataStore } from "../store/adminMapDataStore";
 import { ADMIN_MODAL } from "../store/adminStore";
 import { useAdminModal } from "./AdminModals";
 
-type ActionGroup = "map_data" | "characters" | "maintenance";
+type ActionGroup = "map_data" | "characters" | "timer_data" | "maintenance";
+type ActionGroupWithSite = ActionGroup | "site_settings";
+type AdminAction = {
+  label: string;
+  path?: string;
+  confirm?: string;
+  onClick?: () => void;
+};
 
-const GROUP_LABELS: Record<ActionGroup, string> = {
+const GROUP_LABELS: Record<ActionGroupWithSite, string> = {
   map_data: "Map Data",
   characters: "Characters",
+  timer_data: "Timer Data",
   maintenance: "Maintenance",
+  site_settings: "Site Settings",
 };
 
 export default function JobActionsSection() {
@@ -18,11 +28,20 @@ export default function JobActionsSection() {
   const { open: openAnnouncementModal } = useAdminModal(
     ADMIN_MODAL.Announcement,
   );
+  const { open: openAllowedOrganizationsModal } = useAdminModal(
+    ADMIN_MODAL.AllowedOrganizations,
+  );
   const loadingLabel = useAdminMapDataStore((s) => s.loadingLabel);
   const runAction = useAdminMapDataStore((s) => s.runAction);
-  const [group, setGroup] = useState<ActionGroup>("map_data");
+  const timersEnabled = useAppConfigStore((s) => s.timersEnabled);
+  const [group, setGroup] = useState<ActionGroupWithSite>("map_data");
+  const availableGroups = useMemo<[ActionGroupWithSite, string][]>(() => {
+    return (
+      Object.entries(GROUP_LABELS) as [ActionGroupWithSite, string][]
+    ).filter(([key]) => timersEnabled || key !== "timer_data");
+  }, [timersEnabled]);
 
-  const actions = useMemo(() => {
+  const actions = useMemo<AdminAction[]>(() => {
     switch (group) {
       case "characters":
         return [
@@ -38,6 +57,33 @@ export default function JobActionsSection() {
             label: "Run cleanup job",
             path: "/admin/jobs/cleanup",
             confirm: "Start cleanup job now?",
+          },
+        ];
+      case "timer_data":
+        if (!timersEnabled) {
+          return [];
+        }
+        return [
+          {
+            label: "Sync sovereignty campaigns",
+            path: "/admin/jobs/timers/sovereignty-campaign-sync",
+            confirm: "Run sovereignty campaign sync now?",
+          },
+          {
+            label: "Sync structure notifications",
+            path: "/admin/jobs/timers/structure-notifications-sync",
+            confirm: "Run structure notifications sync now?",
+          },
+        ];
+      case "site_settings":
+        return [
+          {
+            label: "Allowed organizations",
+            onClick: () => openAllowedOrganizationsModal(),
+          },
+          {
+            label: "Publish announcement",
+            onClick: () => openAnnouncementModal(),
           },
         ];
       default:
@@ -65,14 +111,25 @@ export default function JobActionsSection() {
           },
         ];
     }
-  }, [group]);
+  }, [
+    group,
+    openAllowedOrganizationsModal,
+    openAnnouncementModal,
+    timersEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!timersEnabled && group === "timer_data") {
+      setGroup("map_data");
+    }
+  }, [group, timersEnabled]);
   const panelActions = (
     <select
       className="select select-xs bg-base-300/70"
       value={group}
-      onChange={(event) => setGroup(event.target.value as ActionGroup)}
+      onChange={(event) => setGroup(event.target.value as ActionGroupWithSite)}
     >
-      {Object.entries(GROUP_LABELS).map(([key, label]) => (
+      {availableGroups.map(([key, label]) => (
         <option key={key} value={key}>
           {label}
         </option>
@@ -82,7 +139,7 @@ export default function JobActionsSection() {
 
   return (
     <Panel
-      title="Job Actions"
+      title="Admin Actions"
       hint="Trigger background jobs and updates."
       actions={panelActions}
       bodyClassName="space-y-4"
@@ -90,20 +147,27 @@ export default function JobActionsSection() {
       <div className="flex flex-wrap gap-2">
         {actions.map((action) => (
           <button
-            key={action.path}
+            key={action.path ?? action.label}
             className="btn btn-xs btn-info btn-outline"
             onClick={() => {
+              if (action.onClick) {
+                action.onClick();
+                return;
+              }
               if (action.confirm) {
+                if (!action.path) return;
+                const actionPath = action.path;
                 requestConfirm({
                   title: action.label,
                   body: action.confirm,
-                  onConfirm: () => runAction(action.label, action.path),
+                  onConfirm: () => runAction(action.label, actionPath),
                   confirmLabel: "Run",
                   cancelLabel: "Cancel",
                   tone: "default",
                 });
                 return;
               }
+              if (!action.path) return;
               void runAction(action.label, action.path);
             }}
             disabled={loadingLabel !== null}
@@ -111,13 +175,6 @@ export default function JobActionsSection() {
             {action.label}
           </button>
         ))}
-        <button
-          className="btn btn-xs btn-outline"
-          onClick={openAnnouncementModal}
-          disabled={loadingLabel !== null}
-        >
-          Publish announcement
-        </button>
       </div>
       {loadingLabel && (
         <p className="text-xs text-slate-400">Running: {loadingLabel}…</p>

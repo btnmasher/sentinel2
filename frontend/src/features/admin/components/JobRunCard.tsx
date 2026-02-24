@@ -3,11 +3,11 @@ import {
   formatDuration,
   getJobStatusClass,
 } from "../utils/formatters";
-import type { JobRunEntry } from "../types";
+import type { JobRun } from "../types";
 import JobStatusBadge from "./JobStatusBadge";
 import HoverCard from "@/components/HoverCard";
 
-const sortSteps = (steps: JobRunEntry[]) =>
+const sortSteps = (steps: JobRun[]) =>
   steps.slice().sort((a, b) => {
     const aTime = Date.parse(a.started_at || "");
     const bTime = Date.parse(b.started_at || "");
@@ -19,7 +19,7 @@ const sortSteps = (steps: JobRunEntry[]) =>
     return aTime - bTime;
   });
 
-const resolveDuration = (parent: JobRunEntry, now: number) =>
+const resolveDuration = (parent: JobRun, now: number) =>
   formatDuration(
     parent.duration_ms && parent.duration_ms > 0
       ? parent.duration_ms
@@ -30,7 +30,7 @@ const resolveDuration = (parent: JobRunEntry, now: number) =>
           : undefined,
   );
 
-const stepStatusDetails = (step: JobRunEntry) =>
+const stepStatusDetails = (step: JobRun) =>
   step.status === "skipped" && step.error
     ? `Skipped: ${step.error}`
     : step.status
@@ -39,7 +39,7 @@ const stepStatusDetails = (step: JobRunEntry) =>
         ? `Error: ${step.error}`
         : "";
 
-function JobStepStatusBadge({ step }: { step: JobRunEntry }) {
+function JobStepStatusBadge({ step }: { step: JobRun }) {
   const details = stepStatusDetails(step);
   const badge = (
     <span
@@ -65,8 +65,8 @@ function JobStepStatusBadge({ step }: { step: JobRunEntry }) {
 }
 
 type JobRunCardProps = {
-  parent: JobRunEntry;
-  steps: JobRunEntry[];
+  parent: JobRun;
+  steps: JobRun[];
   now: number;
   onCancel: (jobId: string) => void;
 };

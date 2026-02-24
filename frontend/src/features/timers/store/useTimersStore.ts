@@ -104,10 +104,7 @@ export const useTimersStore = create<TimersState>((set, get) => ({
 
 function shouldRefreshForRealtimeEvent(event: {
   action?: string;
-  record?: {
-    expires_at?: string;
-    status?: string;
-  };
+  record?: unknown;
 }): boolean {
   if (event.action === "delete") {
     return true;
@@ -116,12 +113,16 @@ function shouldRefreshForRealtimeEvent(event: {
     return false;
   }
 
-  const status = String(event.record?.status ?? "").toLowerCase();
+  const record =
+    event.record && typeof event.record === "object"
+      ? (event.record as Record<string, unknown>)
+      : undefined;
+  const status = String(record?.status ?? "").toLowerCase();
   if (status && status !== "active" && status !== "canceled") {
     return false;
   }
 
-  const expiresAt = String(event.record?.expires_at ?? "");
+  const expiresAt = String(record?.expires_at ?? "");
   const expiresMs = Date.parse(expiresAt);
   if (!Number.isFinite(expiresMs)) {
     return true;

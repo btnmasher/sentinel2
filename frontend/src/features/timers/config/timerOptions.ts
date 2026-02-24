@@ -30,23 +30,34 @@ import {
   TimerStructureType,
 } from "../types";
 
+export enum Tone {
+  Blue = "blue",
+  Yellow = "yellow",
+  Green = "green",
+  Purple = "purple",
+  Gray = "gray",
+  Red = "red",
+  LightBlue = "lightblue",
+  Orange = "orange",
+}
+
 export type StructureTone =
-  | "blue"
-  | "yellow"
-  | "green"
-  | "purple"
-  | "gray"
-  | "red"
-  | "lightblue";
+  | Tone.Blue
+  | Tone.Yellow
+  | Tone.Green
+  | Tone.Purple
+  | Tone.Gray
+  | Tone.Red
+  | Tone.LightBlue;
 export type ContextTone =
-  | "blue"
-  | "yellow"
-  | "green"
-  | "purple"
-  | "gray"
-  | "red"
-  | "orange";
-export type ReplacementTone = "blue" | "green" | "purple" | "gray";
+  | Tone.Blue
+  | Tone.Yellow
+  | Tone.Green
+  | Tone.Purple
+  | Tone.Gray
+  | Tone.Red
+  | Tone.Orange;
+export type ReplacementTone = Tone.Blue | Tone.Green | Tone.Purple | Tone.Gray;
 
 export type StructureOption = {
   value: TimerStructureType;
@@ -69,6 +80,27 @@ export type ContextOption = {
   tone: ContextTone;
 };
 
+export type HostilityOption = {
+  value: TimerStandingType;
+  label: string;
+  icon: LucideIcon;
+  tone: StructureTone;
+};
+
+export type ReplacementOption = {
+  value: TimerReplacementAction;
+  label: string;
+  icon: LucideIcon;
+  tone: ReplacementTone;
+};
+
+export type SeverityOption = {
+  value: TimerSeverity;
+  label: string;
+  tone: StructureTone;
+  icon: LucideIcon;
+};
+
 export const structureGroups: StructureGroup[] = [
   {
     group: "Citadels",
@@ -77,19 +109,19 @@ export const structureGroups: StructureGroup[] = [
         value: TimerStructureType.UpwellCitadelKeepstar,
         label: "Keepstar",
         icon: Building2,
-        tone: "blue",
+        tone: Tone.Blue,
       },
       {
         value: TimerStructureType.UpwellCitadelFortizar,
         label: "Fortizar",
         icon: Castle,
-        tone: "blue",
+        tone: Tone.Blue,
       },
       {
         value: TimerStructureType.UpwellCitadelAstrahus,
         label: "Astrahus",
         icon: House,
-        tone: "blue",
+        tone: Tone.Blue,
       },
     ],
   },
@@ -100,19 +132,19 @@ export const structureGroups: StructureGroup[] = [
         value: TimerStructureType.UpwellEngineeringSotiyo,
         label: "Sotiyo",
         icon: Factory,
-        tone: "yellow",
+        tone: Tone.Yellow,
       },
       {
         value: TimerStructureType.UpwellEngineeringAzbel,
         label: "Azbel",
         icon: Factory,
-        tone: "yellow",
+        tone: Tone.Yellow,
       },
       {
         value: TimerStructureType.UpwellEngineeringRaitaru,
         label: "Raitaru",
         icon: Factory,
-        tone: "yellow",
+        tone: Tone.Yellow,
       },
     ],
   },
@@ -123,13 +155,13 @@ export const structureGroups: StructureGroup[] = [
         value: TimerStructureType.UpwellRefineryTatara,
         label: "Tatara",
         icon: Factory,
-        tone: "yellow",
+        tone: Tone.Yellow,
       },
       {
         value: TimerStructureType.UpwellRefineryAthanor,
         label: "Athanor",
         icon: Factory,
-        tone: "yellow",
+        tone: Tone.Yellow,
       },
     ],
   },
@@ -140,19 +172,19 @@ export const structureGroups: StructureGroup[] = [
         value: TimerStructureType.AnsiblexJumpBridge,
         label: "Ansiblex Jump Gate",
         icon: Circle,
-        tone: "green",
+        tone: Tone.Green,
       },
       {
         value: TimerStructureType.PharoluxCynoBeacon,
         label: "Pharolux Cyno Beacon",
         icon: CircleDot,
-        tone: "green",
+        tone: Tone.Green,
       },
       {
         value: TimerStructureType.TenebrexCynoJammer,
         label: "Tenebrex Cyno Jammer",
         icon: CircleDot,
-        tone: "green",
+        tone: Tone.Green,
       },
     ],
   },
@@ -163,13 +195,13 @@ export const structureGroups: StructureGroup[] = [
         value: TimerStructureType.OrbitalSkyhook,
         label: "Orbital Skyhook",
         icon: TowerControl,
-        tone: "purple",
+        tone: Tone.Purple,
       },
       {
         value: TimerStructureType.SovereigntyHub,
         label: "Sovereignty Hub",
         icon: Building2,
-        tone: "purple",
+        tone: Tone.Purple,
       },
     ],
   },
@@ -180,31 +212,31 @@ export const structureGroups: StructureGroup[] = [
         value: TimerStructureType.PlayerOwnedStarbase,
         label: "Player-owned Starbase (POS)",
         icon: Antenna,
-        tone: "lightblue",
+        tone: Tone.LightBlue,
       },
       {
         value: TimerStructureType.MetenoxMoonDrill,
         label: "Metenox Moon Drill",
         icon: Moon,
-        tone: "gray",
+        tone: Tone.Gray,
       },
       {
         value: TimerStructureType.MercenaryDen,
         label: "Mercenary Den",
         icon: ShieldAlert,
-        tone: "red",
+        tone: Tone.Red,
       },
       {
         value: TimerStructureType.CustomsOfficePoco,
         label: "Customs Office (POCO)",
         icon: DollarSign,
-        tone: "gray",
+        tone: Tone.Gray,
       },
       {
         value: TimerStructureType.Custom,
         label: "Other/Misc",
         icon: CircleHelp,
-        tone: "gray",
+        tone: Tone.Gray,
       },
     ],
   },
@@ -217,15 +249,18 @@ export const structureByValue = new Map(
   structureOptions.map((option) => [option.value, option]),
 );
 
-const upwellCoreStructures = new Set<TimerStructureType>([
-  TimerStructureType.UpwellCitadelAstrahus,
+const upwellDualReinforcementStructures = new Set<TimerStructureType>([
   TimerStructureType.UpwellCitadelFortizar,
   TimerStructureType.UpwellCitadelKeepstar,
-  TimerStructureType.UpwellEngineeringRaitaru,
-  TimerStructureType.UpwellEngineeringAzbel,
   TimerStructureType.UpwellEngineeringSotiyo,
-  TimerStructureType.UpwellRefineryAthanor,
+  TimerStructureType.UpwellEngineeringAzbel,
   TimerStructureType.UpwellRefineryTatara,
+]);
+
+const upwellSingleReinforcementStructures = new Set<TimerStructureType>([
+  TimerStructureType.UpwellCitadelAstrahus,
+  TimerStructureType.UpwellEngineeringRaitaru,
+  TimerStructureType.UpwellRefineryAthanor,
 ]);
 
 const navigationStructures = new Set<TimerStructureType>([
@@ -243,6 +278,71 @@ const singleExitReinforcementStructures = new Set<TimerStructureType>([
   TimerStructureType.PlayerOwnedStarbase,
 ]);
 
+export function isSingleStageReinforcementStructure(
+  structureType: TimerStructureType | "",
+): boolean {
+  return (
+    structureType !== "" &&
+    (singleExitReinforcementStructures.has(structureType) ||
+      upwellSingleReinforcementStructures.has(structureType) ||
+      navigationStructures.has(structureType))
+  );
+}
+
+const anchoringTimerStructures = new Set<TimerStructureType>([
+  TimerStructureType.UpwellCitadelKeepstar,
+  TimerStructureType.UpwellCitadelFortizar,
+  TimerStructureType.UpwellCitadelAstrahus,
+  TimerStructureType.UpwellEngineeringSotiyo,
+  TimerStructureType.UpwellEngineeringAzbel,
+  TimerStructureType.UpwellEngineeringRaitaru,
+  TimerStructureType.UpwellRefineryTatara,
+  TimerStructureType.UpwellRefineryAthanor,
+  TimerStructureType.AnsiblexJumpBridge,
+  TimerStructureType.PharoluxCynoBeacon,
+  TimerStructureType.TenebrexCynoJammer,
+  TimerStructureType.OrbitalSkyhook,
+  TimerStructureType.MetenoxMoonDrill,
+  TimerStructureType.CustomsOfficePoco,
+  TimerStructureType.PlayerOwnedStarbase,
+]);
+
+const unanchoringTimerStructures = new Set<TimerStructureType>([
+  ...anchoringTimerStructures,
+]);
+
+const extractionTimerStructures = new Set<TimerStructureType>([
+  TimerStructureType.UpwellRefineryAthanor,
+  TimerStructureType.UpwellRefineryTatara,
+  TimerStructureType.OrbitalSkyhook,
+  TimerStructureType.MetenoxMoonDrill,
+  TimerStructureType.MercenaryDen,
+]);
+
+function supportsAnchoringTimer(
+  structureType: TimerStructureType | "",
+): boolean {
+  return (
+    structureType === TimerStructureType.Custom ||
+    (structureType !== "" && anchoringTimerStructures.has(structureType))
+  );
+}
+
+function supportsUnanchoringTimer(
+  structureType: TimerStructureType | "",
+): boolean {
+  return (
+    structureType === TimerStructureType.Custom ||
+    (structureType !== "" && unanchoringTimerStructures.has(structureType))
+  );
+}
+
+function supportsExtractionTimer(
+  structureType: TimerStructureType | "",
+): boolean {
+  return structureType !== "" && extractionTimerStructures.has(structureType);
+}
+
 export const planetOnlyStructureTypes = new Set<TimerStructureType>([
   TimerStructureType.OrbitalSkyhook,
   TimerStructureType.MercenaryDen,
@@ -252,65 +352,65 @@ export const moonOnlyStructureTypes = new Set<TimerStructureType>([
   TimerStructureType.MetenoxMoonDrill,
 ]);
 
-export const hostilityOptions = [
+export const hostilityOptions: HostilityOption[] = [
   {
     value: TimerStandingType.Ours,
     label: "Ours",
     icon: ShieldCheck,
-    tone: "blue",
+    tone: Tone.Blue,
   },
   {
     value: TimerStandingType.Friendly,
     label: "Friendly",
     icon: Handshake,
-    tone: "green",
+    tone: Tone.Green,
   },
   {
     value: TimerStandingType.Neutral,
     label: "Neutral",
     icon: Flag,
-    tone: "gray",
+    tone: Tone.Gray,
   },
   {
     value: TimerStandingType.Complicated,
     label: "It's Complicated",
     icon: AlertTriangle,
-    tone: "yellow",
+    tone: Tone.Yellow,
   },
   {
     value: TimerStandingType.Hostile,
     label: "Hostile",
     icon: Swords,
-    tone: "red",
+    tone: Tone.Red,
   },
-] as const;
+];
 
-export const replacementOptions = [
+export const replacementOptions: ReplacementOption[] = [
   {
     value: TimerReplacementAction.NotReplaceable,
     label: "No Replacement",
     icon: ShieldAlert,
-    tone: "gray",
+    tone: Tone.Gray,
   },
   {
     value: TimerReplacementAction.LogiReplacement,
     label: "Logi Replacement",
     icon: Wrench,
-    tone: "blue",
+    tone: Tone.Blue,
   },
   {
     value: TimerReplacementAction.CorpReplacement,
     label: "Corp Replacement",
     icon: Building2,
-    tone: "green",
+    tone: Tone.Green,
   },
   {
     value: TimerReplacementAction.AllianceReplacement,
     label: "Alliance Replacement",
     icon: Landmark,
-    tone: "purple",
+    tone: Tone.Purple,
   },
-] as const;
+];
 export const hostilityByValue = new Map(
   hostilityOptions.map((option) => [option.value, option]),
 );
@@ -318,32 +418,32 @@ export const replacementByValue = new Map(
   replacementOptions.map((option) => [option.value, option]),
 );
 
-export const severityOptions = [
+export const severityOptions: SeverityOption[] = [
   {
     value: TimerSeverity.Low,
     label: "Low",
-    tone: "blue",
+    tone: Tone.Blue,
     icon: Circle,
   },
   {
     value: TimerSeverity.Medium,
     label: "Medium",
-    tone: "green",
+    tone: Tone.Green,
     icon: CircleDot,
   },
   {
     value: TimerSeverity.High,
     label: "High",
-    tone: "yellow",
+    tone: Tone.Yellow,
     icon: AlertTriangle,
   },
   {
     value: TimerSeverity.Critical,
     label: "Critical",
-    tone: "red",
+    tone: Tone.Red,
     icon: Swords,
   },
-] as const;
+];
 export const severityByValue = new Map(
   severityOptions.map((option) => [option.value, option]),
 );
@@ -359,13 +459,20 @@ export const timerKindLabels: Record<TimerKind, string> = {
 function reinforcementToneForStage(stage: TimerStageLabel): ContextTone {
   switch (stage) {
     case TimerStageLabel.Armor:
-      return "yellow";
-    case TimerStageLabel.Structure:
-      return "red";
+      return Tone.Yellow;
+    case TimerStageLabel.Hull:
+    case TimerStageLabel.Reinforcement:
+      return Tone.Red;
     case TimerStageLabel.InitialVulnerability:
-      return "purple";
+      return Tone.Purple;
+    case TimerStageLabel.Anchoring:
+      return Tone.Blue;
+    case TimerStageLabel.Unanchoring:
+      return Tone.Orange;
+    case TimerStageLabel.ExtractionWindow:
+      return Tone.Green;
     default:
-      return "gray";
+      return Tone.Gray;
   }
 }
 
@@ -375,8 +482,10 @@ function reinforcementSelectionForStage(
   switch (stage) {
     case TimerStageLabel.Armor:
       return TimerContextSelection.Armor;
-    case TimerStageLabel.Structure:
+    case TimerStageLabel.Hull:
       return TimerContextSelection.Hull;
+    case TimerStageLabel.Reinforcement:
+      return TimerContextSelection.Reinforcement;
     case TimerStageLabel.InitialVulnerability:
       return TimerContextSelection.InitialVulnerability;
     default:
@@ -389,15 +498,24 @@ export function stageOptionsFor(
   timerKind: TimerKind,
 ): StageOption[] {
   if (timerKind === TimerKind.Anchoring) {
+    if (!supportsAnchoringTimer(structureType)) {
+      return [
+        { value: TimerStageLabel.NotApplicable, label: "Not Applicable" },
+      ];
+    }
     return [{ value: TimerStageLabel.Anchoring, label: "Anchoring" }];
   }
   if (timerKind === TimerKind.Unanchoring) {
+    if (!supportsUnanchoringTimer(structureType)) {
+      return [
+        { value: TimerStageLabel.NotApplicable, label: "Not Applicable" },
+      ];
+    }
     return [{ value: TimerStageLabel.Unanchoring, label: "Unanchoring" }];
   }
   if (timerKind === TimerKind.Extraction) {
     return [
       { value: TimerStageLabel.ExtractionWindow, label: "Extraction Window" },
-      { value: TimerStageLabel.PickupWindow, label: "Pickup Window" },
     ];
   }
   if (timerKind === TimerKind.Custom) {
@@ -406,10 +524,10 @@ export function stageOptionsFor(
   if (structureType === TimerStructureType.Custom) {
     return [{ value: TimerStageLabel.NotApplicable, label: "Not Applicable" }];
   }
-  if (structureType && upwellCoreStructures.has(structureType)) {
+  if (structureType && upwellDualReinforcementStructures.has(structureType)) {
     return [
       { value: TimerStageLabel.Armor, label: "Armor" },
-      { value: TimerStageLabel.Structure, label: "Hull" },
+      { value: TimerStageLabel.Hull, label: "Hull" },
       {
         value: TimerStageLabel.InitialVulnerability,
         label: "Initial Vulnerability",
@@ -419,8 +537,17 @@ export function stageOptionsFor(
   }
   if (structureType && navigationStructures.has(structureType)) {
     return [
-      { value: TimerStageLabel.Armor, label: "Armor" },
-      { value: TimerStageLabel.Structure, label: "Hull" },
+      { value: TimerStageLabel.Reinforcement, label: "Reinforcement" },
+      {
+        value: TimerStageLabel.InitialVulnerability,
+        label: "Initial Vulnerability",
+      },
+      { value: TimerStageLabel.NotApplicable, label: "Not Applicable" },
+    ];
+  }
+  if (structureType && upwellSingleReinforcementStructures.has(structureType)) {
+    return [
+      { value: TimerStageLabel.Reinforcement, label: "Reinforcement" },
       {
         value: TimerStageLabel.InitialVulnerability,
         label: "Initial Vulnerability",
@@ -430,7 +557,7 @@ export function stageOptionsFor(
   }
   if (structureType && singleExitReinforcementStructures.has(structureType)) {
     return [
-      { value: TimerStageLabel.Structure, label: "Hull" },
+      { value: TimerStageLabel.Reinforcement, label: "Reinforcement" },
       {
         value: TimerStageLabel.InitialVulnerability,
         label: "Initial Vulnerability",
@@ -454,35 +581,56 @@ export function contextOptionsFor(
     stageLabel: stage.value,
     tone: reinforcementToneForStage(stage.value),
   }));
+  const anchoringOptions: ContextOption[] = supportsAnchoringTimer(
+    structureType,
+  )
+    ? [
+        {
+          value: TimerContextSelection.Anchoring,
+          label: "Anchoring",
+          timerKind: TimerKind.Anchoring,
+          stageLabel: TimerStageLabel.Anchoring,
+          tone: Tone.Blue,
+        },
+      ]
+    : [];
+  const unanchoringOptions: ContextOption[] = supportsUnanchoringTimer(
+    structureType,
+  )
+    ? [
+        {
+          value: TimerContextSelection.Unanchoring,
+          label: "Unanchoring",
+          timerKind: TimerKind.Unanchoring,
+          stageLabel: TimerStageLabel.Unanchoring,
+          tone: Tone.Orange,
+        },
+      ]
+    : [];
+  const extractionOptions: ContextOption[] = supportsExtractionTimer(
+    structureType,
+  )
+    ? [
+        {
+          value: TimerContextSelection.ExtractionWindow,
+          label: "Extraction",
+          timerKind: TimerKind.Extraction,
+          stageLabel: TimerStageLabel.ExtractionWindow,
+          tone: Tone.Green,
+        },
+      ]
+    : [];
   return [
     ...reinforcement,
-    {
-      value: TimerContextSelection.Anchoring,
-      label: "Anchoring",
-      timerKind: TimerKind.Anchoring,
-      stageLabel: TimerStageLabel.Anchoring,
-      tone: "blue",
-    },
-    {
-      value: TimerContextSelection.Unanchoring,
-      label: "Unanchoring",
-      timerKind: TimerKind.Unanchoring,
-      stageLabel: TimerStageLabel.Unanchoring,
-      tone: "orange",
-    },
-    {
-      value: TimerContextSelection.ExtractionWindow,
-      label: "Extraction",
-      timerKind: TimerKind.Extraction,
-      stageLabel: TimerStageLabel.ExtractionWindow,
-      tone: "green",
-    },
+    ...anchoringOptions,
+    ...unanchoringOptions,
+    ...extractionOptions,
     {
       value: TimerContextSelection.Custom,
       label: "Custom",
       timerKind: TimerKind.Custom,
       stageLabel: TimerStageLabel.Custom,
-      tone: "gray",
+      tone: Tone.Gray,
     },
   ];
 }
@@ -497,7 +645,11 @@ const timerContextMeta: Record<
   },
   [TimerContextSelection.Hull]: {
     timerKind: TimerKind.Reinforcement,
-    stageLabel: TimerStageLabel.Structure,
+    stageLabel: TimerStageLabel.Hull,
+  },
+  [TimerContextSelection.Reinforcement]: {
+    timerKind: TimerKind.Reinforcement,
+    stageLabel: TimerStageLabel.Reinforcement,
   },
   [TimerContextSelection.InitialVulnerability]: {
     timerKind: TimerKind.Reinforcement,
@@ -518,10 +670,6 @@ const timerContextMeta: Record<
   [TimerContextSelection.ExtractionWindow]: {
     timerKind: TimerKind.Extraction,
     stageLabel: TimerStageLabel.ExtractionWindow,
-  },
-  [TimerContextSelection.PickupWindow]: {
-    timerKind: TimerKind.Extraction,
-    stageLabel: TimerStageLabel.PickupWindow,
   },
   [TimerContextSelection.Custom]: {
     timerKind: TimerKind.Custom,

@@ -37,6 +37,8 @@ type CreateInput struct {
 	OwnerAllianceName      string
 	OwnerAllianceTicker    string
 	SkyhookFullnessPct     *int
+	AttackersScorePct      *int
+	DefenderScorePct       *int
 	Stage                  int
 	TotalStages            int
 	Severity               string
@@ -132,6 +134,14 @@ type EntitySearchRequester struct {
 	CharacterID int
 	AccessToken string
 }
+
+type EntitySearchScope string
+
+const (
+	EntitySearchScopeBoth        EntitySearchScope = "both"
+	EntitySearchScopeAlliance    EntitySearchScope = "alliance"
+	EntitySearchScopeCorporation EntitySearchScope = "corporation"
+)
 
 type MoonSearchItem struct {
 	ID       int    `json:"id"`

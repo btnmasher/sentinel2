@@ -24,6 +24,7 @@ const (
 	defaultSearchSystemsLimit  = 20
 	defaultSearchEntitiesLimit = 20
 	defaultMoonListLimit       = 200
+	scorePercentMax            = 100
 	tokenRefreshLeeway         = 2 * time.Minute
 )
 
@@ -87,7 +88,7 @@ func (h *Handler) Parse(c *core.RequestEvent) error {
 		System:     result.System,
 		SystemID:   systemID,
 		TimerKind:  result.TimerKind,
-		Standing:   "hostile",
+		Standing:   timerssvc.TimerStandingHostile,
 		ExpiresAt:  result.ExpiresAt.Format(time.RFC3339),
 		RawExtract: result.Raw,
 	})
@@ -106,15 +107,27 @@ func (h *Handler) SearchSystems(c *core.RequestEvent) error {
 func (h *Handler) SearchEntities(c *core.RequestEvent) error {
 	query := strings.TrimSpace(c.Request.URL.Query().Get("query"))
 	limit := parsePositiveInt(c.Request.URL.Query().Get("limit"), defaultSearchEntitiesLimit)
+	scope := parseEntitySearchScope(c.Request.URL.Query().Get("scope"))
 	requester, requesterErr := h.entitySearchRequester(c)
 	if requesterErr != nil {
 		return router.NewInternalServerError("Failed to resolve requester context.", logging.Fields{"error": requesterErr.Error()})
 	}
-	entities, err := h.Service.SearchEntities(c.Request.Context(), query, limit, requester)
+	entities, err := h.Service.SearchEntitiesWithScope(c.Request.Context(), query, limit, requester, scope)
 	if err != nil {
 		return router.NewInternalServerError("Failed to search entities.", logging.Fields{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, entitySearchResponse{Entities: entities})
+}
+
+func parseEntitySearchScope(raw string) timerssvc.EntitySearchScope {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case string(timerssvc.EntitySearchScopeAlliance):
+		return timerssvc.EntitySearchScopeAlliance
+	case string(timerssvc.EntitySearchScopeCorporation):
+		return timerssvc.EntitySearchScopeCorporation
+	default:
+		return timerssvc.EntitySearchScopeBoth
+	}
 }
 
 func (h *Handler) entitySearchRequester(c *core.RequestEvent) (*timerssvc.EntitySearchRequester, error) {
@@ -402,6 +415,8 @@ func isUserInputError(err error) bool {
 		errors.Is(err, timerssvc.ErrSystemNotFound) ||
 		errors.Is(err, timerssvc.ErrMoonRequired) ||
 		errors.Is(err, timerssvc.ErrPlanetRequired) ||
+		errors.Is(err, timerssvc.ErrInvalidStageLabel) ||
+		errors.Is(err, timerssvc.ErrInvalidTimerContext) ||
 		errors.Is(err, timerssvc.ErrInvalidSkyhookFullnessPercentage) ||
 		errors.Is(err, timerssvc.ErrMissingExpiresAt) ||
 		errors.Is(err, timerssvc.ErrMissingDate) ||
@@ -438,6 +453,8 @@ func timerToDTO(record *core.Record) timerDTO {
 		OwnerAllianceName:      record.GetString("owner_alliance_name"),
 		OwnerAllianceTicker:    record.GetString("owner_alliance_ticker"),
 		SkyhookFullnessPct:     recordSkyhookFullnessPct(record),
+		AttackersScorePct:      recordScorePct(record, "attackers_score_pct"),
+		DefenderScorePct:       recordScorePct(record, "defender_score_pct"),
 		Stage:                  record.GetInt("stage"),
 		TotalStages:            record.GetInt("total_stages"),
 		Severity:               record.GetString("severity"),
@@ -449,6 +466,7 @@ func timerToDTO(record *core.Record) timerDTO {
 		RawText:                record.GetString("raw_text"),
 		ReplacementAction:      record.GetString("replacement_action"),
 		CreatedBy:              record.GetString("created_by"),
+		CreatedByName:          record.GetString("created_by_name"),
 		CanceledBy:             record.GetString("canceled_by"),
 		CanceledAt:             record.GetString("canceled_at"),
 		Created:                record.GetString("created"),
@@ -484,5 +502,13 @@ func recordSkyhookFullnessPct(record *core.Record) int {
 		return 0
 	}
 	value := int(math.Round(record.GetFloat("skyhook_fullness_pct")))
-	return min(100, max(0, value))
+	return min(scorePercentMax, max(0, value))
+}
+
+func recordScorePct(record *core.Record, field string) int {
+	if record == nil {
+		return 0
+	}
+	value := int(math.Round(record.GetFloat(field)))
+	return min(scorePercentMax, max(0, value))
 }

@@ -8,7 +8,7 @@ import CharacterLocationRefresher from "./CharacterLocationRefresher";
 const MAP_NAV_ITEMS: MapNavItem[] = [
   { label: "Intel", to: "/" },
   { label: "Navigation", to: "/nav" },
-  { label: "Timers", to: "/timers" },
+  { label: "Timers", to: "/timers", timers: true },
   { label: "Settings", to: "/settings" },
   { label: "Profile", to: "/profile", auth: true },
   { label: "Uploader", to: "/uploader" },

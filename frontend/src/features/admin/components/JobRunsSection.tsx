@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import useConfirm from "@/app/hooks/useConfirm";
-import PaginationControls from "@/components/PaginationControls";
+import CursorPagination from "@/components/CursorPagination";
 import Panel from "@/components/Panel";
 import ShadowedScrollArea from "@/components/ShadowedScrollArea";
 import { useAdminJobRunsStore } from "../store/adminJobRunsStore";
@@ -30,8 +30,10 @@ export default function JobRunsSection() {
     setDateRange,
     startDate,
     endDate,
+    includeHidden,
     jobKindExclusions,
     setJobKinds,
+    setIncludeHidden,
     subscribe,
     cancelJob,
   } = useAdminJobRunsStore(
@@ -44,8 +46,10 @@ export default function JobRunsSection() {
       setDateRange: s.setDateRange,
       startDate: s.startDate,
       endDate: s.endDate,
+      includeHidden: s.includeHidden,
       jobKindExclusions: s.jobKindExclusions,
       setJobKinds: s.setJobKinds,
+      setIncludeHidden: s.setIncludeHidden,
       subscribe: s.subscribe,
       cancelJob: s.cancelJob,
     })),
@@ -69,6 +73,8 @@ export default function JobRunsSection() {
       { id: "map_data_update", label: "Map Data Update" },
       { id: "map_data_step", label: "Map Data Step" },
       { id: "character_refresh", label: "Character Refresh" },
+      { id: "sov_campaign_sync", label: "Sovereignty Campaign Sync" },
+      { id: "skyhook_sync", label: "Structure Notifications Sync" },
       { id: "cleanup", label: "Cleanup" },
     ],
     [],
@@ -85,6 +91,7 @@ export default function JobRunsSection() {
     endDate ||
     startHour !== undefined ||
     endHour !== undefined ||
+    includeHidden ||
     jobKindExclusions.length > 0,
   );
 
@@ -158,6 +165,18 @@ export default function JobRunsSection() {
           label="Job types"
           buttonClassName="min-w-[160px]"
         />
+        <label className="inline-flex items-center gap-1.5 rounded-md border border-slate-700/70 px-2 py-1 text-xs">
+          <input
+            type="checkbox"
+            className="toggle toggle-xs toggle-primary"
+            checked={includeHidden}
+            onChange={(event) => {
+              setIncludeHidden(event.target.checked);
+              void loadJobs(1, { silent: false });
+            }}
+          />
+          Show hidden jobs
+        </label>
       </div>
       {jobLoading && <p className="text-xs text-slate-400">Loading jobs…</p>}
       <div className="flex-1 min-h-0 overflow-hidden">
@@ -185,7 +204,7 @@ export default function JobRunsSection() {
         )}
       </div>
       {(jobPage > 1 || jobHasMore) && (
-        <PaginationControls
+        <CursorPagination
           page={jobPage}
           hasMore={jobHasMore}
           loading={jobLoading}

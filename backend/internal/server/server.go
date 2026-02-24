@@ -44,6 +44,7 @@ type dependencies struct {
 	cleanup            *cleanup.Service
 	staffChannels      *staffapi.ChannelsHandler
 	staffJumpbridges   *staffapi.JumpbridgeHandler
+	staffSovWatchlist  *staffapi.SovereigntyCampaignWatchlistHandler
 	adminMapDataUpdate *adminapi.MapUpdateHandler
 	characterRefresher *auth.CharacterRefresher
 	admin              *adminapi.Handler
@@ -99,9 +100,10 @@ func Run(cfg *config.Config) error {
 	cleanupSvc := cleanup.New(app)
 	staffChannels := staffapi.NewChannelsHandler(app, auditSvc)
 	staffJumpbridges := staffapi.NewJumpbridgeHandler(app, jumpbridgeService, auditSvc)
+	staffSovWatchlist := staffapi.NewSovereigntyCampaignWatchlistHandler(app, auditSvc)
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
-	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, auditSvc)
+	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, timerService, auditSvc)
 	timers := timerapi.NewHandler(timerService, auditSvc, provider)
 	uploaderReleases := uploaderrelease.New(app, cfg)
 	uploaderHandler := uploaderapi.NewHandler(uploaderReleases)
@@ -120,6 +122,7 @@ func Run(cfg *config.Config) error {
 		cleanup:            cleanupSvc,
 		staffChannels:      staffChannels,
 		staffJumpbridges:   staffJumpbridges,
+		staffSovWatchlist:  staffSovWatchlist,
 		adminMapDataUpdate: adminMapDataUpdate,
 		characterRefresher: characterRefresher,
 		admin:              admin,

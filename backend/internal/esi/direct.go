@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	goesi "github.com/fnt-eve/goesi-openapi"
@@ -100,65 +101,15 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 	allianceID = 0
 
 	retryErr := retry.Do(ctx, publicRetryBackoff(), func(ctx context.Context) error {
-		e.limiter.wait(ctx)
-		e.throttle.wait(ctx)
-
-		request := e.public.CharacterAPI.GetCharactersCharacterId(ctx, int64(characterID))
-		if etag, ok := e.cache.etag(characterID); ok {
-			request = request.IfNoneMatch(etag)
-		}
-		resp, httpResp, respErr := request.Execute()
-		defer closeResponseBody(httpResp)
-
-		status := httpStatus(httpResp)
-		if httpResp != nil {
-			e.throttle.update(httpResp)
-		}
-
-		if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
-			if cached, ok := e.cache.getAny(characterID); ok {
-				e.cache.refreshExpiry(characterID, httpResp)
-				corpID = cached.CorporationID
-				allianceID = cached.AllianceID
-				e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
-				return nil
+		nextCorpID, nextAllianceID, retryable, attemptErr := e.characterAffiliationAttempt(ctx, characterID, operation, charID, start)
+		if attemptErr != nil {
+			if retryable {
+				return retry.RetryableError(attemptErr)
 			}
-			err := fmt.Errorf("%w: cache miss on 304 response", ErrNotModified)
-			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
-			return retry.RetryableError(err)
+			return attemptErr
 		}
-
-		if respErr != nil {
-			e.logRequest(operation, "GET", charID, status, start, respErr)
-			err := fmt.Errorf("character fetch failed (character_id=%d): %w", characterID, respErr)
-			if shouldRetryPublicESI(httpResp, respErr) {
-				return retry.RetryableError(err)
-			}
-			return err
-		}
-		if httpResp == nil {
-			err := fmt.Errorf("character fetch failed: missing response")
-			e.logRequest(operation, "GET", charID, 0, start, err)
-			return retry.RetryableError(err)
-		}
-		if httpResp.StatusCode >= http.StatusBadRequest {
-			err := fmt.Errorf("character fetch failed: %s", httpResp.Status)
-			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
-			if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= http.StatusInternalServerError {
-				return retry.RetryableError(err)
-			}
-			return err
-		}
-		if resp == nil {
-			err := fmt.Errorf("character fetch failed: empty response")
-			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
-			return retry.RetryableError(err)
-		}
-
-		corpID = int(resp.GetCorporationId())
-		allianceID = int(resp.GetAllianceId())
-		e.cache.set(characterID, corpID, allianceID, httpResp)
-		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
+		corpID = nextCorpID
+		allianceID = nextAllianceID
 		return nil
 	})
 	if retryErr != nil {
@@ -167,13 +118,62 @@ func (e *ESIDirectClient) CharacterAffiliation(ctx context.Context, characterID 
 	return corpID, allianceID, nil
 }
 
-func (e *ESIDirectClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool) (corporationIDs, allianceIDs []int, err error) {
+func (e *ESIDirectClient) CharacterNotifications(ctx context.Context, characterID int, accessToken, ifNoneMatch string) (notifications []CharacterNotification, etag string, notModified bool, err error) {
+	if e == nil {
+		return []CharacterNotification{}, "", false, fmt.Errorf("esi direct client not configured")
+	}
+	start := time.Now()
+	client := e.authenticatedClient(accessToken)
+	request := client.CharacterAPI.GetCharactersCharacterIdNotifications(ctx, int64(characterID))
+	if strings.TrimSpace(ifNoneMatch) != "" {
+		request = request.IfNoneMatch(ifNoneMatch)
+	}
+	e.limiter.wait(ctx)
+	e.throttle.wait(ctx)
+	response, httpResp, respErr := request.Execute()
+	defer closeResponseBody(httpResp)
+	if httpResp != nil {
+		e.throttle.update(httpResp)
+	}
+	etag = ""
+	if httpResp != nil {
+		etag = strings.TrimSpace(httpResp.Header.Get("ETag"))
+	}
+	if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
+		e.logRequest("characters.notifications", "GET", strconv.Itoa(characterID), http.StatusNotModified, start, nil)
+		return []CharacterNotification{}, etag, true, nil
+	}
+	if respErr != nil {
+		if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
+			e.logRequest("characters.notifications", "GET", strconv.Itoa(characterID), httpStatus(httpResp), start, ErrRateLimited)
+			return []CharacterNotification{}, etag, false, ErrRateLimited
+		}
+		e.logRequest("characters.notifications", "GET", strconv.Itoa(characterID), httpStatus(httpResp), start, respErr)
+		return []CharacterNotification{}, etag, false, respErr
+	}
+	result := make([]CharacterNotification, 0, len(response))
+	for _, item := range response {
+		result = append(result, CharacterNotification{
+			ID:        item.GetNotificationId(),
+			Type:      item.GetType(),
+			Timestamp: item.GetTimestamp(),
+			Text:      item.GetText(),
+		})
+	}
+	e.logRequest("characters.notifications", "GET", strconv.Itoa(characterID), httpStatus(httpResp), start, nil)
+	return result, etag, false, nil
+}
+
+func (e *ESIDirectClient) SearchOrganizations(ctx context.Context, characterID int, accessToken, query string, strict bool, categories []string) (corporationIDs, allianceIDs []int, err error) {
 	if e == nil {
 		return []int{}, []int{}, fmt.Errorf("esi direct client not configured")
 	}
 	q, token, ok := normalizeCharacterSearchInput(characterID, accessToken, query)
 	if !ok {
 		return []int{}, []int{}, nil
+	}
+	if len(categories) == 0 {
+		categories = []string{"corporation", "alliance"}
 	}
 
 	client := e.authenticatedClient(token)
@@ -183,7 +183,7 @@ func (e *ESIDirectClient) SearchOrganizations(ctx context.Context, characterID i
 		e.throttle.wait(ctx)
 		response, httpResp, respErr := client.SearchAPI.
 			GetCharactersCharacterIdSearch(ctx, int64(characterID)).
-			Categories([]string{"corporation", "alliance"}).
+			Categories(categories).
 			Search(q).
 			Strict(strict).
 			Execute()
@@ -237,6 +237,69 @@ func (e *ESIDirectClient) ThrottleDelay() time.Duration {
 		return 0
 	}
 	return e.throttle.delay()
+}
+
+func (e *ESIDirectClient) characterAffiliationAttempt(
+	ctx context.Context,
+	characterID int,
+	operation, charID string,
+	start time.Time,
+) (corpID, allianceID int, retryable bool, err error) {
+	e.limiter.wait(ctx)
+	e.throttle.wait(ctx)
+
+	request := e.public.CharacterAPI.GetCharactersCharacterId(ctx, int64(characterID))
+	if etag, ok := e.cache.etag(characterID); ok {
+		request = request.IfNoneMatch(etag)
+	}
+	resp, httpResp, respErr := request.Execute()
+	defer closeResponseBody(httpResp)
+
+	status := httpStatus(httpResp)
+	if httpResp != nil {
+		e.throttle.update(httpResp)
+	}
+
+	if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
+		cached, ok := e.cache.getAny(characterID)
+		if !ok {
+			err = fmt.Errorf("%w: cache miss on 304 response", ErrNotModified)
+			e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+			return 0, 0, true, err
+		}
+		e.cache.refreshExpiry(characterID, httpResp)
+		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
+		return cached.CorporationID, cached.AllianceID, false, nil
+	}
+
+	if respErr != nil {
+		e.logRequest(operation, "GET", charID, status, start, respErr)
+		err = fmt.Errorf("character fetch failed (character_id=%d): %w", characterID, respErr)
+		return 0, 0, shouldRetryPublicESI(httpResp, respErr), err
+	}
+
+	if httpResp == nil {
+		err = fmt.Errorf("character fetch failed: missing response")
+		e.logRequest(operation, "GET", charID, 0, start, err)
+		return 0, 0, true, err
+	}
+	if httpResp.StatusCode >= http.StatusBadRequest {
+		err = fmt.Errorf("character fetch failed: %s", httpResp.Status)
+		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+		retryable = httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= http.StatusInternalServerError
+		return 0, 0, retryable, err
+	}
+	if resp == nil {
+		err = fmt.Errorf("character fetch failed: empty response")
+		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
+		return 0, 0, true, err
+	}
+
+	corpID = int(resp.GetCorporationId())
+	allianceID = int(resp.GetAllianceId())
+	e.cache.set(characterID, corpID, allianceID, httpResp)
+	e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, nil)
+	return corpID, allianceID, false, nil
 }
 
 func (e *ESIDirectClient) authenticatedClient(accessToken string) *esi.APIClient {

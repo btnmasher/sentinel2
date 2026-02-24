@@ -9,6 +9,7 @@ export const ADMIN_MODAL = {
   Audit: "audit",
   Access: "access",
   Announcement: "announcement",
+  AllowedOrganizations: "allowed_organizations",
 } as const;
 
 export const ADMIN_MODAL_KEYS = [
@@ -17,6 +18,7 @@ export const ADMIN_MODAL_KEYS = [
   ADMIN_MODAL.Audit,
   ADMIN_MODAL.Access,
   ADMIN_MODAL.Announcement,
+  ADMIN_MODAL.AllowedOrganizations,
 ] as const;
 export type AdminModalKey = (typeof ADMIN_MODAL_KEYS)[number];
 export const adminModalRegistry =

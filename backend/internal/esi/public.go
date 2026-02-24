@@ -189,6 +189,34 @@ func (c *ESIPublicClient) ResolveOrganizationNames(ctx context.Context, names []
 	return result, nil
 }
 
+func (c *ESIPublicClient) SovereigntyCampaigns(ctx context.Context) ([]esi.SovereigntyCampaignsGetInner, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	var campaigns []esi.SovereigntyCampaignsGetInner
+	httpResp, fetchErr := executeWithPublicRetry(
+		c,
+		ctx,
+		publicRequestOptions{
+			operation: "esi sovereignty campaigns fetch failed",
+		},
+		func(ctx context.Context) (*http.Response, error) {
+			response, httpResp, respErr := c.client.SovereigntyAPI.GetSovereigntyCampaigns(ctx).Execute()
+			defer closeResponseBody(httpResp)
+			if respErr != nil {
+				return httpResp, respErr
+			}
+			campaigns = response
+			return httpResp, nil
+		},
+	)
+	defer closeResponseBody(httpResp)
+	if fetchErr != nil {
+		return nil, fetchErr
+	}
+	return campaigns, nil
+}
+
 func (c *ESIPublicClient) ThrottleDelay() time.Duration {
 	if c == nil || c.throttle == nil {
 		return 0

@@ -13,16 +13,52 @@ func validateCreateInput(input *CreateInput) error {
 	if input.ExpiresAt.IsZero() {
 		return ErrMissingExpiresAt
 	}
+	if err := validateCreateTimerContext(input); err != nil {
+		return err
+	}
 	if requiresMoon(input.StructureType) && input.MoonID <= 0 {
 		return ErrMoonRequired
 	}
 	if requiresPlanet(input.StructureType) && input.PlanetID <= 0 {
 		return ErrPlanetRequired
 	}
-	if input.TimerKind == "extraction" && input.StructureType == "orbital_skyhook" {
-		if input.SkyhookFullnessPct == nil || *input.SkyhookFullnessPct < 0 || *input.SkyhookFullnessPct > 100 {
-			return ErrInvalidSkyhookFullnessPercentage
-		}
+	if err := validateCreateSkyhookExtraction(input); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateCreateTimerContext(input *CreateInput) error {
+	if input == nil {
+		return ErrMissingInput
+	}
+	stageLabel := strings.TrimSpace(input.StageLabel)
+	if stageLabel != "" && !IsStageLabel(stageLabel) {
+		return ErrInvalidStageLabel
+	}
+	timerKind := strings.TrimSpace(input.TimerKind)
+	if timerKind == "" {
+		timerKind = TimerKindReinforcement
+	}
+	structureType := strings.TrimSpace(input.StructureType)
+	if structureType == "" {
+		structureType = TimerStructureCustom
+	}
+	if !IsAllowedTimerContext(timerKind, structureType, stageLabel) {
+		return ErrInvalidTimerContext
+	}
+	return nil
+}
+
+func validateCreateSkyhookExtraction(input *CreateInput) error {
+	if input == nil {
+		return ErrMissingInput
+	}
+	if input.TimerKind != TimerKindExtraction || input.StructureType != TimerStructureOrbitalSkyhook {
+		return nil
+	}
+	if input.SkyhookFullnessPct == nil || *input.SkyhookFullnessPct < 0 || *input.SkyhookFullnessPct > 100 {
+		return ErrInvalidSkyhookFullnessPercentage
 	}
 	return nil
 }
@@ -31,7 +67,18 @@ func validateUpdateInput(record *core.Record, input *UpdateInput) error {
 	if input == nil {
 		return ErrMissingInput
 	}
+	stageLabel := strings.TrimSpace(record.GetString("stage_label"))
+	if input.StageLabel != nil {
+		stageLabel = strings.TrimSpace(*input.StageLabel)
+	}
+	if stageLabel != "" && !IsStageLabel(stageLabel) {
+		return ErrInvalidStageLabel
+	}
 	structureType, moonID, planetID := resolveUpdateContext(record, input)
+	timerKind := resolveUpdateTimerKind(record, input)
+	if !IsAllowedTimerContext(timerKind, structureType, stageLabel) {
+		return ErrInvalidTimerContext
+	}
 	if requiresMoon(structureType) && moonID <= 0 {
 		return ErrMoonRequired
 	}
@@ -39,8 +86,7 @@ func validateUpdateInput(record *core.Record, input *UpdateInput) error {
 		return ErrPlanetRequired
 	}
 
-	timerKind := resolveUpdateTimerKind(record, input)
-	if timerKind == "extraction" && structureType == "orbital_skyhook" {
+	if timerKind == TimerKindExtraction && structureType == TimerStructureOrbitalSkyhook {
 		fullness := resolveUpdateSkyhookFullness(record, input)
 		if fullness < 0 || fullness > 100 {
 			return ErrInvalidSkyhookFullnessPercentage

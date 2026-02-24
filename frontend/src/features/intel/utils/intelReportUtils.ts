@@ -24,8 +24,8 @@ export const normalizeIntelReport = (input: unknown): IntelReport | null => {
   if (!reportId || !reportTime) return null;
 
   const recordId =
-    source.recordId ??
-    source.record_id ??
+    (typeof source.recordId === "string" ? source.recordId : undefined) ??
+    (typeof source.record_id === "string" ? source.record_id : undefined) ??
     (typeof source.id === "string" ? source.id : undefined);
 
   return {

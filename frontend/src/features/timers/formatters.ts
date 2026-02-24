@@ -1,6 +1,13 @@
-import { format, intervalToDuration, isValid, parseISO, addDays, startOfDay } from "date-fns";
+import {
+  format,
+  intervalToDuration,
+  isValid,
+  parseISO,
+  addDays,
+  startOfDay,
+} from "date-fns";
 import { structureByValue } from "./config/timerOptions";
-import type {
+import {
   TimerReplacementAction,
   TimerStageLabel,
   TimerStandingType,
@@ -29,7 +36,9 @@ export function formatTicker(ticker: string): string {
   return `[${trimmed}]`;
 }
 
-export function formatStructureType(value: TimerStructureType | string): string {
+export function formatStructureType(
+  value: TimerStructureType | string,
+): string {
   const structured = structureByValue.get(value as TimerStructureType);
   if (structured) return structured.label;
   return (
@@ -41,14 +50,14 @@ export function formatStructureType(value: TimerStructureType | string): string 
 }
 
 export function formatStanding(value: TimerStandingType): string {
-  if (value === "ours") return "Ours";
-  if (value === "complicated") return "It's Complicated";
+  if (value === TimerStandingType.Ours) return "Ours";
+  if (value === TimerStandingType.Complicated) return "It's Complicated";
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 export function formatStageLabel(value: TimerStageLabel | ""): string {
   if (!value) return "-";
-  if (value === "structure") return "Hull";
+  if (value === TimerStageLabel.Hull) return "Hull";
   return value
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -57,13 +66,13 @@ export function formatStageLabel(value: TimerStageLabel | ""): string {
 
 export function formatReplacement(value: TimerReplacementAction): string {
   switch (value) {
-    case "not_replaceable":
+    case TimerReplacementAction.NotReplaceable:
       return "No Replacement";
-    case "logi_replacement":
+    case TimerReplacementAction.LogiReplacement:
       return "Logi Replacement";
-    case "corp_replacement":
+    case TimerReplacementAction.CorpReplacement:
       return "Corp Replacement";
-    case "alliance_replacement":
+    case TimerReplacementAction.AllianceReplacement:
       return "Alliance Replacement";
     default:
       return "Replacement Unknown";

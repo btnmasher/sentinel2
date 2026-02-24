@@ -16,7 +16,10 @@ import (
 	"sentinel2/internal/store"
 )
 
-const signalPreviewLimit = 3
+const (
+	signalPreviewLimit    = 3
+	signalScorePercentMax = 100
+)
 
 func (s *Service) ActiveSignalsByRegions(regionIDs []int, now time.Time) (map[int]Signal, error) {
 	exists, err := s.hasTimersCollection()
@@ -42,58 +45,72 @@ func (s *Service) ActiveSignalsByRegions(regionIDs []int, now time.Time) (map[in
 		if !ok {
 			continue
 		}
-
 		current := metaBySystem[systemID]
-		current.SystemID = systemID
-		current.Count++
-		if current.NextExpiresAt.IsZero() || expiresAt.Before(current.NextExpiresAt) {
-			current.NextExpiresAt = expiresAt
-			current.StandingType = record.GetString("standing_type")
-			current.TimerKind = record.GetString("timer_kind")
-			current.Title = record.GetString("title")
-			current.StructureType = record.GetString("structure_type")
-			current.StageLabel = record.GetString("stage_label")
-			current.PlanetName = record.GetString("planet_name")
-			current.MoonName = record.GetString("moon_name")
-			current.SkyhookFullnessPct = parseSkyhookFullness(record)
-		}
-		if severityRank(record.GetString("severity")) > severityRank(current.Severity) {
-			current.Severity = record.GetString("severity")
-		}
-		if len(current.Timers) < signalPreviewLimit {
-			current.Timers = append(current.Timers, SignalTimerPreview{
-				Title:              record.GetString("title"),
-				ExpiresAt:          expiresAt,
-				Severity:           record.GetString("severity"),
-				StandingType:       record.GetString("standing_type"),
-				TimerKind:          record.GetString("timer_kind"),
-				StructureType:      record.GetString("structure_type"),
-				StageLabel:         record.GetString("stage_label"),
-				PlanetName:         record.GetString("planet_name"),
-				MoonName:           record.GetString("moon_name"),
-				SkyhookFullnessPct: parseSkyhookFullness(record),
-			})
-		}
+		updateSignalFromRecord(&current, record, systemID, expiresAt)
 		metaBySystem[systemID] = current
 	}
+	normalizeSignalMap(metaBySystem)
+	return metaBySystem, nil
+}
 
-	for key, value := range metaBySystem {
-		value.Severity = queryhelpers.ValueOrTrim(value.Severity, "medium")
-		value.StandingType = queryhelpers.ValueOrTrim(value.StandingType, "hostile")
-		value.TimerKind = queryhelpers.ValueOrTrim(value.TimerKind, "custom")
-		value.StructureType = queryhelpers.ValueOrTrim(value.StructureType, "custom")
-		value.StageLabel = queryhelpers.ValueOrTrim(value.StageLabel, "not_applicable")
-		value.RemainingCount = value.Count - len(value.Timers)
-		for i := range value.Timers {
-			value.Timers[i].Severity = queryhelpers.ValueOrTrim(value.Timers[i].Severity, "medium")
-			value.Timers[i].StandingType = queryhelpers.ValueOrTrim(value.Timers[i].StandingType, "hostile")
-			value.Timers[i].TimerKind = queryhelpers.ValueOrTrim(value.Timers[i].TimerKind, "custom")
-			value.Timers[i].StructureType = queryhelpers.ValueOrTrim(value.Timers[i].StructureType, "custom")
-			value.Timers[i].StageLabel = queryhelpers.ValueOrTrim(value.Timers[i].StageLabel, "not_applicable")
-		}
+func updateSignalFromRecord(current *Signal, record *core.Record, systemID int, expiresAt time.Time) {
+	if current == nil {
+		return
+	}
+	current.SystemID = systemID
+	current.Count++
+	if current.NextExpiresAt.IsZero() || expiresAt.Before(current.NextExpiresAt) {
+		current.NextExpiresAt = expiresAt
+		current.StandingType = record.GetString("standing_type")
+		current.TimerKind = record.GetString("timer_kind")
+		current.Title = record.GetString("title")
+		current.StructureType = record.GetString("structure_type")
+		current.StageLabel = record.GetString("stage_label")
+		current.PlanetName = record.GetString("planet_name")
+		current.MoonName = record.GetString("moon_name")
+		current.SkyhookFullnessPct = parseSkyhookFullness(record)
+	}
+	if severityRank(record.GetString("severity")) > severityRank(current.Severity) {
+		current.Severity = record.GetString("severity")
+	}
+	if len(current.Timers) < signalPreviewLimit {
+		current.Timers = append(current.Timers, SignalTimerPreview{
+			Title:              record.GetString("title"),
+			ExpiresAt:          expiresAt,
+			Severity:           record.GetString("severity"),
+			StandingType:       record.GetString("standing_type"),
+			TimerKind:          record.GetString("timer_kind"),
+			StructureType:      record.GetString("structure_type"),
+			StageLabel:         record.GetString("stage_label"),
+			PlanetName:         record.GetString("planet_name"),
+			MoonName:           record.GetString("moon_name"),
+			SkyhookFullnessPct: parseSkyhookFullness(record),
+		})
+	}
+}
+
+func normalizeSignalMap(metaBySystem map[int]Signal) {
+	for key := range metaBySystem {
+		value := metaBySystem[key]
+		normalizeSignal(&value)
 		metaBySystem[key] = value
 	}
-	return metaBySystem, nil
+}
+
+func normalizeSignal(value *Signal) {
+	value.Severity = queryhelpers.ValueOrTrim(value.Severity, TimerSeverityMedium)
+	value.StandingType = queryhelpers.ValueOrTrim(value.StandingType, TimerStandingHostile)
+	value.TimerKind = queryhelpers.ValueOrTrim(value.TimerKind, TimerKindCustom)
+	value.StructureType = queryhelpers.ValueOrTrim(value.StructureType, TimerStructureCustom)
+	value.StageLabel = queryhelpers.ValueOrTrim(value.StageLabel, TimerStageNotApplicable)
+	value.RemainingCount = value.Count - len(value.Timers)
+	for i := range value.Timers {
+		value.Timers[i].Severity = queryhelpers.ValueOrTrim(value.Timers[i].Severity, TimerSeverityMedium)
+		value.Timers[i].StandingType = queryhelpers.ValueOrTrim(value.Timers[i].StandingType, TimerStandingHostile)
+		value.Timers[i].TimerKind = queryhelpers.ValueOrTrim(value.Timers[i].TimerKind, TimerKindCustom)
+		value.Timers[i].StructureType = queryhelpers.ValueOrTrim(value.Timers[i].StructureType, TimerStructureCustom)
+		value.Timers[i].StageLabel = queryhelpers.ValueOrTrim(value.Timers[i].StageLabel, TimerStageNotApplicable)
+	}
 }
 
 func (s *Service) ActiveSystemsByStructureTypes(structureTypes []string, now time.Time, regionIDs []int) (map[int]struct{}, error) {
@@ -156,13 +173,13 @@ func parseSignalRecord(record *core.Record, now time.Time) (int, time.Time, bool
 
 func severityRank(value string) int {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "critical":
+	case TimerSeverityCritical:
 		return severityRankCritical
-	case "high":
+	case TimerSeverityHigh:
 		return severityRankHigh
-	case "medium":
+	case TimerSeverityMedium:
 		return severityRankMedium
-	case "low":
+	case TimerSeverityLow:
 		return severityRankLow
 	default:
 		return 0
@@ -174,6 +191,6 @@ func parseSkyhookFullness(record *core.Record) *int {
 	if value == nil {
 		return nil
 	}
-	fullness := min(100, max(0, int(math.Round(record.GetFloat("skyhook_fullness_pct")))))
+	fullness := min(signalScorePercentMax, max(0, int(math.Round(record.GetFloat("skyhook_fullness_pct")))))
 	return &fullness
 }

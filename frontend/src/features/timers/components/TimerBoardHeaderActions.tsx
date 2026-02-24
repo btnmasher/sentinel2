@@ -19,7 +19,7 @@ export default function TimerBoardHeaderActions({
         <span className="label-text text-xs">Show inactive</span>
         <input
           type="checkbox"
-          className="toggle toggle-xs"
+          className="toggle toggle-xs toggle-primary"
           checked={showInactive}
           onChange={(event) => setShowInactive(event.target.checked)}
         />

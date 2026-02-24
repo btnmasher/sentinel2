@@ -1,5 +1,7 @@
+import { normalizeTimerStanding } from "./timerStanding";
+
 export function hostilityRowToneClass(standing: string): string {
-  const value = standing.trim().toLowerCase();
+  const value = normalizeTimerStanding(standing);
   switch (value) {
     case "ours":
       return "border-sky-400/70 bg-sky-500/[0.08] dark:border-sky-700/45 dark:bg-sky-500/[0.04]";

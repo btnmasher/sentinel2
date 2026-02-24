@@ -350,7 +350,7 @@ export function useTimerModal({ onSaved }: UseTimerModalInput) {
     },
     build: () => ({
       title: editingTimer ? "Edit Timer" : "Add Timer",
-      sizeClass: "w-[min(96vw,44rem)] xl:w-[34vw] max-w-none h-[88vh]",
+      sizeClass: "w-[min(96vw,44rem)] xl:w-[34vw] max-w-none",
       body: renderBody(),
       actions: renderActions(),
     }),

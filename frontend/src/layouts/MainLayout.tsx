@@ -14,6 +14,24 @@ import { useSettingsStore } from "@/app/store/settingsStore";
 import { useShallow } from "zustand/shallow";
 
 const navLink = "text-sm uppercase tracking-[0.2em] nav-link px-1 py-0.5";
+type MainNavItem = {
+  to: string;
+  label: string;
+  timers?: boolean;
+  standalone?: boolean;
+  staff?: boolean;
+  admin?: boolean;
+};
+const MAIN_NAV_ITEMS: MainNavItem[] = [
+  { to: "/", label: "Intel" },
+  { to: "/nav", label: "Navigation" },
+  { to: "/timers", label: "Timers", timers: true },
+  { to: "/settings", label: "Settings" },
+  { to: "/profile", label: "Profile", standalone: true },
+  { to: "/uploader", label: "Uploader" },
+  { to: "/staff", label: "Staff", staff: true },
+  { to: "/admin", label: "Admin", admin: true },
+];
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -34,10 +52,15 @@ export default function MainLayout({ children }: { children: ReactNode }) {
       logout: s.logout,
     })),
   );
-  const { loaded: configLoaded, standaloneAuth } = useAppConfigStore(
+  const {
+    loaded: configLoaded,
+    standaloneAuth,
+    timersEnabled,
+  } = useAppConfigStore(
     useShallow((s) => ({
       loaded: s.loaded,
       standaloneAuth: s.standaloneAuth,
+      timersEnabled: s.timersEnabled,
     })),
   );
 
@@ -46,24 +69,24 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   }, [location.pathname]);
 
   const navItems = useMemo(() => {
-    const items = [
-      { to: "/", label: "Intel" },
-      { to: "/nav", label: "Navigation" },
-      { to: "/timers", label: "Timers" },
-      { to: "/settings", label: "Settings" },
-      { to: "/uploader", label: "Uploader" },
-    ];
-    if (configLoaded && standaloneAuth) {
-      items.splice(3, 0, { to: "/profile", label: "Profile" });
-    }
-    if (loaded && isStaff && configLoaded && standaloneAuth) {
-      items.push({ to: "/staff", label: "Staff" });
-    }
-    if (loaded && isAdmin && configLoaded && standaloneAuth) {
-      items.push({ to: "/admin", label: "Admin" });
-    }
-    return items;
-  }, [configLoaded, isAdmin, isStaff, loaded, standaloneAuth]);
+    return MAIN_NAV_ITEMS.filter((item) => {
+      if (item.timers && !timersEnabled) return false;
+      if (item.standalone && !(configLoaded && standaloneAuth)) return false;
+      if (
+        item.staff &&
+        !(loaded && isStaff && configLoaded && standaloneAuth)
+      ) {
+        return false;
+      }
+      if (
+        item.admin &&
+        !(loaded && isAdmin && configLoaded && standaloneAuth)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [configLoaded, isAdmin, isStaff, loaded, standaloneAuth, timersEnabled]);
 
   return (
     <div className="min-h-screen gradient-grid flex flex-col">

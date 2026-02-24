@@ -19,9 +19,15 @@ func registerCrons(app *pocketbase.PocketBase, cfg *config.Config, deps *depende
 	registerCleanupCron(app, deps)
 	if cfg.AuthBackend == "eve" {
 		registerCharacterRefreshCron(app, deps)
+		if cfg.TimersEnabled {
+			registerSkyhookSyncCron(app, deps)
+		}
 	}
 	registerUploaderReleaseBootstrap(app, deps)
 	registerUploaderReleaseCron(app, deps)
+	if cfg.TimersEnabled {
+		registerSovCampaignSyncCron(app, deps)
+	}
 	registerSDEBootstrap(app, lifecycleCtx)
 	registerSDECron(app)
 }
@@ -71,5 +77,17 @@ func registerUploaderReleaseBootstrap(app *pocketbase.PocketBase, deps *dependen
 func registerUploaderReleaseCron(app *pocketbase.PocketBase, deps *dependencies) {
 	app.Cron().MustAdd("uploader_releases", "*/15 * * * *", func() {
 		runUploaderReleaseRefresh(app, deps, jobs.TriggerCronSchedule)
+	})
+}
+
+func registerSovCampaignSyncCron(app *pocketbase.PocketBase, deps *dependencies) {
+	app.Cron().MustAdd("sov_campaign_sync", "*/1 * * * *", func() {
+		runSovCampaignSync(app, deps)
+	})
+}
+
+func registerSkyhookSyncCron(app *pocketbase.PocketBase, deps *dependencies) {
+	app.Cron().MustAdd("skyhook_notification_sync", "*/1 * * * *", func() {
+		runSkyhookSync(app, deps)
 	})
 }

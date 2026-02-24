@@ -1,72 +1,22 @@
 import { useEffect, useState } from "react";
 import { Clock3 } from "lucide-react";
 import HoverCard from "@/components/HoverCard";
-import { useMapStore } from "@/features/map";
-import type { TimerSignal, TimerSignalPreview } from "@/features/map/types";
-import TimerHoverPanel, {
+import {
+  TimerHoverPanel,
   readTimerUse24Hour,
-} from "@/features/map/components/TimerHoverPanel";
+  useMapStore,
+  type TimerSignal,
+  type TimerSignalPreview,
+} from "@/features/map";
+import {
+  normalizeTimerSeverity,
+  timerSeverityDotColor,
+  timerSeverityRank,
+  timerSeverityTextToneClass,
+  type TimerSeverityBucket,
+} from "@/features/timers";
 
-type Severity = "critical" | "high" | "medium" | "low" | "unknown";
 type EnrichedTimerPreview = TimerSignalPreview & { systemId: number };
-
-function severityRank(value: Severity): number {
-  switch (value) {
-    case "critical":
-      return 4;
-    case "high":
-      return 3;
-    case "medium":
-      return 2;
-    case "low":
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-function normalizeSeverity(value: string): Severity {
-  const cleaned = value.trim().toLowerCase();
-  if (
-    cleaned === "critical" ||
-    cleaned === "high" ||
-    cleaned === "medium" ||
-    cleaned === "low"
-  ) {
-    return cleaned;
-  }
-  return "unknown";
-}
-
-function severityDotColor(value: Severity): string {
-  switch (value) {
-    case "critical":
-      return "#ef4444";
-    case "high":
-      return "#f59e0b";
-    case "medium":
-      return "#22c55e";
-    case "low":
-      return "#0ea5e9";
-    default:
-      return "#64748b";
-  }
-}
-
-function badgeToneClass(value: Severity): string {
-  switch (value) {
-    case "critical":
-      return "intel-status-text-stale";
-    case "high":
-      return "intel-status-text-warn";
-    case "medium":
-      return "intel-status-text-active";
-    case "low":
-      return "text-sky-300";
-    default:
-      return "text-slate-400";
-  }
-}
 
 function buildTimerPreviews(signals: TimerSignal[]) {
   const all: EnrichedTimerPreview[] = [];
@@ -129,10 +79,10 @@ export default function TimerCountBadge() {
     datedTimers.find((entry) => entry.expiresMs >= nowMs) ?? datedTimers[0];
   const nextUp = nextUpEntry?.timer;
 
-  const nextSeverity = normalizeSeverity(nextUp?.severity ?? "");
+  const nextSeverity = normalizeTimerSeverity(nextUp?.severity ?? "");
   const badgeTone =
     displayTimers && visibleTimers > 0
-      ? badgeToneClass(nextSeverity)
+      ? timerSeverityTextToneClass(nextSeverity)
       : "text-slate-400";
   const nextUpMs = nextUpEntry?.expiresMs ?? NaN;
   const nextUpImminent =
@@ -141,7 +91,7 @@ export default function TimerCountBadge() {
     nextUpMs - nowMs <= 30 * 60 * 1000;
   const imminentPulseToneClass = `intel-status-icon--timer-imminent-${nextSeverity}`;
 
-  const severityCounts: Record<Severity, number> = {
+  const severityCounts: Record<TimerSeverityBucket, number> = {
     critical: 0,
     high: 0,
     medium: 0,
@@ -152,11 +102,11 @@ export default function TimerCountBadge() {
     for (const signal of signals) {
       if (Array.isArray(signal.timers) && signal.timers.length > 0) {
         for (const timer of signal.timers) {
-          severityCounts[normalizeSeverity(timer.severity)] += 1;
+          severityCounts[normalizeTimerSeverity(timer.severity)] += 1;
         }
       } else {
         const count = Math.max(1, Number(signal.count) || 0);
-        severityCounts[normalizeSeverity(signal.severity)] += count;
+        severityCounts[normalizeTimerSeverity(signal.severity)] += count;
       }
     }
   }
@@ -184,7 +134,7 @@ export default function TimerCountBadge() {
     setSystemSearch(nextUp.systemId);
   };
 
-  const severityRowsBase: Array<{ key: Severity; label: string }> = [
+  const severityRowsBase: Array<{ key: TimerSeverityBucket; label: string }> = [
     { key: "critical", label: "Critical" },
     { key: "high", label: "High" },
     { key: "medium", label: "Medium" },
@@ -234,7 +184,7 @@ export default function TimerCountBadge() {
       {displayTimers && severityRows.length > 0 ? (
         <div className="mt-2 space-y-1">
           {severityRows
-            .sort((a, b) => severityRank(b.key) - severityRank(a.key))
+            .sort((a, b) => timerSeverityRank(b.key) - timerSeverityRank(a.key))
             .map((row) => (
               <div
                 key={row.key}
@@ -243,7 +193,7 @@ export default function TimerCountBadge() {
                 <span className="inline-flex items-center gap-1.5 text-base-content/85">
                   <span
                     className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: severityDotColor(row.key) }}
+                    style={{ backgroundColor: timerSeverityDotColor(row.key) }}
                   />
                   {row.label}
                 </span>

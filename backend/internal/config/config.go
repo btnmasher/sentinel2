@@ -45,7 +45,7 @@ type Config struct {
 	EVEClientSecret string `long:"eve-client-secret" env:"EVE_CLIENT_SECRET"`
 	EVEAuthURL      string `long:"eve-auth-url" env:"EVE_AUTH_URL" default:"https://login.eveonline.com/v2/oauth/authorize"`
 	EVETokenURL     string `long:"eve-token-url" env:"EVE_TOKEN_URL" default:"https://login.eveonline.com/v2/oauth/token"`
-	EVEScopes       string `long:"eve-scopes" env:"EVE_SCOPES" default:"esi-search.search_structures.v1 esi-location.read_online.v1 esi-location.read_location.v1 esi-ui.write_waypoint.v1"`
+	EVEScopes       string `long:"eve-scopes" env:"EVE_SCOPES" default:"esi-search.search_structures.v1 esi-location.read_online.v1 esi-location.read_location.v1 esi-ui.write_waypoint.v1 esi-characters.read_notifications.v1"`
 
 	ESIDirectBaseURL string `long:"esi-direct-base-url" env:"ESI_DIRECT_BASE_URL" default:"https://esi.evetech.net/latest/"`
 	ESIProxyBaseURL  string `long:"esi-proxy-base-url" env:"ESI_PROXY_BASE_URL" default:"https://auth.pleaseignore.com/esi/"`
@@ -54,6 +54,7 @@ type Config struct {
 	DefaultMapRegions    string `long:"default-map-regions" env:"DEFAULT_MAP_REGIONS" default:"10000029"`
 	IntelReportHashSlots int    `long:"intel-report-hash-slots" env:"INTEL_REPORT_HASH_SLOTS" default:"20"`
 	UploaderGitHubRepo   string `long:"uploader-github-repo" env:"UPLOADER_GITHUB_REPO" default:"btnmasher/sentinel2-uploader"`
+	TimersEnabled        bool   `long:"timers-enabled" env:"TIMERS_ENABLED"`
 
 	FrontendDevProxy    string   `long:"dev-proxy" env:"DEV_PROXY"`
 	DebugEnabled        bool     `long:"dev" env:"DEBUG_ENABLED"`
@@ -67,7 +68,9 @@ type Config struct {
 }
 
 func Load() Config {
-	cfg := Config{}
+	cfg := Config{
+		TimersEnabled: true,
+	}
 	parser := flags.NewParser(&cfg, flags.Default|flags.IgnoreUnknown)
 	_, parseErr := parser.Parse()
 	if parseErr == nil {

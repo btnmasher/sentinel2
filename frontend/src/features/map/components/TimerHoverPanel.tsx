@@ -6,6 +6,7 @@ import {
   formatStanding,
   formatStructureType,
   formatTimerDateParts,
+  isNeutralTimerStanding,
   severityBadgeClass,
   stageBadgeClass,
   standingBadgeClass,
@@ -13,8 +14,9 @@ import {
   structureByValue,
   timerKindLabels,
   hostilityRowToneClass,
+  TimerStageLabel,
 } from "../../timers";
-import type { TimerStageLabel, TimerStandingType } from "../../timers/types";
+import type { TimerStandingType } from "../../timers";
 import type { TimerSignalPreview } from "../types";
 
 type SystemContext = {
@@ -50,19 +52,18 @@ export default function TimerHoverPanel({
 }: TimerHoverPanelProps) {
   const countdownClass = countdownTone(timer.next_expires_at, nowMs);
   const timestamp = formatTimerDateParts(timer.next_expires_at, use24Hour);
-  const stageLabel = (timer.stage_label ?? "not_applicable") as TimerStageLabel;
+  const stageLabel = (timer.stage_label ??
+    TimerStageLabel.NotApplicable) as TimerStageLabel;
   const title = compactTimerTitle(timer.title, baseSystemName, timer);
   const structureType = timer.structure_type ?? "custom";
-  const isNeutralHostility =
-    String(timer.standing_type ?? "")
-      .trim()
-      .toLowerCase() === "neutral";
+  const isNeutralHostility = isNeutralTimerStanding(timer.standing_type ?? "");
   const structure = structureByValue.get(structureType as never);
   const StructureIcon = structure?.icon ?? CircleHelp;
 
-  const panelClassName = `map-system-hover-timer-panel ${hostilityRowToneClass(timer.standing_type)} ${
-    isNeutralHostility ? "map-system-hover-timer-panel-neutral" : ""
-  } ${onClick ? interactiveClassName : ""}`.trim();
+  const panelClassName =
+    `map-system-hover-timer-panel ${hostilityRowToneClass(timer.standing_type)} ${
+      isNeutralHostility ? "map-system-hover-timer-panel-neutral" : ""
+    } ${onClick ? interactiveClassName : ""}`.trim();
 
   const content = (
     <>
@@ -126,7 +127,8 @@ export default function TimerHoverPanel({
         <span
           className={`badge timer-row-badge ${structureBadgeClassByType(structureType)}`}
         >
-          <StructureIcon className="h-3 w-3" /> {formatStructureType(structureType)}
+          <StructureIcon className="h-3 w-3" />{" "}
+          {formatStructureType(structureType)}
         </span>
         {showSkyhookFullnessBadge(timer) ? (
           <span className="badge timer-row-badge timer-skyhook-fullness-badge">
@@ -151,7 +153,11 @@ export default function TimerHoverPanel({
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={`${panelClassName} w-full text-left`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${panelClassName} w-full text-left`}
+      >
         {content}
       </button>
     );
@@ -243,7 +249,9 @@ function showSkyhookFullnessBadge(timer: TimerSignalPreview): boolean {
 }
 
 function timerKindLabel(kind: string): string {
-  return timerKindLabels[kind as keyof typeof timerKindLabels] ?? humanize(kind);
+  return (
+    timerKindLabels[kind as keyof typeof timerKindLabels] ?? humanize(kind)
+  );
 }
 
 function compactTimerTitle(

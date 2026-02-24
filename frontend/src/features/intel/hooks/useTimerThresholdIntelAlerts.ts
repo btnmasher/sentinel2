@@ -119,9 +119,12 @@ function buildThresholdReport(
     threshold === "critical"
       ? "critical expiry window (<10m)"
       : "near-expiry window (<30m)";
-  const timerName = (timer.title || "").trim();
   const systemName =
     (timer.system_name || "").trim() || `System ${timer.system_id}`;
+  const timerName = stripLeadingSystemName(
+    (timer.title || "").trim(),
+    systemName,
+  );
   const text =
     timerName.length > 0
       ? `${systemName} ${timerName} entered ${thresholdText}.`
@@ -144,4 +147,17 @@ function buildThresholdReport(
     ],
     regions: timer.region_id > 0 ? [timer.region_id] : [],
   };
+}
+
+function stripLeadingSystemName(title: string, systemName: string): string {
+  if (!title || !systemName) {
+    return title;
+  }
+  const normalizedTitle = title.toLowerCase();
+  const normalizedSystem = systemName.toLowerCase();
+  if (!normalizedTitle.startsWith(normalizedSystem)) {
+    return title;
+  }
+  const suffix = title.slice(systemName.length).trimStart();
+  return suffix.length > 0 ? suffix : title;
 }

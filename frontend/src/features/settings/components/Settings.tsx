@@ -18,7 +18,6 @@ const THREAT_STAGE_CONFIG = [
     key: "flash",
     label: "Flashing",
     color: INTEL_THREAT_STAGE_COLORS.flash,
-    flashing: true,
   },
   { key: "red", label: "Red", color: INTEL_THREAT_STAGE_COLORS.red },
   { key: "orange", label: "Orange", color: INTEL_THREAT_STAGE_COLORS.orange },
@@ -219,7 +218,9 @@ export default function Settings() {
                       fill={stage.color}
                       stroke={stage.color}
                       strokeWidth="1.5"
-                      className={stage.flashing ? "map-system-alert" : ""}
+                      className={
+                        stage.key === "flash" ? "map-system-alert" : ""
+                      }
                     />
                   </svg>
                   <span className="text-sm">{stage.label}</span>

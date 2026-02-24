@@ -58,8 +58,36 @@ func runSDECheckStep(stepper jobs.Stepper, importer *SDEImporter, force bool) (n
 }
 
 func runMapDataPipeline(ctx context.Context, stepper jobs.Stepper, importer *SDEImporter, service *MapDataService, etag string) error {
+	topologyUnchanged, err := runSDEImportStep(stepper, importer, etag)
+	if err != nil {
+		return err
+	}
+
+	if topologyUnchanged {
+		skipTopologySteps(stepper)
+	} else if err := runTopologySteps(stepper, service); err != nil {
+		return err
+	}
+
+	if err := runOptionalStepFromLatestJSONL(ctx, stepper, importer, service, "mapPlanets.jsonl", StepPlanetsImport); err != nil {
+		return err
+	}
+	if err := runOptionalStepFromLatestJSONL(ctx, stepper, importer, service, "mapMoons.jsonl", StepMoonsImport); err != nil {
+		return err
+	}
+
+	if topologyUnchanged {
+		_ = stepper.SkipStep(StepMetroPositions, "skipped (topology unchanged)")
+		return nil
+	}
+	return stepper.Run(StepMetroPositions, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, StepMetroPositions)
+	})
+}
+
+func runSDEImportStep(stepper jobs.Stepper, importer *SDEImporter, etag string) (bool, error) {
 	topologyUnchanged := false
-	if err := stepper.Run(StepSDEImport, true, func(ctx context.Context) error {
+	err := stepper.Run(StepSDEImport, true, func(ctx context.Context) error {
 		report, importErr := importer.DownloadAndImportWithReport(ctx, etag)
 		if importErr != nil {
 			return importErr
@@ -73,69 +101,51 @@ func runMapDataPipeline(ctx context.Context, stepper jobs.Stepper, importer *SDE
 			_ = stepper.SkipStep(stepName, file.Reason)
 		}
 		return nil
+	})
+	return topologyUnchanged, err
+}
+
+func skipTopologySteps(stepper jobs.Stepper) {
+	_ = stepper.SkipStep(StepRealPositions, "skipped (topology unchanged)")
+	_ = stepper.SkipStep(StepEve2DPositions, "skipped (topology unchanged)")
+	_ = stepper.SkipStep(StepDotlanImport, "skipped (topology unchanged)")
+}
+
+func runOptionalStepFromLatestJSONL(
+	ctx context.Context,
+	stepper jobs.Stepper,
+	importer *SDEImporter,
+	service *MapDataService,
+	filename, stepName string,
+) error {
+	shouldImport, skipReason, checkErr := importer.ShouldImportJSONLFromLatest(ctx, filename)
+	if checkErr != nil {
+		return checkErr
+	}
+	if !shouldImport {
+		_ = stepper.SkipStep(stepName, skipReason)
+		return nil
+	}
+	return stepper.Run(stepName, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, stepName)
+	})
+}
+
+func runTopologySteps(stepper jobs.Stepper, service *MapDataService) error {
+	if err := stepper.Run(StepRealPositions, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, StepRealPositions)
 	}); err != nil {
 		return err
 	}
 
-	if topologyUnchanged {
-		_ = stepper.SkipStep(StepRealPositions, "skipped (topology unchanged)")
-		_ = stepper.SkipStep(StepEve2DPositions, "skipped (topology unchanged)")
-		_ = stepper.SkipStep(StepDotlanImport, "skipped (topology unchanged)")
-	} else {
-		if err := stepper.Run(StepRealPositions, true, func(ctx context.Context) error {
-			return service.RunStep(ctx, StepRealPositions)
-		}); err != nil {
-			return err
-		}
-
-		if err := stepper.Run(StepEve2DPositions, true, func(ctx context.Context) error {
-			return service.RunStep(ctx, StepEve2DPositions)
-		}); err != nil {
-			return err
-		}
-
-		if err := stepper.Run(StepDotlanImport, true, func(ctx context.Context) error {
-			return service.RunStep(ctx, StepDotlanImport)
-		}); err != nil {
-			return err
-		}
+	if err := stepper.Run(StepEve2DPositions, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, StepEve2DPositions)
+	}); err != nil {
+		return err
 	}
 
-	shouldImportPlanets, planetsSkipReason, planetsCheckErr := importer.ShouldImportJSONLFromLatest(ctx, "mapPlanets.jsonl")
-	if planetsCheckErr != nil {
-		return planetsCheckErr
-	}
-	if !shouldImportPlanets {
-		_ = stepper.SkipStep(StepPlanetsImport, planetsSkipReason)
-	} else {
-		if err := stepper.Run(StepPlanetsImport, true, func(ctx context.Context) error {
-			return service.RunStep(ctx, StepPlanetsImport)
-		}); err != nil {
-			return err
-		}
-	}
-
-	shouldImportMoons, moonsSkipReason, moonsCheckErr := importer.ShouldImportJSONLFromLatest(ctx, "mapMoons.jsonl")
-	if moonsCheckErr != nil {
-		return moonsCheckErr
-	}
-	if !shouldImportMoons {
-		_ = stepper.SkipStep(StepMoonsImport, moonsSkipReason)
-	} else {
-		if err := stepper.Run(StepMoonsImport, true, func(ctx context.Context) error {
-			return service.RunStep(ctx, StepMoonsImport)
-		}); err != nil {
-			return err
-		}
-	}
-
-	if topologyUnchanged {
-		_ = stepper.SkipStep(StepMetroPositions, "skipped (topology unchanged)")
-		return nil
-	}
-
-	if err := stepper.Run(StepMetroPositions, true, func(ctx context.Context) error {
-		return service.RunStep(ctx, StepMetroPositions)
+	if err := stepper.Run(StepDotlanImport, true, func(ctx context.Context) error {
+		return service.RunStep(ctx, StepDotlanImport)
 	}); err != nil {
 		return err
 	}

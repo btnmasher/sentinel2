@@ -20,6 +20,7 @@ import TimerCountBadge from "./TimerCountBadge";
 import { Activity, ChevronDown, ChevronUp } from "lucide-react";
 import AlarmMuteToggleButton from "@/components/AlarmMuteToggleButton";
 import useIntelDebugTools from "../hooks/useIntelDebugTools";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 
 export default function Intel() {
   const { open: openHelpModal } = useAppModal(UI_DIALOG.Help);
@@ -29,6 +30,7 @@ export default function Intel() {
   const alarmEnabled = useSettingsStore((s) => s.settings.alarm.enabled);
   const alarmVolume = useSettingsStore((s) => s.settings.alarm.volume);
   const applySetting = useSettingsStore((s) => s.apply);
+  const timersEnabled = useAppConfigStore((s) => s.timersEnabled);
   const alarmMuted = !alarmEnabled || alarmVolume <= 0;
   useIntelDebugTools();
 
@@ -38,7 +40,7 @@ export default function Intel() {
       <RegionSelect multi />
       <MapLayoutSelect inlineLabel="Layout" />
       <JumpbridgesToggle />
-      <TimersToggle />
+      {timersEnabled && <TimersToggle />}
       <MapZoomControls />
       <button
         className="btn btn-xs btn-info btn-outline"
@@ -60,7 +62,7 @@ export default function Intel() {
       <IntelServerStatus />
       <UploaderCountBadge />
       <ReportHealthBadge />
-      <TimerCountBadge />
+      {timersEnabled && <TimerCountBadge />}
       <AlarmMuteToggleButton
         muted={alarmMuted}
         onToggle={() => applySetting("alarm", "enabled", !alarmEnabled)}
