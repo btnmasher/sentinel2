@@ -133,7 +133,7 @@ export default function TimerCountBadge() {
   const badgeTone =
     displayTimers && visibleTimers > 0
       ? badgeToneClass(nextSeverity)
-      : "intel-status-text-stale";
+      : "text-slate-400";
   const nextUpMs = nextUpEntry?.expiresMs ?? NaN;
   const nextUpImminent =
     Number.isFinite(nextUpMs) &&
@@ -212,9 +212,7 @@ export default function TimerCountBadge() {
             className={`intel-badge-icon-bg inline-flex h-6 w-6 items-center justify-center rounded-full ${
               nextUpImminent
                 ? `intel-status-icon--timer-imminent ${imminentPulseToneClass}`
-                : visibleTimers > 0
-                  ? ""
-                  : "intel-status-icon--alert"
+                : ""
             }`}
           >
             <Clock3 className={`h-3.5 w-3.5 ${badgeTone}`} />
