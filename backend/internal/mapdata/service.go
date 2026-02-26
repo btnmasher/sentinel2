@@ -40,6 +40,9 @@ func (s *MapDataService) RunStep(ctx context.Context, step string) error {
 	case StepMoonsImport:
 		importer := NewSDEImporter(s.App)
 		return importer.ImportMoonsFromLatest(ctx)
+	case StepTypesImport:
+		importer := NewSDEImporter(s.App)
+		return importer.ImportTypesFromLatest(ctx)
 	case StepMetroPositions:
 		if err := CalculateSystemGraphs(ctx, s.App); err != nil {
 			return err

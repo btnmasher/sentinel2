@@ -12,17 +12,19 @@ import (
 )
 
 const (
-	intelRetrievePerHour  = 40
+	intelRetrievePerHour  = 180
 	mapRoutePerMinute     = 30
 	mapCharactersPerHour  = 30
 	mapLocationPerHour    = 180
 	mapSearchPerMinute    = 100
 	mapTopRoutesPerMinute = 10
 	defaultLimiterBurst   = 5
+	intelRetrieveBurst    = 20
 	locationLimiterBurst  = 10
 	searchLimiterBurst    = 20
 )
 
+//nolint:gocognit // route registration is intentionally centralized.
 func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *dependencies) {
 	userKey := func(c *core.RequestEvent) string {
 		if c.Auth != nil {
@@ -31,7 +33,7 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		return ""
 	}
 
-	intelRetrieveLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(intelRetrievePerHour), defaultLimiterBurst)
+	intelRetrieveLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(intelRetrievePerHour), intelRetrieveBurst)
 	mapRouteLimiter := middleware.NewRateLimiter(middleware.LimitPerMinute(mapRoutePerMinute), defaultLimiterBurst)
 	mapCharactersLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(mapCharactersPerHour), defaultLimiterBurst)
 	mapLocationLimiter := middleware.NewRateLimiter(middleware.LimitPerHour(mapLocationPerHour), locationLimiterBurst)
@@ -127,9 +129,10 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		staffGroup.POST("/channels", deps.staffChannels.Create)
 		staffGroup.DELETE("/channels/{id}", deps.staffChannels.Delete)
 		if cfg.TimersEnabled {
-			staffGroup.GET("/sovereignty-campaign-watchlist", deps.staffSovWatchlist.List)
-			staffGroup.POST("/sovereignty-campaign-watchlist", deps.staffSovWatchlist.Create)
-			staffGroup.DELETE("/sovereignty-campaign-watchlist/{id}", deps.staffSovWatchlist.Delete)
+			staffGroup.GET("/organization-standings", deps.staffOrgStandings.List)
+			staffGroup.POST("/organization-standings", deps.staffOrgStandings.Create)
+			staffGroup.PATCH("/organization-standings/{id}", deps.staffOrgStandings.Update)
+			staffGroup.DELETE("/organization-standings/{id}", deps.staffOrgStandings.Delete)
 		}
 		staffGroup.POST("/jumpbridges/import", deps.staffJumpbridges.Import)
 		staffGroup.POST("/jumpbridges/clear", deps.staffJumpbridges.Clear)
@@ -157,6 +160,7 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 			adminGroup.POST("/map-data/dotlan", deps.adminMapDataUpdate.RunDotlan)
 			adminGroup.POST("/map-data/planets", deps.adminMapDataUpdate.RunPlanets)
 			adminGroup.POST("/map-data/moons", deps.adminMapDataUpdate.RunMoons)
+			adminGroup.POST("/map-data/types", deps.adminMapDataUpdate.RunTypes)
 			adminGroup.POST("/map-data/metro-positions", deps.adminMapDataUpdate.RunMetroPositions)
 			adminGroup.POST("/map-data/system-graphs", deps.adminMapDataUpdate.RunSystemGraphs)
 			adminGroup.POST("/map-data/region-layout", deps.adminMapDataUpdate.RunRegionLayout)

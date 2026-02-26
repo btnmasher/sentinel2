@@ -9,6 +9,7 @@ export { default as ContextMenu } from "./components/ContextMenu";
 export { default as CharacterLocationRefresher } from "./components/CharacterLocationRefresher";
 export { default as JumpbridgesToggle } from "./components/JumpbridgesToggle";
 export { default as TimersToggle } from "./components/TimersToggle";
+export { default as ZKillToggle } from "./components/ZKillToggle";
 export { default as MapCanvas } from "./components/MapCanvas";
 export { default as MapPageShell } from "./components/MapPageShell";
 export { default as MapShell } from "./components/MapShell";

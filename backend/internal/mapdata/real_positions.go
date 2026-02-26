@@ -19,6 +19,7 @@ const (
 )
 
 func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) error {
+	log := logging.New(app).WithFields(logging.Fields{"component": "mapdata.real_positions"})
 	regions, regionsErr := app.FindRecordsByFilter(store.CollectionRegions, "eve_id < 11000000", "name", 0, 0, nil)
 	if regionsErr != nil {
 		return regionsErr
@@ -30,7 +31,7 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 	}
 
 	start := time.Now()
-	logging.New(app).
+	log.
 		WithFields(logging.Fields{
 			"region_count": len(regions),
 			"system_count": len(systems),
@@ -45,7 +46,7 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 
 	regionScales := buildRegionScales(regionBounds)
 
-	if saveErr := saveSystemRealPositions(ctx, app, systems, regionScales); saveErr != nil {
+	if saveErr := saveSystemRealPositions(ctx, app, systems, regionScales, log); saveErr != nil {
 		return saveErr
 	}
 
@@ -58,11 +59,12 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 		minX:    minX,
 		minY:    minY,
 		scale:   scale,
+		log:     log,
 	}); saveErr != nil {
 		return saveErr
 	}
 
-	logging.New(app).
+	log.
 		WithFields(logging.Fields{
 			"duration_ms":       time.Since(start).Milliseconds(),
 			"regions_with_real": len(centers),
@@ -119,7 +121,7 @@ func buildRegionScales(regionBounds map[int]*geom.Bounds[float64]) map[int]regio
 	return regionScales
 }
 
-func saveSystemRealPositions(ctx context.Context, app *pocketbase.PocketBase, systems []*core.Record, regionScales map[int]regionScale) error {
+func saveSystemRealPositions(ctx context.Context, app *pocketbase.PocketBase, systems []*core.Record, regionScales map[int]regionScale, log *logging.Logger) error {
 	for i, system := range systems {
 		if i%1000 == 0 && ctx.Err() != nil {
 			return ctx.Err()
@@ -134,8 +136,7 @@ func saveSystemRealPositions(ctx context.Context, app *pocketbase.PocketBase, sy
 		system.Set("real_x", int(math.Round((x-scale.minX)*scale.scale)))
 		system.Set("real_y", int(math.Round((y-scale.minY)*scale.scale)))
 		if saveErr := app.Save(system); saveErr != nil {
-			logging.New(app).
-				WithFields(logging.Fields{"system_id": system.GetInt("eve_id")}).
+			log.WithFields(logging.Fields{"system_id": system.GetInt("eve_id")}).
 				WithErr(saveErr).
 				Debug("real system position save failed")
 		}
@@ -166,6 +167,7 @@ type realRegionSaveInput struct {
 	minX    float64
 	minY    float64
 	scale   float64
+	log     *logging.Logger
 }
 
 func saveRegionRealPositions(ctx context.Context, input realRegionSaveInput) error {
@@ -179,11 +181,10 @@ func saveRegionRealPositions(ctx context.Context, input realRegionSaveInput) err
 			region.Set("real_y", int(math.Round((center[1]-input.minY)*input.scale)))
 		}
 		if saveErr := input.app.Save(region); saveErr != nil {
-			logging.New(input.app).
-				WithFields(logging.Fields{
-					"region_id":   regionID,
-					"region_name": region.GetString("name"),
-				}).
+			input.log.WithFields(logging.Fields{
+				"region_id":   regionID,
+				"region_name": region.GetString("name"),
+			}).
 				WithErr(saveErr).
 				Debug("real region position save failed")
 		}

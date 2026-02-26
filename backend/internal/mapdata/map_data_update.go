@@ -58,6 +58,7 @@ func runSDECheckStep(stepper jobs.Stepper, importer *SDEImporter, force bool) (n
 }
 
 func runMapDataPipeline(ctx context.Context, stepper jobs.Stepper, importer *SDEImporter, service *MapDataService, etag string) error {
+	importer.resetNameCache()
 	topologyUnchanged, err := runSDEImportStep(stepper, importer, etag)
 	if err != nil {
 		return err
@@ -127,6 +128,12 @@ func runOptionalStepFromLatestJSONL(
 		return nil
 	}
 	return stepper.Run(stepName, true, func(ctx context.Context) error {
+		switch stepName {
+		case StepPlanetsImport:
+			return importer.ImportPlanetsFromLatest(ctx)
+		case StepMoonsImport:
+			return importer.ImportMoonsFromLatest(ctx)
+		}
 		return service.RunStep(ctx, stepName)
 	})
 }

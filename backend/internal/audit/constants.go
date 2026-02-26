@@ -47,6 +47,7 @@ const (
 	ActionStaffJumpbridgeRemove     = "staff.jumpbridge.remove"
 	ActionStaffJumpbridgeUpdate     = "staff.jumpbridge.update"
 	ActionStaffSovWatchlistAdd      = "staff.sov_watchlist.add"
+	ActionStaffSovWatchlistUpdate   = "staff.sov_watchlist.update"
 	ActionStaffSovWatchlistDelete   = "staff.sov_watchlist.delete"
 	ActionTimerCreate               = "timer.create"
 	ActionTimerUpdate               = "timer.update"

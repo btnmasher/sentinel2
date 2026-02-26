@@ -79,6 +79,9 @@ func uploaderUserIDFromContext(c *core.RequestEvent) (string, error) {
 }
 
 func (h *IntelHandler) refreshUploaderHeartbeat(userID string) error {
+	log := logging.New(h.App).WithFields(logging.Fields{
+		"uploader_user_id": userID,
+	})
 	if updateErr := h.Service.UpdateUploader(userID); updateErr != nil {
 		return router.NewInternalServerError("Failed to refresh uploader heartbeat.", logging.Fields{
 			"uploader_user_id": userID,
@@ -87,19 +90,13 @@ func (h *IntelHandler) refreshUploaderHeartbeat(userID string) error {
 	}
 	count, countErr := h.Service.UploaderCount()
 	if countErr != nil {
-		logging.New(h.App).
-			WithFields(logging.Fields{
-				"uploader_user_id": userID,
-			}).
-			WithErr(countErr).
+		log.WithErr(countErr).
 			Debug("uploader heartbeat refreshed but uploader count fetch failed")
 		return nil
 	}
-	logging.New(h.App).
-		WithFields(logging.Fields{
-			"uploader_user_id": userID,
-			"uploaders_count":  count,
-		}).
+	log.WithFields(logging.Fields{
+		"uploaders_count": count,
+	}).
 		Debug("uploader heartbeat refreshed")
 	return nil
 }

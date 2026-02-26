@@ -1,3 +1,6 @@
+import { StandingType as TimerStandingType } from "@/features/shared";
+export { TimerStandingType };
+
 export enum TimerStructureType {
   UpwellCitadelKeepstar = "upwell_citadel_keepstar",
   UpwellCitadelFortizar = "upwell_citadel_fortizar",
@@ -17,14 +20,6 @@ export enum TimerStructureType {
   MercenaryDen = "mercenary_den",
   CustomsOfficePoco = "customs_office_poco",
   Custom = "custom",
-}
-
-export enum TimerStandingType {
-  Ours = "ours",
-  Friendly = "friendly",
-  Neutral = "neutral",
-  Complicated = "complicated",
-  Hostile = "hostile",
 }
 
 export enum TimerKind {

@@ -30,7 +30,7 @@ export default function IntelFeedCard({
         <div className="min-h-0 max-h-[50vh] space-y-3 overflow-y-auto pr-2">
           {logs.map((report) => (
             <ReportItem
-              key={report.id}
+              key={report.recordId ?? String(report.id)}
               log={report}
               channelNames={channelNames}
             />

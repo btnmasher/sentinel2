@@ -61,14 +61,13 @@ func (s *Service) LogEvent(event *Event) {
 	if s.App == nil {
 		return
 	}
+	log := logging.New(s.App).WithFields(logging.Fields{
+		"action": event.Action,
+		"user":   event.TargetUserID,
+	})
 	collection, collectionErr := s.App.FindCollectionByNameOrId(store.CollectionAuditLogs)
 	if collectionErr != nil {
-		logging.New(s.App).
-			WithFields(logging.Fields{
-				"action": event.Action,
-				"user":   event.TargetUserID,
-			}).
-			WithErr(collectionErr).
+		log.WithErr(collectionErr).
 			Warn("audit log collection lookup failed")
 		return
 	}
@@ -123,12 +122,7 @@ func (s *Service) LogEvent(event *Event) {
 	}
 
 	if saveErr := s.App.Save(record); saveErr != nil {
-		logging.New(s.App).
-			WithFields(logging.Fields{
-				"action": event.Action,
-				"user":   event.TargetUserID,
-			}).
-			WithErr(saveErr).
+		log.WithErr(saveErr).
 			Warn("audit log save failed")
 	}
 }

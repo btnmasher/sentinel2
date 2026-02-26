@@ -54,6 +54,7 @@ export {
   standingBadgeClass,
   structureBadgeClassByType,
 } from "./utils/timerBadgeTones";
+export { organizationBadgeClass } from "./utils/organizationBadgeTones";
 export { hostilityRowToneClass } from "./utils/timerRowTones";
 export {
   normalizeTimerSeverity,

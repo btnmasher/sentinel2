@@ -38,7 +38,6 @@ const CHANNEL_STATUS_SCORE: Record<ChannelStatus, number> = {
 
 export default function ReportHealthBadge() {
   const reports = useIntelStore((state) => state.reports);
-  const reportCount = useIntelStore((state) => state.reportCount);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [configuredChannels, setConfiguredChannels] = useState<
     Array<{ id: string; name: string }>
@@ -78,11 +77,25 @@ export default function ReportHealthBadge() {
     };
   }, []);
 
+  const healthReports = useMemo(
+    () =>
+      reports.filter(
+        (report) =>
+          !(
+            report.meta &&
+            typeof report.meta === "object" &&
+            report.meta.source === "zkill_feed"
+          ),
+      ),
+    [reports],
+  );
+  const healthReportCount = healthReports.length;
+
   const summary = useMemo(() => {
     const now = Math.floor(nowMs / 1000);
     const latestByChannelID = new Map<string, number>();
 
-    for (const report of reports) {
+    for (const report of healthReports) {
       const channel = (report.channel_id || "").trim();
       if (!channel) continue;
       const current = latestByChannelID.get(channel) ?? 0;
@@ -140,7 +153,7 @@ export default function ReportHealthBadge() {
       channels: channelRows,
       counts,
     };
-  }, [configuredChannels, nowMs, reports]);
+  }, [configuredChannels, healthReports, nowMs]);
 
   const averageScore =
     summary.channels.length === 0
@@ -198,7 +211,7 @@ export default function ReportHealthBadge() {
               />
             ) : null}
           </span>
-          <span>{reportCount}</span>
+          <span>{healthReportCount}</span>
         </button>
       }
       className="hover-card-surface intel-badge-hover-card w-96 max-w-[calc(100vw-2rem)] p-3 text-xs"
@@ -213,7 +226,7 @@ export default function ReportHealthBadge() {
         </span>
       </div>
       <p className="mt-1 text-base-content/80">
-        {reportCount} report{reportCount === 1 ? "" : "s"} seen
+        {healthReportCount} report{healthReportCount === 1 ? "" : "s"} seen
         {summary.channels.length > 0
           ? ` across ${summary.channels.length} channel${summary.channels.length === 1 ? "" : "s"}.`
           : "."}

@@ -9,14 +9,16 @@ import {
   isNeutralTimerStanding,
   severityBadgeClass,
   stageBadgeClass,
-  standingBadgeClass,
   structureBadgeClassByType,
   structureByValue,
   timerKindLabels,
-  hostilityRowToneClass,
   TimerStageLabel,
 } from "../../timers";
-import type { TimerStandingType } from "../../timers";
+import {
+  hostilityRowToneClass,
+  standingBadgeClass,
+  type StandingType,
+} from "@/features/shared";
 import type { TimerSignalPreview } from "../types";
 
 type SystemContext = {
@@ -122,7 +124,7 @@ export default function TimerHoverPanel({
         <span
           className={`badge timer-row-badge ${standingBadgeClass(timer.standing_type)}`}
         >
-          {formatStanding(timer.standing_type as TimerStandingType)}
+          {formatStanding(timer.standing_type as StandingType)}
         </span>
         <span
           className={`badge timer-row-badge ${structureBadgeClassByType(structureType)}`}

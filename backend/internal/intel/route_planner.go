@@ -107,7 +107,8 @@ func (r *RoutePlanner) populateGraph() error {
 	}
 
 	start := time.Now()
-	logging.New(r.App).
+	log := logging.New(r.App)
+	log.
 		WithFields(logging.Fields{
 			"jumpbridge_cnt":  len(jumpbridges),
 			"gate_cnt":        len(gates),
@@ -134,7 +135,7 @@ func (r *RoutePlanner) populateGraph() error {
 	r.graph = graph
 	r.initializedHash = jumpHash
 
-	logging.New(r.App).
+	log.
 		WithFields(logging.Fields{
 			"node_cnt":        len(graph),
 			"jumpbridge_hash": jumpHash,

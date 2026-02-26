@@ -39,15 +39,16 @@ type IntelSystem struct {
 }
 
 type IntelReport struct {
-	ID        int64         `json:"id"`
-	RecordID  string        `json:"record_id"`
-	Time      int64         `json:"time"`
-	Author    string        `json:"author"`
-	Text      string        `json:"text"`
-	Systems   []IntelSystem `json:"systems"`
-	Regions   []int         `json:"regions"`
-	Uploader  string        `json:"uploader"`
-	ChannelID string        `json:"channel_id"`
+	ID        int64          `json:"id"`
+	RecordID  string         `json:"record_id"`
+	Time      int64          `json:"time"`
+	Author    string         `json:"author"`
+	Text      string         `json:"text"`
+	Systems   []IntelSystem  `json:"systems"`
+	Regions   []int          `json:"regions"`
+	Uploader  string         `json:"uploader"`
+	ChannelID string         `json:"channel_id"`
+	Meta      map[string]any `json:"meta,omitempty"`
 }
 
 type UploaderChannel struct {
@@ -187,6 +188,7 @@ func (s *IntelService) ValidateUploaderTokenID(tokenID string) (*core.Record, er
 }
 
 func (s *IntelService) RevokeUploaderTokensForUser(userID string) error {
+	log := logging.New(s.App).WithFields(logging.Fields{"user_id": userID})
 	records, recordsErr := s.App.FindRecordsByFilter(
 		store.CollectionUploaderTokens,
 		"user = {:user}",
@@ -203,21 +205,17 @@ func (s *IntelService) RevokeUploaderTokensForUser(userID string) error {
 		rec.Set("revoked", true)
 		if saveErr := s.App.Save(rec); saveErr != nil {
 			failed++
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"user_id":  userID,
-					"token_id": rec.Id,
-				}).
+			log.WithFields(logging.Fields{
+				"token_id": rec.Id,
+			}).
 				WithErr(saveErr).
 				Debug("uploader token revoke save failed")
 		}
 	}
 	if failed > 0 {
-		logging.New(s.App).
-			WithFields(logging.Fields{
-				"user_id": userID,
-				"failed":  failed,
-			}).
+		log.WithFields(logging.Fields{
+			"failed": failed,
+		}).
 			Warn("uploader token revoke failures")
 	}
 	if err := s.RevokeUploaderSessionsForUser(userID); err != nil {
@@ -303,6 +301,9 @@ func (s *IntelService) CreateReport(report *IntelReport) error {
 	record.Set("text", report.Text)
 	record.Set("systems", report.Systems)
 	record.Set("regions", report.Regions)
+	if report.Meta != nil {
+		record.Set("meta", report.Meta)
+	}
 	if report.Uploader != "" {
 		record.Set("uploader_user", report.Uploader)
 	}
@@ -341,6 +342,7 @@ func (s *IntelService) ListReports(limit int) ([]IntelReport, error) {
 			Regions:   toIntSlice(rec.Get("regions")),
 			Uploader:  rec.GetString("uploader_user"),
 			ChannelID: rec.GetString("channel"),
+			Meta:      decodeMeta(rec.Get("meta")),
 		})
 	}
 
@@ -399,6 +401,7 @@ func (s *IntelService) reportHashSlots() int {
 }
 
 func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, error) {
+	log := logging.New(s.App).WithFields(logging.Fields{"user_id": userID})
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionUploaderTokens)
 	if collErr != nil {
 		return nil, collErr
@@ -425,30 +428,24 @@ func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, err
 		rec.Set("revoked", true)
 		if saveErr := s.App.Save(rec); saveErr != nil {
 			failed++
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"user_id":  userID,
-					"token_id": rec.Id,
-				}).
+			log.WithFields(logging.Fields{
+				"token_id": rec.Id,
+			}).
 				WithErr(saveErr).
 				Debug("uploader token revoke save failed")
 		}
 		if revokeErr := s.RevokeUploaderSessionsForUploaderToken(rec.Id); revokeErr != nil {
-			logging.New(s.App).
-				WithFields(logging.Fields{
-					"user_id":  userID,
-					"token_id": rec.Id,
-				}).
+			log.WithFields(logging.Fields{
+				"token_id": rec.Id,
+			}).
 				WithErr(revokeErr).
 				Debug("uploader sessions revoke failed")
 		}
 	}
 	if failed > 0 {
-		logging.New(s.App).
-			WithFields(logging.Fields{
-				"user_id": userID,
-				"failed":  failed,
-			}).
+		log.WithFields(logging.Fields{
+			"failed": failed,
+		}).
 			Warn("uploader token revoke failures")
 	}
 
@@ -542,4 +539,14 @@ func absInt64(n int64) int64 {
 		return -n
 	}
 	return n
+}
+
+func decodeMeta(value any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	if data, ok := value.(map[string]any); ok {
+		return data
+	}
+	return nil
 }

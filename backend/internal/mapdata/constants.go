@@ -7,6 +7,7 @@ const (
 	StepDotlanImport   = "dotlan_import"
 	StepPlanetsImport  = "planets_import"
 	StepMoonsImport    = "moons_import"
+	StepTypesImport    = "types_import"
 	StepBuildGraph     = "build_graph"
 	StepRegionLayout   = "region_layout"
 	StepMetroPositions = "metro_positions"

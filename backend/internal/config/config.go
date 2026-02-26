@@ -53,6 +53,10 @@ type Config struct {
 
 	DefaultMapRegions    string `long:"default-map-regions" env:"DEFAULT_MAP_REGIONS" default:"10000029"`
 	IntelReportHashSlots int    `long:"intel-report-hash-slots" env:"INTEL_REPORT_HASH_SLOTS" default:"20"`
+	ZKillFeedEnabled     bool   `long:"zkill-feed-enabled" env:"ZKILL_FEED_ENABLED"`
+	ZKillFeedBaseURL     string `long:"zkill-feed-base-url" env:"ZKILL_FEED_BASE_URL" default:"https://r2z2.zkillboard.com/ephemeral"`
+	ZKillFeedPollSeconds int    `long:"zkill-feed-poll-seconds" env:"ZKILL_FEED_POLL_SECONDS" default:"10"`
+	ZKillMaxEventAgeSec  int    `long:"zkill-max-event-age-seconds" env:"ZKILL_MAX_EVENT_AGE_SECONDS" default:"300"`
 	UploaderGitHubRepo   string `long:"uploader-github-repo" env:"UPLOADER_GITHUB_REPO" default:"btnmasher/sentinel2-uploader"`
 	TimersEnabled        bool   `long:"timers-enabled" env:"TIMERS_ENABLED"`
 
@@ -69,7 +73,8 @@ type Config struct {
 
 func Load() Config {
 	cfg := Config{
-		TimersEnabled: true,
+		TimersEnabled:    true,
+		ZKillFeedEnabled: true,
 	}
 	parser := flags.NewParser(&cfg, flags.Default|flags.IgnoreUnknown)
 	_, parseErr := parser.Parse()

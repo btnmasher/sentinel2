@@ -3,6 +3,9 @@ package realtime
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/pocketbase/pocketbase"
@@ -10,11 +13,26 @@ import (
 )
 
 const (
-	TopicUploaderConfig = "uploader.config"
-	TopicIntelUploaders = "intel.uploaders_count"
-	TopicKeepalive      = "realtime.keepalive"
-	DefaultQueueSize    = 256
+	TopicUploaderConfig         = "uploader.config"
+	TopicIntelUploaders         = "intel.uploaders_count"
+	TopicKeepalive              = "realtime.keepalive"
+	TopicIntelZKillRegionPrefix = "intel.zkill.region."
+	DefaultQueueSize            = 256
 )
+
+func TopicIntelZKillRegion(regionID int) string {
+	return fmt.Sprintf("%s%d", TopicIntelZKillRegionPrefix, regionID)
+}
+
+func IsIntelZKillRegionTopic(topic string) bool {
+	name := strings.TrimSpace(topic)
+	if !strings.HasPrefix(name, TopicIntelZKillRegionPrefix) {
+		return false
+	}
+	regionRaw := strings.TrimPrefix(name, TopicIntelZKillRegionPrefix)
+	regionID, err := strconv.Atoi(regionRaw)
+	return err == nil && regionID > 0
+}
 
 type Publisher struct {
 	app    *pocketbase.PocketBase
@@ -71,6 +89,18 @@ func (p *Publisher) Stop() {
 		p.mu.Unlock()
 		close(p.done)
 	})
+}
+
+func (p *Publisher) HasSubscribers(topic string) bool {
+	if p == nil || p.app == nil || p.app.SubscriptionsBroker() == nil {
+		return false
+	}
+	for _, client := range p.app.SubscriptionsBroker().Clients() {
+		if client.HasSubscription(topic) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Publisher) run() {

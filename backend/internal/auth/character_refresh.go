@@ -27,6 +27,7 @@ type CharacterRefresher struct {
 	PublicESI *esi.ESIPublicClient
 	Intel     *intel.IntelService
 	Audit     *audit.Service
+	logger    *logging.Logger
 }
 
 type throttleDelayProvider interface {
@@ -65,7 +66,17 @@ func getRefreshJobMeta(ctx context.Context) refreshJobMeta {
 }
 
 func NewCharacterRefresher(app *pocketbase.PocketBase, eve *EVEProvider, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, auditSvc *audit.Service) *CharacterRefresher {
-	return &CharacterRefresher{App: app, EVE: eve, ESI: esiClient, PublicESI: publicESI, Intel: intelService, Audit: auditSvc}
+	return &CharacterRefresher{
+		App:       app,
+		EVE:       eve,
+		ESI:       esiClient,
+		PublicESI: publicESI,
+		Intel:     intelService,
+		Audit:     auditSvc,
+		logger: logging.New(app).WithFields(logging.Fields{
+			"component": "auth.character_refresh",
+		}),
+	}
 }
 
 func (r *CharacterRefresher) RefreshAll(ctx context.Context) (success, failed int) {
@@ -75,7 +86,7 @@ func (r *CharacterRefresher) RefreshAll(ctx context.Context) (success, failed in
 
 	records, recordsErr := r.App.FindRecordsByFilter(store.CollectionCharacters, "", "", 0, 0, nil)
 	if recordsErr != nil {
-		logging.New(r.App).
+		r.logger.
 			WithErr(recordsErr).
 			Warn("character refresh failed to load records")
 		return 0, 0
@@ -129,7 +140,7 @@ func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *co
 
 	refreshToken := character.GetString("oauth_refresh_token")
 	if refreshToken == "" {
-		logging.New(r.App).
+		r.logger.
 			WithFields(logging.Fields{
 				"character_record_id": character.Id,
 				"character_id":        character.GetInt("eve_character_id"),
@@ -141,7 +152,7 @@ func (r *CharacterRefresher) RefreshCharacter(ctx context.Context, character *co
 	_, refreshErr := r.EVE.RefreshCharacter(ctx, user, character)
 	if refreshErr != nil {
 		if errors.Is(refreshErr, esi.ErrNotModified) {
-			logging.New(r.App).
+			r.logger.
 				WithFields(logging.Fields{
 					"character_record_id": character.Id,
 					"character_id":        character.GetInt("eve_character_id"),
@@ -202,7 +213,7 @@ func (r *CharacterRefresher) tryStartRefreshJob(ctx context.Context, record *cor
 	tracker := jobs.NewJobTracker(r.App)
 	running, err := tracker.IsRunning(jobs.JobCharacterRefresh, step)
 	if err == nil && running {
-		logging.New(r.App).
+		r.logger.
 			WithFields(logging.Fields{
 				"character_record_id": record.Id,
 			}).
@@ -240,7 +251,7 @@ func (r *CharacterRefresher) refreshWithRetry(ctx context.Context, record *core.
 			backoff := time.Duration(defaultRefreshBackoffMs*(1<<attempt)) * time.Millisecond
 			select {
 			case <-ctx.Done():
-				logging.New(r.App).
+				r.logger.
 					WithFields(logging.Fields{
 						"character_record_id": record.Id,
 						"attempt":             attempt,
@@ -253,7 +264,7 @@ func (r *CharacterRefresher) refreshWithRetry(ctx context.Context, record *core.
 			continue
 		}
 	}
-	logging.New(r.App).
+	r.logger.
 		WithFields(logging.Fields{
 			"character_record_id": record.Id,
 		}).
@@ -301,7 +312,7 @@ func (r *CharacterRefresher) handleRefreshDenied(userID string, character *core.
 			TargetCharacter: character,
 		})
 	}
-	logging.New(r.App).
+	r.logger.
 		WithFields(logging.Fields{
 			"user_id":             userID,
 			"character_record_id": character.Id,
@@ -320,7 +331,7 @@ func (r *CharacterRefresher) refreshAffiliationOnly(ctx context.Context, charact
 			ensureOrgName(ctx, r.App, r.PublicESI, store.CollectionCorporations, corpID)
 			ensureOrgName(ctx, r.App, r.PublicESI, store.CollectionAlliances, allianceID)
 		} else {
-			logging.New(r.App).
+			r.logger.
 				WithFields(logging.Fields{
 					"character_record_id": character.Id,
 					"character_id":        charID,

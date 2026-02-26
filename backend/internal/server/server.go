@@ -44,7 +44,7 @@ type dependencies struct {
 	cleanup            *cleanup.Service
 	staffChannels      *staffapi.ChannelsHandler
 	staffJumpbridges   *staffapi.JumpbridgeHandler
-	staffSovWatchlist  *staffapi.SovereigntyCampaignWatchlistHandler
+	staffOrgStandings  *staffapi.OrganizationStandingsHandler
 	adminMapDataUpdate *adminapi.MapUpdateHandler
 	characterRefresher *auth.CharacterRefresher
 	admin              *adminapi.Handler
@@ -52,6 +52,7 @@ type dependencies struct {
 	timers             *timerapi.Handler
 	uploaderReleases   *uploaderrelease.Service
 	uploaderHandler    *uploaderapi.Handler
+	realtimePublisher  *realtime.Publisher
 }
 
 func Run(cfg *config.Config) error {
@@ -100,7 +101,7 @@ func Run(cfg *config.Config) error {
 	cleanupSvc := cleanup.New(app)
 	staffChannels := staffapi.NewChannelsHandler(app, auditSvc)
 	staffJumpbridges := staffapi.NewJumpbridgeHandler(app, jumpbridgeService, auditSvc)
-	staffSovWatchlist := staffapi.NewSovereigntyCampaignWatchlistHandler(app, auditSvc)
+	staffOrgStandings := staffapi.NewOrganizationStandingsHandler(app, auditSvc)
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
 	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, timerService, auditSvc)
@@ -122,7 +123,7 @@ func Run(cfg *config.Config) error {
 		cleanup:            cleanupSvc,
 		staffChannels:      staffChannels,
 		staffJumpbridges:   staffJumpbridges,
-		staffSovWatchlist:  staffSovWatchlist,
+		staffOrgStandings:  staffOrgStandings,
 		adminMapDataUpdate: adminMapDataUpdate,
 		characterRefresher: characterRefresher,
 		admin:              admin,
@@ -130,6 +131,7 @@ func Run(cfg *config.Config) error {
 		timers:             timers,
 		uploaderReleases:   uploaderReleases,
 		uploaderHandler:    uploaderHandler,
+		realtimePublisher:  realtimePublisher,
 	}
 
 	registerRoutes(app, cfg, &deps)

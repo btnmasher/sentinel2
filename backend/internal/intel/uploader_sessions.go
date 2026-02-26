@@ -113,6 +113,10 @@ func (s *IntelService) RevokeUploaderSessionsForUploaderToken(uploaderTokenID st
 }
 
 func (s *IntelService) revokeUploaderSessions(filter string, params map[string]any, fields logging.Fields) error {
+	log := logging.New(s.App)
+	if fields != nil {
+		log = log.WithFields(fields)
+	}
 	records, recordsErr := s.App.FindRecordsByFilter(
 		store.CollectionUploaderSessions,
 		filter,
@@ -129,20 +133,12 @@ func (s *IntelService) revokeUploaderSessions(filter string, params map[string]a
 	for _, rec := range records {
 		if deleteErr := s.App.Delete(rec); deleteErr != nil {
 			failed++
-			log := logging.New(s.App).WithErr(deleteErr)
-			if fields != nil {
-				log = log.WithFields(fields)
-			}
-			log.WithFields(logging.Fields{"session_id": rec.Id}).Debug("uploader session delete failed")
+			log.WithFields(logging.Fields{"session_id": rec.Id}).WithErr(deleteErr).Debug("uploader session delete failed")
 		}
 	}
 
 	if failed > 0 {
-		log := logging.New(s.App).WithFields(logging.Fields{"failed": failed})
-		if fields != nil {
-			log = log.WithFields(fields)
-		}
-		log.Warn("uploader session delete failures")
+		log.WithFields(logging.Fields{"failed": failed}).Warn("uploader session delete failures")
 	}
 
 	return nil

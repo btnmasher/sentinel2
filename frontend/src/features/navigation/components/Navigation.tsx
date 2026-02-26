@@ -3,6 +3,7 @@ import {
   ContextMenu,
   JumpbridgesToggle,
   TimersToggle,
+  ZKillToggle,
   MapLayoutSelect,
   MapPageShell,
   MapZoomControls,
@@ -35,6 +36,7 @@ export default function Navigation() {
       <MapLayoutSelect inlineLabel="Layout" />
       <JumpbridgesToggle />
       <TimersToggle />
+      <ZKillToggle />
       <MapZoomControls />
       <button
         className="btn btn-xs btn-info btn-outline"

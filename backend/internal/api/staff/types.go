@@ -40,23 +40,28 @@ type JumpbridgeHandler struct {
 	Audit   *audit.Service
 }
 
-type SovereigntyCampaignWatchlistEntityDTO struct {
-	ID             string `json:"id"`
-	Hostility      string `json:"hostility"`
-	AllianceID     int    `json:"alliance_id"`
-	AllianceName   string `json:"alliance_name"`
-	AllianceTicker string `json:"alliance_ticker"`
+type OrganizationStandingDTO struct {
+	ID                string `json:"id"`
+	OwnerType         string `json:"owner_type"`
+	Hostility         string `json:"hostility"`
+	IncludeInSovSync  bool   `json:"include_in_sov_sync"`
+	CorporationID     int    `json:"corporation_id"`
+	CorporationName   string `json:"corporation_name"`
+	CorporationTicker string `json:"corporation_ticker"`
+	AllianceID        int    `json:"alliance_id"`
+	AllianceName      string `json:"alliance_name"`
+	AllianceTicker    string `json:"alliance_ticker"`
 }
 
-type SovereigntyCampaignWatchlistResponse struct {
-	Entities []SovereigntyCampaignWatchlistEntityDTO `json:"entities"`
+type OrganizationStandingsResponse struct {
+	Entities []OrganizationStandingDTO `json:"entities"`
 }
 
-type SovereigntyCampaignWatchlistCreateResponse struct {
+type OrganizationStandingCreateResponse struct {
 	ID string `json:"id"`
 }
 
-type SovereigntyCampaignWatchlistHandler struct {
+type OrganizationStandingsHandler struct {
 	App   *pocketbase.PocketBase
 	Audit *audit.Service
 }

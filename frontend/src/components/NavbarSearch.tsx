@@ -46,8 +46,8 @@ export default function NavbarSearch() {
           selectRegion(region.id)
         }
         placeholder="Search systems or regions"
-        containerClassName="w-64"
-        inputClassName="input input-xs input-bordered bg-base-200 w-64 px-2"
+        containerClassName="w-56"
+        inputClassName="input input-xs input-bordered bg-base-200 w-56 px-2"
         panelClassName="max-h-44 overflow-auto rounded-lg border border-slate-800 bg-base-200 shadow-lg"
         minQueryLength={2}
         selectionInputMode="clear"

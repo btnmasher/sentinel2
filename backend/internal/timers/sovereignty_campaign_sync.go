@@ -41,7 +41,13 @@ type SovCampaignSyncResult struct {
 }
 
 type sovWatchlist struct {
-	alliances map[int]string
+	alliances map[int]sovWatchlistAlliance
+}
+
+type sovWatchlistAlliance struct {
+	standing string
+	name     string
+	ticker   string
 }
 
 type sovDesiredRecords struct {
@@ -57,8 +63,23 @@ func (a sovWatchlist) standingForAlliance(allianceID int) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	standing := normalizeWatchlistStanding(value)
+	standing := normalizeWatchlistStanding(value.standing)
 	return standing, standing != ""
+}
+
+func (a sovWatchlist) labelForAlliance(allianceID int) (name, ticker string, ok bool) {
+	if allianceID <= 0 {
+		return "", "", false
+	}
+	value, exists := a.alliances[allianceID]
+	if !exists {
+		return "", "", false
+	}
+	name = strings.TrimSpace(value.name)
+	if name == "" {
+		return "", "", false
+	}
+	return name, strings.TrimSpace(value.ticker), true
 }
 
 func (a sovWatchlist) standingForAttackers(participants []esi.SovereigntyCampaignsGetInnerParticipantsInner) (standing string, allianceID int, ok bool) {
@@ -205,7 +226,7 @@ func (s *Service) desiredSovRecordForCampaign(
 	stage, totalStages := campaignProgress(attackersScore)
 	severity := campaignSeverity(standing)
 	notes := s.campaignNotes(ctx, campaign, watchlist)
-	allianceName, allianceTicker := s.resolveAllianceNameTicker(ctx, ownerAllianceID)
+	allianceName, allianceTicker := s.resolveAllianceNameTicker(ctx, ownerAllianceID, watchlist)
 	sourceRef := sovCampaignSourcePrefix + strconv.FormatInt(campaign.GetCampaignId(), 10)
 	result.Considered++
 
@@ -332,9 +353,16 @@ func campaignWatchMatch(campaign *esi.SovereigntyCampaignsGetInner, watchlist so
 
 func (s *Service) loadSovWatchlist() (sovWatchlist, error) {
 	result := sovWatchlist{
-		alliances: map[int]string{},
+		alliances: map[int]sovWatchlistAlliance{},
 	}
-	records, err := s.App.FindRecordsByFilter(store.CollectionSovereigntyCampaignWatchlist, "", "", 0, 0, nil)
+	records, err := s.App.FindRecordsByFilter(
+		store.CollectionOrganizationStandings,
+		"include_in_sov_sync = true && alliance_id > 0",
+		"",
+		0,
+		0,
+		nil,
+	)
 	if err != nil {
 		return result, err
 	}
@@ -342,7 +370,11 @@ func (s *Service) loadSovWatchlist() (sovWatchlist, error) {
 		standing := normalizeWatchlistStanding(record.GetString("hostility"))
 		entityID := record.GetInt("alliance_id")
 		if entityID > 0 {
-			result.alliances[entityID] = standing
+			result.alliances[entityID] = sovWatchlistAlliance{
+				standing: standing,
+				name:     strings.TrimSpace(record.GetString("alliance_name")),
+				ticker:   strings.TrimSpace(record.GetString("alliance_ticker")),
+			}
 		}
 	}
 	return result, nil
@@ -352,9 +384,12 @@ func normalizeWatchlistStanding(value string) string {
 	return NormalizeStanding(value)
 }
 
-func (s *Service) resolveAllianceNameTicker(ctx context.Context, allianceID int) (name, ticker string) {
+func (s *Service) resolveAllianceNameTicker(ctx context.Context, allianceID int, watchlist sovWatchlist) (name, ticker string) {
 	if allianceID <= 0 {
 		return "", ""
+	}
+	if name, ticker, ok := watchlist.labelForAlliance(allianceID); ok {
+		return name, ticker
 	}
 	if name, ticker, ok := store.GetOrg(s.App, store.CollectionAlliances, allianceID); ok {
 		return name, ticker
@@ -466,7 +501,7 @@ func (s *Service) resolveParticipantAllianceLabels(
 			continue
 		}
 		seen[allianceID] = struct{}{}
-		name, ticker := s.resolveAllianceNameTicker(ctx, allianceID)
+		name, ticker := s.resolveAllianceNameTicker(ctx, allianceID, watchlist)
 		if strings.TrimSpace(name) == "" {
 			unknownCount++
 			continue

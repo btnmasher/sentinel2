@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import type { IntelReport } from "../types";
+import { Swords } from "lucide-react";
 import {
   colorForAge,
   useRegionNames,
   useMapStore,
   useOpenSystemContextMenu,
 } from "@/features/map";
+import { useAllianceLogo, useCorporationLogo } from "@/hooks/useEveImage";
 import { useUIStore } from "@/features/ui";
-import { isClearIntelReport } from "../utils/intelReportUtils";
+import {
+  getZKillIntelMeta,
+  isClearIntelReport,
+} from "../utils/intelReportUtils";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import HoverCard from "@/components/HoverCard";
+import {
+  hostilityRowToneClass,
+  normalizeStanding,
+  standingOwnerTextToneClass,
+  StandingType,
+} from "@/features/shared";
 
 type SplitTextChunk =
   | string
@@ -115,6 +126,54 @@ export default function ReportItem({
   }, [channelNames, log.channel_id]);
 
   const isClearReport = useMemo(() => isClearIntelReport(log), [log]);
+  const zkillMeta = useMemo(() => getZKillIntelMeta(log), [log]);
+  const zkillRenderHostility = useMemo(() => {
+    if (!zkillMeta) return "neutral";
+    const victimHostility = normalizeStanding(zkillMeta.zkill.victim_hostility);
+    if (
+      victimHostility === StandingType.Ours ||
+      victimHostility === StandingType.Friendly
+    ) {
+      return StandingType.Hostile;
+    }
+    return normalizeStanding(zkillMeta.zkill.killer_hostility);
+  }, [zkillMeta]);
+  const rowToneClass = useMemo(() => {
+    if (!zkillMeta) return "border-slate-800 bg-base-300/40";
+    return hostilityRowToneClass(zkillRenderHostility);
+  }, [zkillMeta, zkillRenderHostility]);
+  const killerNameToneClass = useMemo(() => {
+    if (!zkillMeta) return "";
+    const standing = normalizeStanding(zkillMeta.zkill.killer_hostility);
+    if (standing === StandingType.Neutral) {
+      return "text-slate-200";
+    }
+    return standingOwnerTextToneClass(standing);
+  }, [zkillMeta]);
+  const victimNameToneClass = useMemo(() => {
+    if (!zkillMeta) return "";
+    const standing = normalizeStanding(zkillMeta.zkill.victim_hostility);
+    if (standing === StandingType.Neutral) {
+      return "text-slate-200";
+    }
+    return standingOwnerTextToneClass(standing);
+  }, [zkillMeta, zkillRenderHostility]);
+  const killerAllianceLogo = useAllianceLogo(
+    zkillMeta?.zkill.killer_alliance_id || undefined,
+    32,
+  );
+  const killerCorpLogo = useCorporationLogo(
+    zkillMeta?.zkill.killer_corporation_id || undefined,
+    32,
+  );
+  const victimAllianceLogo = useAllianceLogo(
+    zkillMeta?.zkill.victim_alliance_id || undefined,
+    32,
+  );
+  const victimCorpLogo = useCorporationLogo(
+    zkillMeta?.zkill.victim_corporation_id || undefined,
+    32,
+  );
 
   const openCharacterSearchMenu = (
     event: React.MouseEvent,
@@ -181,8 +240,8 @@ export default function ReportItem({
 
   return (
     <article
-      className="border border-slate-800 rounded-lg p-3 bg-base-300/40"
-      onContextMenu={showMenu}
+      className={`border rounded-lg p-3 ${rowToneClass}`}
+      onContextMenu={zkillMeta ? undefined : showMenu}
     >
       <div className="flex items-center justify-between text-xs text-slate-400">
         <span
@@ -210,68 +269,181 @@ export default function ReportItem({
           </HoverCard>
         </div>
       </div>
-      <p className="text-sm text-slate-200 mt-1">
-        {splitText.map((chunk, idx) => {
-          if (typeof chunk === "string") {
-            return (
-              <span
-                key={idx}
-                onContextMenu={(event) => openCharacterSearchMenu(event, chunk)}
-              >
-                {idx > 0 ? " " : ""}
-                {chunk}
-              </span>
-            );
-          }
-          if (chunk.kind === "tooltip") {
-            return (
-              <span
-                key={idx}
-                onContextMenu={(event) =>
-                  openCharacterSearchMenu(event, chunk.text)
+      <p className="text-xs text-slate-200 mt-1 leading-snug">
+        {zkillMeta ? (
+          <span className="inline-flex flex-col items-start gap-y-0.5 leading-tight">
+            <span>
+              {(() => {
+                const system = log.systems[0];
+                const fallbackName = zkillMeta.zkill.system_name;
+                if (!system) {
+                  return <span className="text-sm">{fallbackName}</span>;
                 }
+                if (system.region >= 11000000) {
+                  return (
+                    <span className="text-sm">
+                      {system.name || fallbackName}
+                    </span>
+                  );
+                }
+                const regionId = String(system.region);
+                if (!regionIds.has(regionId)) {
+                  const regionName = getRegionName(
+                    regionId,
+                    `Region ${regionId}`,
+                  );
+                  return (
+                    <button
+                      className="report-item-unloaded-region text-sm"
+                      title={`Click to load ${regionName}`}
+                      onClick={() =>
+                        updateMapConfig({
+                          mapRegions: [...mapRegions, regionId],
+                        })
+                      }
+                    >
+                      {system.name || fallbackName}
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    className="report-item-system-link text-sm"
+                    onClick={() => setSystemSearch(system.system)}
+                  >
+                    {system.name || fallbackName}
+                  </button>
+                );
+              })()}
+            </span>
+            <a
+              href={zkillMeta.zkill.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded px-1 py-0.5 font-semibold text-slate-200 transition-colors hover:bg-slate-500/15"
+            >
+              <span
+                className={`inline-flex items-center gap-1 ${killerNameToneClass}`}
               >
-                {idx > 0 ? " " : ""}
-                <span className="text-amber-300" title={chunk.tooltip}>
+                {(killerAllianceLogo || killerCorpLogo) && (
+                  <img
+                    src={killerAllianceLogo || killerCorpLogo}
+                    alt="Killer organization logo"
+                    className="h-3.5 w-3.5 rounded-[2px]"
+                    loading="lazy"
+                  />
+                )}
+                <span>{zkillMeta.zkill.killer_name || "Unknown Killer"}</span>
+              </span>
+              <span className="whitespace-nowrap">
+                {zkillMeta.zkill.involved_attackers > 0
+                  ? `(+${zkillMeta.zkill.involved_attackers})`
+                  : "(Solo)"}
+              </span>
+              <span className="inline-flex items-center text-slate-300">
+                <Swords className="h-3.5 w-3.5" />
+              </span>
+              <span
+                className={`inline-flex items-center gap-1 ${victimNameToneClass}`}
+              >
+                {(victimAllianceLogo || victimCorpLogo) && (
+                  <img
+                    src={victimAllianceLogo || victimCorpLogo}
+                    alt="Victim organization logo"
+                    className="h-3.5 w-3.5 rounded-[2px]"
+                    loading="lazy"
+                  />
+                )}
+                <span>{zkillMeta.zkill.victim_name || "Unknown Victim"}</span>
+              </span>
+              <span className="whitespace-nowrap">
+                ({zkillMeta.zkill.victim_ship_name || "Unknown Ship"})
+              </span>
+            </a>
+          </span>
+        ) : (
+          splitText.map((chunk, idx) => {
+            if (typeof chunk === "string") {
+              return (
+                <span
+                  key={idx}
+                  onContextMenu={(event) =>
+                    openCharacterSearchMenu(event, chunk)
+                  }
+                >
+                  {idx > 0 ? " " : ""}
+                  {chunk}
+                </span>
+              );
+            }
+            if (chunk.kind === "tooltip") {
+              return (
+                <span
+                  key={idx}
+                  onContextMenu={(event) =>
+                    openCharacterSearchMenu(event, chunk.text)
+                  }
+                >
+                  {idx > 0 ? " " : ""}
+                  <span className="text-amber-300" title={chunk.tooltip}>
+                    {chunk.text}
+                  </span>
+                </span>
+              );
+            }
+            const system = chunk.system;
+            if (!system) {
+              return (
+                <span key={idx}>
+                  {idx > 0 ? " " : ""}
                   {chunk.text}
                 </span>
-              </span>
-            );
-          }
-          const system = chunk.system;
-          if (!system) {
-            return (
-              <span key={idx}>
-                {idx > 0 ? " " : ""}
-                {chunk.text}
-              </span>
-            );
-          }
-          if (system.region >= 11000000) {
-            return (
-              <span key={idx}>
-                {idx > 0 ? " " : ""}
-                {chunk.text}
-              </span>
-            );
-          }
-          const regionId = String(system.region);
-          if (!regionIds.has(regionId)) {
-            const regionName = getRegionName(regionId, `Region ${regionId}`);
+              );
+            }
+            if (system.region >= 11000000) {
+              return (
+                <span key={idx} className="text-sm">
+                  {idx > 0 ? " " : ""}
+                  {chunk.text}
+                </span>
+              );
+            }
+            const regionId = String(system.region);
+            if (!regionIds.has(regionId)) {
+              const regionName = getRegionName(regionId, `Region ${regionId}`);
+              return (
+                <span key={idx}>
+                  {idx > 0 ? " " : ""}
+                  <button
+                    className="report-item-unloaded-region text-sm"
+                    title={`Click to load ${regionName}`}
+                    onClick={() =>
+                      updateMapConfig({ mapRegions: [...mapRegions, regionId] })
+                    }
+                    onContextMenu={(event) =>
+                      openSystemContextMenu(
+                        event,
+                        system.system,
+                        `Load ${regionName} to open system menu`,
+                      )
+                    }
+                  >
+                    {chunk.text}
+                  </button>
+                </span>
+              );
+            }
             return (
               <span key={idx}>
                 {idx > 0 ? " " : ""}
                 <button
-                  className="report-item-unloaded-region"
-                  title={`Click to load ${regionName}`}
-                  onClick={() =>
-                    updateMapConfig({ mapRegions: [...mapRegions, regionId] })
-                  }
+                  className="report-item-system-link text-sm"
+                  onClick={() => setSystemSearch(system.system)}
                   onContextMenu={(event) =>
                     openSystemContextMenu(
                       event,
                       system.system,
-                      `Load ${regionName} to open system menu`,
+                      "System menu unavailable",
                     )
                   }
                 >
@@ -279,26 +451,8 @@ export default function ReportItem({
                 </button>
               </span>
             );
-          }
-          return (
-            <span key={idx}>
-              {idx > 0 ? " " : ""}
-              <button
-                className="report-item-system-link"
-                onClick={() => setSystemSearch(system.system)}
-                onContextMenu={(event) =>
-                  openSystemContextMenu(
-                    event,
-                    system.system,
-                    "System menu unavailable",
-                  )
-                }
-              >
-                {chunk.text}
-              </button>
-            </span>
-          );
-        })}
+          })
+        )}
       </p>
       <div
         className="text-xs text-slate-500 mt-2"

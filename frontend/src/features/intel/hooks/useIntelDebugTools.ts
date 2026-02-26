@@ -4,10 +4,10 @@ import { useMapStore } from "@/features/map";
 import {
   TimerKind,
   TimerSeverity,
-  TimerStandingType,
   TimerStructureType,
   timerSeverityRank,
 } from "@/features/timers";
+import { StandingType } from "@/features/shared";
 
 type DebugSystem = {
   system: number;
@@ -370,11 +370,11 @@ export default function useIntelDebugTools() {
         TimerSeverity.Critical,
       ] as const;
       const standingPool = [
-        TimerStandingType.Ours,
-        TimerStandingType.Friendly,
-        TimerStandingType.Neutral,
-        TimerStandingType.Complicated,
-        TimerStandingType.Hostile,
+        StandingType.Ours,
+        StandingType.Friendly,
+        StandingType.Neutral,
+        StandingType.Complicated,
+        StandingType.Hostile,
       ] as const;
       const timerKindPool = includeAnsiblex
         ? [

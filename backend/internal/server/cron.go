@@ -28,6 +28,7 @@ func registerCrons(app *pocketbase.PocketBase, cfg *config.Config, deps *depende
 	if cfg.TimersEnabled {
 		registerSovCampaignSyncCron(app, deps)
 	}
+	registerZKillFeedWorker(app, cfg, deps, lifecycleCtx)
 	registerSDEBootstrap(app, lifecycleCtx)
 	registerSDECron(app)
 }

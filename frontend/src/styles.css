@@ -2122,80 +2122,80 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
   @apply flex min-h-0 flex-1 flex-col rounded-b-xl rounded-tr-xl border border-slate-700/70 bg-base-300/20 p-3;
 }
 
-.timer-tone-btn-blue-active {
+.tone-btn-blue-active {
   @apply bg-sky-500/16 border-sky-600 text-sky-700 font-semibold;
 }
-.timer-tone-btn-blue-idle {
+.tone-btn-blue-idle {
   @apply bg-transparent border-sky-500 text-sky-700 hover:bg-sky-500/10 font-medium;
 }
-.timer-tone-btn-yellow-active {
+.tone-btn-yellow-active {
   @apply bg-amber-500/16 border-amber-600 text-amber-700 font-semibold;
 }
-.timer-tone-btn-yellow-idle {
+.tone-btn-yellow-idle {
   @apply bg-transparent border-amber-500 text-amber-700 hover:bg-amber-500/10 font-medium;
 }
-.timer-tone-btn-green-active {
+.tone-btn-green-active {
   @apply bg-emerald-500/16 border-emerald-600 text-emerald-700 font-semibold;
 }
-.timer-tone-btn-green-idle {
+.tone-btn-green-idle {
   @apply bg-transparent border-emerald-500 text-emerald-700 hover:bg-emerald-500/10 font-medium;
 }
-.timer-tone-btn-purple-active {
+.tone-btn-purple-active {
   @apply bg-violet-500/16 border-violet-600 text-violet-700 font-semibold;
 }
-.timer-tone-btn-purple-idle {
+.tone-btn-purple-idle {
   @apply bg-transparent border-violet-500 text-violet-700 hover:bg-violet-500/10 font-medium;
 }
-.timer-tone-btn-gray-active {
+.tone-btn-gray-active {
   @apply bg-slate-500/16 border-slate-600 text-slate-700 font-semibold;
 }
-.timer-tone-btn-gray-idle {
+.tone-btn-gray-idle {
   @apply bg-transparent border-slate-500 text-slate-700 hover:bg-slate-500/10 font-medium;
 }
-.timer-tone-btn-red-active {
+.tone-btn-red-active {
   @apply bg-red-500/16 border-red-600 text-red-700 font-semibold;
 }
-.timer-tone-btn-red-idle {
+.tone-btn-red-idle {
   @apply bg-transparent border-red-500 text-red-700 hover:bg-red-500/10 font-medium;
 }
-.timer-tone-btn-orange-active {
+.tone-btn-orange-active {
   @apply bg-orange-500/16 border-orange-600 text-orange-700 font-semibold;
 }
-.timer-tone-btn-orange-idle {
+.tone-btn-orange-idle {
   @apply bg-transparent border-orange-500 text-orange-700 hover:bg-orange-500/10 font-medium;
 }
-.timer-tone-btn-lightblue-active {
+.tone-btn-lightblue-active {
   @apply bg-cyan-500/16 border-cyan-600 text-cyan-700 font-semibold;
 }
-.timer-tone-btn-lightblue-idle {
+.tone-btn-lightblue-idle {
   @apply bg-transparent border-cyan-500 text-cyan-700 hover:bg-cyan-500/10 font-medium;
 }
 
-.timer-badge-tone-blue {
+.badge-tone-blue {
   @apply font-semibold border-sky-600 bg-sky-500/16 text-sky-700;
 }
-html[data-theme="sentinel-light"] .timer-badge-tone-blue {
+html[data-theme="sentinel-light"] .badge-tone-blue {
   @apply border-sky-700 bg-sky-500/20 text-sky-800;
 }
-.timer-badge-tone-yellow {
+.badge-tone-yellow {
   @apply font-semibold border-amber-600 bg-amber-500/16 text-amber-700;
 }
-.timer-badge-tone-green {
+.badge-tone-green {
   @apply font-semibold border-emerald-600 bg-emerald-500/16 text-emerald-700;
 }
-.timer-badge-tone-purple {
+.badge-tone-purple {
   @apply font-semibold border-violet-600 bg-violet-500/16 text-violet-700;
 }
-.timer-badge-tone-gray {
+.badge-tone-gray {
   @apply font-semibold border-slate-600 bg-slate-500/16 text-slate-700;
 }
-.timer-badge-tone-red {
+.badge-tone-red {
   @apply font-semibold border-red-600 bg-red-500/16 text-red-700;
 }
-.timer-badge-tone-orange {
+.badge-tone-orange {
   @apply font-semibold border-orange-600 bg-orange-500/16 text-orange-700;
 }
-.timer-badge-tone-lightblue {
+.badge-tone-lightblue {
   @apply font-semibold border-cyan-600 bg-cyan-500/16 text-cyan-700;
 }
 
@@ -2361,76 +2361,76 @@ html[data-theme="sentinel"] .timer-board-tab-count.is-active {
   @apply text-white;
 }
 
-html[data-theme="sentinel"] .timer-tone-btn-blue-active {
+html[data-theme="sentinel"] .tone-btn-blue-active {
   @apply bg-sky-500/20 border-sky-300 text-sky-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-blue-idle {
+html[data-theme="sentinel"] .tone-btn-blue-idle {
   @apply bg-transparent border-sky-500/45 text-sky-300 hover:bg-sky-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-yellow-active {
+html[data-theme="sentinel"] .tone-btn-yellow-active {
   @apply bg-amber-500/20 border-amber-300 text-amber-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-yellow-idle {
+html[data-theme="sentinel"] .tone-btn-yellow-idle {
   @apply bg-transparent border-amber-500/45 text-amber-300 hover:bg-amber-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-green-active {
+html[data-theme="sentinel"] .tone-btn-green-active {
   @apply bg-emerald-500/20 border-emerald-300 text-emerald-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-green-idle {
+html[data-theme="sentinel"] .tone-btn-green-idle {
   @apply bg-transparent border-emerald-500/45 text-emerald-300 hover:bg-emerald-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-purple-active {
+html[data-theme="sentinel"] .tone-btn-purple-active {
   @apply bg-violet-500/20 border-violet-300 text-violet-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-purple-idle {
+html[data-theme="sentinel"] .tone-btn-purple-idle {
   @apply bg-transparent border-violet-500/45 text-violet-300 hover:bg-violet-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-gray-active {
+html[data-theme="sentinel"] .tone-btn-gray-active {
   @apply bg-slate-500/20 border-slate-300 text-slate-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-gray-idle {
+html[data-theme="sentinel"] .tone-btn-gray-idle {
   @apply bg-transparent border-slate-500/45 text-slate-300 hover:bg-slate-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-red-active {
+html[data-theme="sentinel"] .tone-btn-red-active {
   @apply bg-red-500/20 border-red-300 text-red-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-red-idle {
+html[data-theme="sentinel"] .tone-btn-red-idle {
   @apply bg-transparent border-red-500/45 text-red-300 hover:bg-red-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-orange-active {
+html[data-theme="sentinel"] .tone-btn-orange-active {
   @apply bg-orange-500/20 border-orange-300 text-orange-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-orange-idle {
+html[data-theme="sentinel"] .tone-btn-orange-idle {
   @apply bg-transparent border-orange-500/45 text-orange-300 hover:bg-orange-500/12;
 }
-html[data-theme="sentinel"] .timer-tone-btn-lightblue-active {
+html[data-theme="sentinel"] .tone-btn-lightblue-active {
   @apply bg-cyan-500/20 border-cyan-300 text-cyan-100;
 }
-html[data-theme="sentinel"] .timer-tone-btn-lightblue-idle {
+html[data-theme="sentinel"] .tone-btn-lightblue-idle {
   @apply bg-transparent border-cyan-500/45 text-cyan-300 hover:bg-cyan-500/12;
 }
 
-html[data-theme="sentinel"] .timer-badge-tone-blue {
+html[data-theme="sentinel"] .badge-tone-blue {
   @apply border-sky-400/50 bg-sky-500/20 text-sky-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-yellow {
+html[data-theme="sentinel"] .badge-tone-yellow {
   @apply border-amber-400/50 bg-amber-500/20 text-amber-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-green {
+html[data-theme="sentinel"] .badge-tone-green {
   @apply border-emerald-400/50 bg-emerald-500/20 text-emerald-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-purple {
+html[data-theme="sentinel"] .badge-tone-purple {
   @apply border-violet-400/50 bg-violet-500/20 text-violet-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-gray {
+html[data-theme="sentinel"] .badge-tone-gray {
   @apply border-slate-400/50 bg-slate-500/20 text-slate-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-red {
+html[data-theme="sentinel"] .badge-tone-red {
   @apply border-red-400/50 bg-red-500/20 text-red-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-orange {
+html[data-theme="sentinel"] .badge-tone-orange {
   @apply border-orange-400/50 bg-orange-500/20 text-orange-200;
 }
-html[data-theme="sentinel"] .timer-badge-tone-lightblue {
+html[data-theme="sentinel"] .badge-tone-lightblue {
   @apply border-cyan-400/50 bg-cyan-500/20 text-cyan-200;
 }

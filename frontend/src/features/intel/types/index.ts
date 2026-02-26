@@ -5,6 +5,7 @@ export type IntelReport = {
   author: string;
   text: string;
   channel_id?: string;
+  meta?: Record<string, unknown>;
   systems: Array<{
     system: number;
     name: string;

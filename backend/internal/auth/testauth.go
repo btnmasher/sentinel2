@@ -20,9 +20,10 @@ import (
 )
 
 type TestAuthProvider struct {
-	App   *pocketbase.PocketBase
-	OIDC  *oidc.Client
-	Intel *intel.IntelService
+	App    *pocketbase.PocketBase
+	OIDC   *oidc.Client
+	Intel  *intel.IntelService
+	logger *logging.Logger
 }
 
 type idTokenClaims struct {
@@ -30,7 +31,14 @@ type idTokenClaims struct {
 }
 
 func NewTestAuthProvider(app *pocketbase.PocketBase, oidcClient *oidc.Client, intelService *intel.IntelService) *TestAuthProvider {
-	return &TestAuthProvider{App: app, OIDC: oidcClient, Intel: intelService}
+	return &TestAuthProvider{
+		App:   app,
+		OIDC:  oidcClient,
+		Intel: intelService,
+		logger: logging.New(app).WithFields(logging.Fields{
+			"component": "auth.testauth",
+		}),
+	}
 }
 
 func (p *TestAuthProvider) Name() string {
@@ -184,7 +192,7 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (AuthTokens, error) {
 	refreshToken := user.GetString("oauth_refresh_token")
 	if refreshToken == "" {
-		logging.New(p.App).
+		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
 			Warn("oidc refresh missing refresh token")
 		return AuthTokens{}, errors.New("missing refresh token")
@@ -192,7 +200,7 @@ func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (Auth
 
 	token, tokenErr := p.OIDC.OAuth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if tokenErr != nil {
-		logging.New(p.App).
+		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
 			WithErr(tokenErr).
 			Warn("oidc refresh token exchange failed")
@@ -201,14 +209,14 @@ func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (Auth
 
 	rawIDToken, _ := token.Extra("id_token").(string)
 	if rawIDToken == "" {
-		logging.New(p.App).
+		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
 			Warn("oidc refresh missing id_token")
 		return AuthTokens{}, errors.New("missing id_token")
 	}
 
 	if _, verifyErr := p.OIDC.Verifier.Verify(ctx, rawIDToken); verifyErr != nil {
-		logging.New(p.App).
+		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
 			WithErr(verifyErr).
 			Warn("oidc refresh id_token verify failed")
@@ -228,7 +236,7 @@ func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (Auth
 		user.Set("oauth_refresh_expires_at", refreshExpiresAt)
 	}
 	if saveErr := p.App.Save(user); saveErr != nil {
-		logging.New(p.App).
+		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
 			WithErr(saveErr).
 			Warn("oidc refresh user save failed")
@@ -263,7 +271,7 @@ func (p *TestAuthProvider) resolveAccessLevel(c *core.RequestEvent, currentLevel
 				WithErr(staffErr).
 				Warn("oidc staff role check failed")
 		} else {
-			logging.New(p.App).
+			p.logger.
 				WithFields(logging.Fields{"reason": "refresh"}).
 				WithErr(staffErr).
 				Warn("oidc staff role check failed on refresh")
@@ -279,7 +287,7 @@ func (p *TestAuthProvider) resolveAccessLevel(c *core.RequestEvent, currentLevel
 func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 	coll, collErr := p.App.FindCollectionByNameOrId(store.CollectionUsers)
 	if collErr != nil {
-		logging.New(p.App).
+		p.logger.
 			WithErr(collErr).
 			Warn("oidc user collection lookup failed")
 		return nil, collErr
@@ -294,7 +302,7 @@ func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 		map[string]any{"provider": p.Name(), "sub": sub},
 	)
 	if recordsErr != nil {
-		logging.New(p.App).
+		p.logger.
 			WithErr(recordsErr).
 			Warn("oidc user query failed")
 		return nil, recordsErr
@@ -325,14 +333,14 @@ func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 	record.Set("created_at", time.Now())
 	record.Set("access_level", "user")
 	if saveErr := p.App.Save(record); saveErr != nil {
-		logging.New(p.App).
+		p.logger.
 			WithErr(saveErr).
 			Warn("oidc user create failed")
 		return nil, saveErr
 	}
 	if p.Intel != nil {
 		if _, tokenErr := p.Intel.GetOrCreateUploaderToken(record.Id); tokenErr != nil {
-			logging.New(p.App).
+			p.logger.
 				WithFields(logging.Fields{"user_id": record.Id}).
 				WithErr(tokenErr).
 				Warn("oidc uploader token seed failed")

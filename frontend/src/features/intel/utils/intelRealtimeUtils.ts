@@ -1,5 +1,9 @@
 export const INTEL_UPLOADER_COUNT_TOPIC = "intel.uploaders_count";
 export const REALTIME_KEEPALIVE_TOPIC = "realtime.keepalive";
+export const ZKILL_REGION_TOPIC_PREFIX = "intel.zkill.region.";
+
+export const zkillRegionTopic = (regionId: number) =>
+  `${ZKILL_REGION_TOPIC_PREFIX}${regionId}`;
 
 export type IntelUploaderCountMessage = {
   uploaders: number;

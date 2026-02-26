@@ -1,12 +1,27 @@
 import { useEffect } from "react";
 import { useAuthStore } from "@/app/store/authStore";
+import { useSettingsStore } from "@/app/store/settingsStore";
+import { useMapStore } from "@/features/map";
 import { useIntelStore } from "../store/intelStore";
 
 export default function useIntelRealtime() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const intelStatus = useIntelStore((s) => s.intelStatus);
   const setIntelStatus = useIntelStore((s) => s.setIntelStatus);
   const connectRealtime = useIntelStore((s) => s.connectRealtime);
   const disconnectRealtime = useIntelStore((s) => s.disconnectRealtime);
+  const syncZKillRealtime = useIntelStore((s) => s.syncZKillRealtime);
+  const zkillFeedEnabled = useSettingsStore(
+    (s) => s.settings.intel.zkillFeedEnabled,
+  );
+  const regions = useMapStore((s) => s.regions);
+  const loadedRegionIds = Object.keys(regions)
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const loadedRegionKey = loadedRegionIds
+    .slice()
+    .sort((a, b) => a - b)
+    .join(",");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -27,4 +42,24 @@ export default function useIntelRealtime() {
       void disconnectRealtime();
     };
   }, [connectRealtime, disconnectRealtime, isAuthenticated, setIntelStatus]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    const regionIds =
+      loadedRegionKey === ""
+        ? []
+        : loadedRegionKey
+            .split(",")
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0);
+    void syncZKillRealtime(regionIds, zkillFeedEnabled);
+  }, [
+    isAuthenticated,
+    intelStatus,
+    loadedRegionKey,
+    syncZKillRealtime,
+    zkillFeedEnabled,
+  ]);
 }

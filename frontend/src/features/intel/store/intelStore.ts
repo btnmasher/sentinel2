@@ -11,6 +11,7 @@ import {
 import {
   INTEL_UPLOADER_COUNT_TOPIC,
   REALTIME_KEEPALIVE_TOPIC,
+  zkillRegionTopic,
   normalizeUploaderCountMessage,
 } from "../utils/intelRealtimeUtils";
 
@@ -41,6 +42,7 @@ type IntelState = {
   reportsRealtimeUnsubscribe?: () => Promise<void>;
   uploadersRealtimeUnsubscribe?: () => Promise<void>;
   keepaliveRealtimeUnsubscribe?: () => Promise<void>;
+  zkillRegionRealtimeUnsubscribes: Record<number, () => Promise<void>>;
   logFilters: IntelFilters;
   // Maps system_id -> latest report unix timestamp (seconds)
   lastIntelSystems: Record<number, number>;
@@ -57,6 +59,7 @@ type IntelState = {
   clearFilters: () => void;
   connectRealtime: () => Promise<"ok" | "auth_error" | "error">;
   disconnectRealtime: () => Promise<void>;
+  syncZKillRealtime: (regionIds: number[], enabled: boolean) => Promise<void>;
 };
 
 const computeIntelSystemSignals = (reports: IntelReport[]) => {
@@ -108,6 +111,11 @@ const normalizeReports = (reports: IntelReport[], max = 100) => {
     .slice(0, max);
 };
 
+const isZKillReport = (report: IntelReport) =>
+  report.meta && typeof report.meta === "object"
+    ? report.meta.source === "zkill_feed"
+    : false;
+
 type IntelRecord = {
   report_id?: number | string;
   report_time?: number | string;
@@ -153,6 +161,7 @@ export const useIntelStore = create<IntelState>()(
         reportsRealtimeUnsubscribe: undefined,
         uploadersRealtimeUnsubscribe: undefined,
         keepaliveRealtimeUnsubscribe: undefined,
+        zkillRegionRealtimeUnsubscribes: {},
         logFilters: {
           includeSystemLogs: true,
           includeSystemAlarm: true,
@@ -333,10 +342,14 @@ export const useIntelStore = create<IntelState>()(
           const reportsUnsubscribe = get().reportsRealtimeUnsubscribe;
           const uploadersUnsubscribe = get().uploadersRealtimeUnsubscribe;
           const keepaliveUnsubscribe = get().keepaliveRealtimeUnsubscribe;
+          const zkillUnsubscribes = Object.values(
+            get().zkillRegionRealtimeUnsubscribes,
+          );
           set({
             reportsRealtimeUnsubscribe: undefined,
             uploadersRealtimeUnsubscribe: undefined,
             keepaliveRealtimeUnsubscribe: undefined,
+            zkillRegionRealtimeUnsubscribes: {},
             intelStatus: "disconnected",
           });
           if (reportsUnsubscribe) {
@@ -348,6 +361,73 @@ export const useIntelStore = create<IntelState>()(
           if (keepaliveUnsubscribe) {
             await keepaliveUnsubscribe().catch(() => undefined);
           }
+          await Promise.all(
+            zkillUnsubscribes.map((unsubscribe) =>
+              unsubscribe().catch(() => undefined),
+            ),
+          );
+        },
+        syncZKillRealtime: async (regionIds, enabled) => {
+          const wanted = new Set(
+            enabled && get().intelStatus === "connected"
+              ? regionIds.filter((id) => Number.isFinite(id) && id > 0)
+              : [],
+          );
+          const current = get().zkillRegionRealtimeUnsubscribes;
+          const next = { ...current };
+
+          await Promise.all(
+            Object.entries(current).map(async ([regionIdRaw, unsubscribe]) => {
+              const regionId = Number(regionIdRaw);
+              if (wanted.has(regionId)) {
+                return;
+              }
+              await unsubscribe().catch(() => undefined);
+              delete next[regionId];
+            }),
+          );
+
+          for (const regionId of wanted) {
+            if (next[regionId]) {
+              continue;
+            }
+            const unsubscribe = await pb.realtime.subscribe(
+              zkillRegionTopic(regionId),
+              (data) => {
+                const report = normalizeIntelReport(data);
+                if (!report) {
+                  return;
+                }
+                get().pushReport(report);
+              },
+            );
+            next[regionId] = unsubscribe;
+          }
+
+          const subscribedRegions = new Set(Object.keys(next).map(Number));
+          set((state) => {
+            const filtered = state.reports.filter((report) => {
+              if (!isZKillReport(report)) {
+                return true;
+              }
+              if (!enabled) {
+                return false;
+              }
+              return report.regions.some((region) =>
+                subscribedRegions.has(region),
+              );
+            });
+            const nextReports = normalizeReports(filtered);
+            const { latestBySystem, latestClearBySystem } =
+              computeIntelSystemSignals(nextReports);
+            return {
+              zkillRegionRealtimeUnsubscribes: next,
+              reports: nextReports,
+              lastReports: nextReports,
+              lastIntelSystems: latestBySystem,
+              lastClearSystems: latestClearBySystem,
+            };
+          });
         },
       };
     },

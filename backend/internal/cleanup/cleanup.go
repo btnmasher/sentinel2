@@ -11,14 +11,20 @@ import (
 )
 
 type Service struct {
-	App *pocketbase.PocketBase
+	App    *pocketbase.PocketBase
+	logger *logging.Logger
 }
 
 const IntelReportRetention = 30 * time.Minute
 const TimerInactiveRetention = 24 * time.Hour
 
 func New(app *pocketbase.PocketBase) *Service {
-	return &Service{App: app}
+	return &Service{
+		App: app,
+		logger: logging.New(app).WithFields(logging.Fields{
+			"component": "cleanup",
+		}),
+	}
 }
 
 func (s *Service) RemoveExpired(collection string) (int, error) {
@@ -41,7 +47,7 @@ func (s *Service) RemoveExpired(collection string) (int, error) {
 			removed++
 		} else {
 			failed++
-			logging.New(s.App).
+			s.logger.
 				WithFields(logging.Fields{
 					"collection": collection,
 					"record_id":  rec.Id,
@@ -51,7 +57,7 @@ func (s *Service) RemoveExpired(collection string) (int, error) {
 		}
 	}
 	if failed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"collection": collection,
 				"failed":     failed,
@@ -81,7 +87,7 @@ func (s *Service) RemoveRevokedUploaderTokens() (int, error) {
 			removed++
 		} else {
 			failed++
-			logging.New(s.App).
+			s.logger.
 				WithFields(logging.Fields{
 					"collection": store.CollectionUploaderTokens,
 					"record_id":  rec.Id,
@@ -91,7 +97,7 @@ func (s *Service) RemoveRevokedUploaderTokens() (int, error) {
 		}
 	}
 	if failed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"collection": store.CollectionUploaderTokens,
 				"failed":     failed,
@@ -124,7 +130,7 @@ func (s *Service) RemoveOldIntelReports(maxAge time.Duration) (int, error) {
 			removed++
 		} else {
 			failed++
-			logging.New(s.App).
+			s.logger.
 				WithFields(logging.Fields{
 					"collection": store.CollectionIntelReports,
 					"record_id":  rec.Id,
@@ -134,7 +140,7 @@ func (s *Service) RemoveOldIntelReports(maxAge time.Duration) (int, error) {
 		}
 	}
 	if failed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"collection": store.CollectionIntelReports,
 				"failed":     failed,
@@ -170,7 +176,7 @@ func (s *Service) RemoveOldTimers(maxAge time.Duration) (int, error) {
 			removed++
 		} else {
 			failed++
-			logging.New(s.App).
+			s.logger.
 				WithFields(logging.Fields{
 					"collection": store.CollectionTimers,
 					"record_id":  rec.Id,
@@ -180,7 +186,7 @@ func (s *Service) RemoveOldTimers(maxAge time.Duration) (int, error) {
 		}
 	}
 	if failed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"collection": store.CollectionTimers,
 				"failed":     failed,

@@ -4,6 +4,7 @@ import SearchSuggestionField from "@/components/SearchSuggestionField";
 import type { StructureTone } from "../../../config/timerOptions";
 import { useTimerFormStore } from "../../../store/useTimerFormStore";
 import type { TimerEntityOption, TimerStandingType } from "../../../types";
+import { organizationBadgeClass } from "../../../utils/organizationBadgeTones";
 
 type Props = {
   loadOwnerSuggestions: (query: string) => Promise<TimerEntityOption[]>;
@@ -107,11 +108,7 @@ export default function StepOwner({
                 </div>
                 <div className="text-[11px] text-slate-400">
                   <span
-                    className={`badge badge-xs ${
-                      entity.type === "corporation"
-                        ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
-                        : "border-violet-400/50 bg-violet-500/20 text-violet-200"
-                    }`}
+                    className={`badge badge-xs ${organizationBadgeClass(entity.type)}`}
                   >
                     {entity.type === "corporation" ? "Corp" : "Alliance"}
                   </span>

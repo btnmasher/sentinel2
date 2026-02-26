@@ -22,6 +22,7 @@ func registerRealtime(app *pocketbase.PocketBase, intelService *intel.IntelServi
 	registerUploaderConfigTopicAuth(app, intelService)
 	registerIntelUploadersTopic(app, intelService)
 	registerKeepaliveTopicAuth(app)
+	registerZKillRegionTopicAuth(app)
 	registerUploaderConfigBroadcasts(app, intelService, publisher)
 	startIntelUploaderHeartbeatCountBroadcasts(app, intelService, publisher)
 	startRealtimeKeepaliveBroadcasts(app, publisher)
@@ -105,6 +106,18 @@ func registerKeepaliveTopicAuth(app *pocketbase.PocketBase) {
 	})
 }
 
+func registerZKillRegionTopicAuth(app *pocketbase.PocketBase) {
+	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
+		if !subscriptionContainsTopicMatching(e.Subscriptions, realtime.IsIntelZKillRegionTopic) {
+			return e.Next()
+		}
+		if e.Auth == nil {
+			return e.ForbiddenError("zKill realtime subscription requires authentication.", nil)
+		}
+		return e.Next()
+	})
+}
+
 func startIntelUploaderHeartbeatCountBroadcasts(app *pocketbase.PocketBase, intelService *intel.IntelService, publisher *realtime.Publisher) {
 	if app == nil || intelService == nil || publisher == nil {
 		return
@@ -148,6 +161,15 @@ func startRealtimeKeepaliveBroadcasts(app *pocketbase.PocketBase, publisher *rea
 func subscriptionContainsTopic(topicSubs []string, topic string) bool {
 	for _, subscription := range topicSubs {
 		if normalizeSubscriptionName(subscription) == topic {
+			return true
+		}
+	}
+	return false
+}
+
+func subscriptionContainsTopicMatching(topicSubs []string, matchFn func(string) bool) bool {
+	for _, subscription := range topicSubs {
+		if matchFn(normalizeSubscriptionName(subscription)) {
 			return true
 		}
 	}

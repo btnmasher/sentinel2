@@ -95,6 +95,10 @@ func (h *MapUpdateHandler) RunMoons(c *core.RequestEvent) error {
 	return h.runStep(c, mapdata.StepMoonsImport)
 }
 
+func (h *MapUpdateHandler) RunTypes(c *core.RequestEvent) error {
+	return h.runStep(c, mapdata.StepTypesImport)
+}
+
 func (h *MapUpdateHandler) RunEve2DPositions(c *core.RequestEvent) error {
 	return h.runStep(c, mapdata.StepEve2DPositions)
 }

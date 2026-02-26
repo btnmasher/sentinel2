@@ -20,6 +20,7 @@ export type Settings = {
     filtersOpen: boolean;
     charactersOpen: boolean;
     feedOpen: boolean;
+    zkillFeedEnabled: boolean;
     threatTimings: IntelThreatTimings;
   };
   map: {
@@ -53,6 +54,7 @@ const defaultSettings: Settings = {
     filtersOpen: true,
     charactersOpen: true,
     feedOpen: true,
+    zkillFeedEnabled: true,
     threatTimings: {
       flash: 15,
       red: 30,

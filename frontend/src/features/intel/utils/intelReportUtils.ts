@@ -37,6 +37,10 @@ export const normalizeIntelReport = (input: unknown): IntelReport | null => {
     channel_id:
       (typeof source.channel_id === "string" ? source.channel_id : undefined) ??
       (typeof source.channel === "string" ? source.channel : undefined),
+    meta:
+      source.meta && typeof source.meta === "object"
+        ? (source.meta as Record<string, unknown>)
+        : undefined,
     systems: decodeArray(source.systems),
     regions: decodeArray(source.regions),
   };
@@ -48,4 +52,68 @@ export const isClearIntelReport = (
   report: Pick<IntelReport, "text" | "systems">,
 ) => {
   return report.systems.length > 0 && CLEAR_REPORT_PATTERN.test(report.text);
+};
+
+export type ZKillIntelMeta = {
+  source: "zkill_feed";
+  zkill: {
+    killmail_id: number;
+    url: string;
+    display_text: string;
+    killer_name: string;
+    killer_alliance_id: number;
+    killer_corporation_id: number;
+    victim_name: string;
+    victim_alliance_id: number;
+    victim_corporation_id: number;
+    victim_ship_name: string;
+    killer_hostility: string;
+    victim_hostility: string;
+    involved_attackers: number;
+    system_name: string;
+  };
+};
+
+export const getZKillIntelMeta = (
+  report: Pick<IntelReport, "meta">,
+): ZKillIntelMeta | null => {
+  const source = report.meta;
+  if (!source || typeof source !== "object") return null;
+  if (source.source !== "zkill_feed") return null;
+  const zkill = source.zkill;
+  if (!zkill || typeof zkill !== "object") return null;
+  const payload = zkill as Record<string, unknown>;
+  if (
+    typeof payload.url !== "string" ||
+    typeof payload.display_text !== "string" ||
+    typeof payload.killer_hostility !== "string" ||
+    typeof payload.victim_hostility !== "string" ||
+    typeof payload.system_name !== "string"
+  ) {
+    return null;
+  }
+  return {
+    source: "zkill_feed",
+    zkill: {
+      killmail_id: toNumber(payload.killmail_id),
+      url: payload.url,
+      display_text: payload.display_text,
+      killer_name:
+        typeof payload.killer_name === "string" ? payload.killer_name : "",
+      killer_alliance_id: toNumber(payload.killer_alliance_id),
+      killer_corporation_id: toNumber(payload.killer_corporation_id),
+      victim_name:
+        typeof payload.victim_name === "string" ? payload.victim_name : "",
+      victim_alliance_id: toNumber(payload.victim_alliance_id),
+      victim_corporation_id: toNumber(payload.victim_corporation_id),
+      victim_ship_name:
+        typeof payload.victim_ship_name === "string"
+          ? payload.victim_ship_name
+          : "",
+      killer_hostility: payload.killer_hostility,
+      victim_hostility: payload.victim_hostility,
+      involved_attackers: toNumber(payload.involved_attackers),
+      system_name: payload.system_name,
+    },
+  };
 };

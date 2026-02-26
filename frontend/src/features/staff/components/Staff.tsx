@@ -1,6 +1,6 @@
 import IntelChannelsCard from "./IntelChannelsCard";
 import JumpbridgeListCard from "./JumpbridgeListCard";
-import SovereigntyCampaignWatchlistCard from "./SovereigntyCampaignWatchlistCard";
+import OrganizationStandingsCard from "./OrganizationStandingsCard";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
 
 export default function Staff() {
@@ -10,7 +10,7 @@ export default function Staff() {
     <div className="grid lg:grid-cols-[1fr_1fr] gap-6 items-start">
       <div className="space-y-6">
         <IntelChannelsCard />
-        {timersEnabled && <SovereigntyCampaignWatchlistCard />}
+        {timersEnabled && <OrganizationStandingsCard />}
       </div>
       <div>
         <JumpbridgeListCard />

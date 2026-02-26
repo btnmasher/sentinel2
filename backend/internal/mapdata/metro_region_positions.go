@@ -21,13 +21,14 @@ const (
 )
 
 func CalculateRegionLayouts(ctx context.Context, app *pocketbase.PocketBase) error {
+	log := logging.New(app).WithFields(logging.Fields{"component": "mapdata.metro_region_positions"})
 	regions, gates, fetchErr := loadRegionLayoutInputs(app)
 	if fetchErr != nil {
 		return fetchErr
 	}
 
 	start := time.Now()
-	logging.New(app).
+	log.
 		WithFields(logging.Fields{
 			"region_count": len(regions),
 		}).
@@ -43,20 +44,18 @@ func CalculateRegionLayouts(ctx context.Context, app *pocketbase.PocketBase) err
 
 	regionSizes, sizeErr := buildMetroRegionSizes(ctx, app, regions)
 	if sizeErr != nil {
-		logging.New(app).
-			WithErr(sizeErr).
-			Warn("region layout size lookup failed")
+		log.WithErr(sizeErr).Warn("region layout size lookup failed")
 		return sizeErr
 	}
 
 	posScaled, sizeScaled := scaleRegionLayout(positions, regionSizes)
 	resolveRegionOverlaps(posScaled, sizeScaled)
 	minX, minY := minScaledRegionPosition(posScaled)
-	if saveErr := saveMetroRegionLayouts(ctx, app, regions, posScaled, minX, minY); saveErr != nil {
+	if saveErr := saveMetroRegionLayouts(ctx, app, regions, posScaled, minX, minY, log); saveErr != nil {
 		return saveErr
 	}
 
-	logging.New(app).
+	log.
 		WithFields(logging.Fields{
 			"duration_ms": time.Since(start).Milliseconds(),
 		}).
@@ -65,27 +64,29 @@ func CalculateRegionLayouts(ctx context.Context, app *pocketbase.PocketBase) err
 }
 
 func loadRegionLayoutInputs(app *pocketbase.PocketBase) (regions, gates []*core.Record, err error) {
+	log := logging.New(app).WithFields(logging.Fields{"component": "mapdata.metro_region_positions"})
 	regions, regionsErr := app.FindRecordsByFilter(store.CollectionRegions, "eve_id < 11000000", "name", 0, 0, nil)
 	if regionsErr != nil {
-		logging.New(app).WithErr(regionsErr).Warn("region layout lookup failed")
+		log.WithErr(regionsErr).Warn("region layout lookup failed")
 		return nil, nil, regionsErr
 	}
 	gates, gatesErr := app.FindRecordsByFilter(store.CollectionGates, "", "", 0, 0, nil)
 	if gatesErr != nil {
-		logging.New(app).WithErr(gatesErr).Warn("region layout gate lookup failed")
+		log.WithErr(gatesErr).Warn("region layout gate lookup failed")
 		return nil, nil, gatesErr
 	}
 	return regions, gates, nil
 }
 
 func regionLayoutPositions(ctx context.Context, regions, gates []*core.Record, app *pocketbase.PocketBase) (map[int]regionPos, error) {
+	log := logging.New(app).WithFields(logging.Fields{"component": "mapdata.metro_region_positions"})
 	positions, useEve2D := eve2DRegionPositions(regions)
 	if useEve2D {
 		return positions, nil
 	}
 	layoutPositions, layoutErr := runRegionLayout(ctx, regions, gates)
 	if layoutErr != nil {
-		logging.New(app).WithErr(layoutErr).Warn("region layout calc failed")
+		log.WithErr(layoutErr).Warn("region layout calc failed")
 		return nil, layoutErr
 	}
 	return layoutPositions, nil
@@ -153,7 +154,7 @@ func minScaledRegionPosition(positions map[int]regionPosF) (minX, minY float64) 
 	return minX, minY
 }
 
-func saveMetroRegionLayouts(ctx context.Context, app *pocketbase.PocketBase, regions []*core.Record, posScaled map[int]regionPosF, minX, minY float64) error {
+func saveMetroRegionLayouts(ctx context.Context, app *pocketbase.PocketBase, regions []*core.Record, posScaled map[int]regionPosF, minX, minY float64, log *logging.Logger) error {
 	for i, region := range regions {
 		if i%100 == 0 && ctx.Err() != nil {
 			return ctx.Err()
@@ -166,8 +167,7 @@ func saveMetroRegionLayouts(ctx context.Context, app *pocketbase.PocketBase, reg
 		region.Set("metro_x", int(math.Round(pos.x-minX)))
 		region.Set("metro_y", int(math.Round(pos.y-minY)))
 		if saveErr := app.Save(region); saveErr != nil {
-			logging.New(app).
-				WithFields(logging.Fields{"region_id": id, "region_name": region.GetString("name")}).
+			log.WithFields(logging.Fields{"region_id": id, "region_name": region.GetString("name")}).
 				WithErr(saveErr).
 				Debug("region layout save failed")
 		}

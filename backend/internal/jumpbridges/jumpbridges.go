@@ -27,11 +27,17 @@ const (
 )
 
 type JumpbridgeService struct {
-	App *pocketbase.PocketBase
+	App    *pocketbase.PocketBase
+	logger *logging.Logger
 }
 
 func NewJumpbridgeService(app *pocketbase.PocketBase) *JumpbridgeService {
-	return &JumpbridgeService{App: app}
+	return &JumpbridgeService{
+		App: app,
+		logger: logging.New(app).WithFields(logging.Fields{
+			"component": "jumpbridges",
+		}),
+	}
 }
 
 func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
@@ -58,7 +64,7 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 	for _, rec := range existing {
 		if deleteErr := s.App.Delete(rec); deleteErr != nil {
 			deleteFailed++
-			logging.New(s.App).
+			s.logger.
 				WithFields(logging.Fields{
 					"record_id":  rec.Id,
 					"collection": coll.Name,
@@ -68,7 +74,7 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 		}
 	}
 	if deleteFailed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"failed": deleteFailed,
 			}).
@@ -86,7 +92,7 @@ func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
 		count += saved
 	}
 	if saveFailed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"failed": saveFailed,
 			}).
@@ -423,7 +429,7 @@ func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, 
 		createdAt, _ := types.ParseDateTime(time.Now())
 		record.Set("created_date", createdAt)
 		if saveErr := s.App.Save(record); saveErr != nil {
-			logging.New(s.App).
+			s.logger.
 				WithFields(logging.Fields{
 					"structure_id": recordStructureID,
 				}).
@@ -478,7 +484,7 @@ func (s *JumpbridgeService) removeSingles() int {
 		if _, ok := pairs[bridgeKey(to, from)]; !ok {
 			if deleteErr := s.App.Delete(bridge); deleteErr != nil {
 				deleteFailed++
-				logging.New(s.App).
+				s.logger.
 					WithFields(logging.Fields{
 						"structure_id": bridge.GetInt("structure_id"),
 						"record_id":    bridge.Id,
@@ -491,7 +497,7 @@ func (s *JumpbridgeService) removeSingles() int {
 		}
 	}
 	if deleteFailed > 0 {
-		logging.New(s.App).
+		s.logger.
 			WithFields(logging.Fields{
 				"failed": deleteFailed,
 			}).

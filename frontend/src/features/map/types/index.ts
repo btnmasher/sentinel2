@@ -2,9 +2,9 @@ import type {
   TimerKind,
   TimerSeverity,
   TimerStageLabel,
-  TimerStandingType,
   TimerStructureType,
 } from "@/features/timers";
+import type { StandingType } from "@/features/shared";
 
 export type Region = {
   region: number;
@@ -53,7 +53,7 @@ export type TimerSignal = {
   remaining_count?: number;
   next_expires_at: string;
   severity: TimerSeverity | string;
-  standing_type: TimerStandingType | string;
+  standing_type: StandingType | string;
   timer_kind: TimerKind | string;
   title?: string;
   structure_type?: TimerStructureType | string;
@@ -68,7 +68,7 @@ export type TimerSignalPreview = {
   title?: string;
   next_expires_at: string;
   severity: TimerSeverity | string;
-  standing_type: TimerStandingType | string;
+  standing_type: StandingType | string;
   timer_kind: TimerKind | string;
   structure_type?: TimerStructureType | string;
   stage_label?: TimerStageLabel | string;

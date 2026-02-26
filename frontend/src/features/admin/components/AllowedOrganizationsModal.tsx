@@ -6,6 +6,7 @@ import SearchSuggestionField from "@/components/SearchSuggestionField";
 import { api } from "@/config/api";
 import { useUIStore } from "@/app/store/uiStore";
 import { useAllianceLogo, useCorporationLogo } from "@/hooks/useEveImage";
+import { organizationBadgeClass } from "@/features/timers";
 import {
   ADMIN_MODAL,
   defineAdminModal,
@@ -196,11 +197,7 @@ function AllowedOrganizationsModalBody() {
                   </div>
                   <div className="text-[11px] text-slate-400">
                     <span
-                      className={`badge badge-xs ${
-                        entity.type === "corporation"
-                          ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
-                          : "border-violet-400/50 bg-violet-500/20 text-violet-200"
-                      }`}
+                      className={`badge badge-xs ${organizationBadgeClass(entity.type)}`}
                     >
                       {entity.type === "corporation"
                         ? "Corporation"
@@ -297,11 +294,7 @@ function AllowedOrganizationRow({
           </div>
           <div className="mt-1">
             <span
-              className={`badge badge-xs ${
-                entry.type === "corporation"
-                  ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
-                  : "border-violet-400/50 bg-violet-500/20 text-violet-200"
-              }`}
+              className={`badge badge-xs ${organizationBadgeClass(entry.type)}`}
             >
               {entry.type === "corporation" ? "Corporation" : "Alliance"}
             </span>

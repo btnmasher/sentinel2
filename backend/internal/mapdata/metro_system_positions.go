@@ -25,16 +25,15 @@ const dotMatchParts = 4
 const regionGraphContextStride = 500
 
 func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) error {
+	log := logging.New(app).WithFields(logging.Fields{"component": "mapdata.metro_system_positions"})
 	regions, regionsErr := app.FindRecordsByFilter(store.CollectionRegions, "eve_id < 11000000", "name", 0, 0, nil)
 	if regionsErr != nil {
-		logging.New(app).
-			WithErr(regionsErr).
-			Warn("system graph region lookup failed")
+		log.WithErr(regionsErr).Warn("system graph region lookup failed")
 		return regionsErr
 	}
 
 	start := time.Now()
-	logging.New(app).
+	log.
 		WithFields(logging.Fields{
 			"region_count": len(regions),
 		}).
@@ -44,8 +43,8 @@ func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) erro
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if calcErr := calculateRegionGraph(ctx, app, region); calcErr != nil {
-			logging.New(app).
+		if calcErr := calculateRegionGraph(ctx, app, region, log); calcErr != nil {
+			log.
 				WithFields(logging.Fields{
 					"region_id":   region.GetInt("eve_id"),
 					"region_name": region.GetString("name"),
@@ -55,7 +54,7 @@ func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) erro
 			return calcErr
 		}
 	}
-	logging.New(app).
+	log.
 		WithFields(logging.Fields{
 			"duration_ms": time.Since(start).Milliseconds(),
 		}).
@@ -63,10 +62,10 @@ func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) erro
 	return nil
 }
 
-func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, region *core.Record) error {
+func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, region *core.Record, log *logging.Logger) error {
 	regionID := region.GetInt("eve_id")
 
-	gateRecords, systems, loadErr := loadRegionGraphInputs(ctx, app, regionID)
+	gateRecords, systems, loadErr := loadRegionGraphInputs(ctx, app, regionID, log)
 	if loadErr != nil {
 		return loadErr
 	}
@@ -76,19 +75,18 @@ func calculateRegionGraph(ctx context.Context, app *pocketbase.PocketBase, regio
 	}
 	positions, positionsErr := runNeato(ctx, dot)
 	if positionsErr != nil {
-		logging.New(app).
-			WithFields(logging.Fields{
-				"region_id": regionID,
-			}).
+		log.WithFields(logging.Fields{
+			"region_id": regionID,
+		}).
 			WithErr(positionsErr).
 			Warn("system graph layout failed")
 		return positionsErr
 	}
 
-	return saveRegionGraphPositions(ctx, app, region, positions)
+	return saveRegionGraphPositions(ctx, app, region, positions, log)
 }
 
-func loadRegionGraphInputs(ctx context.Context, app *pocketbase.PocketBase, regionID int) (gateRecords, systems []*core.Record, err error) {
+func loadRegionGraphInputs(ctx context.Context, app *pocketbase.PocketBase, regionID int, log *logging.Logger) (gateRecords, systems []*core.Record, err error) {
 	gateRecords, gateErr := app.FindRecordsByFilter(
 		store.CollectionGates,
 		"from_region = {:id} || to_region = {:id}",
@@ -98,7 +96,7 @@ func loadRegionGraphInputs(ctx context.Context, app *pocketbase.PocketBase, regi
 		map[string]any{"id": regionID},
 	)
 	if gateErr != nil {
-		logging.New(app).WithFields(logging.Fields{"region_id": regionID}).WithErr(gateErr).Warn("system graph gate lookup failed")
+		log.WithFields(logging.Fields{"region_id": regionID}).WithErr(gateErr).Warn("system graph gate lookup failed")
 		return nil, nil, gateErr
 	}
 	systems, systemsErr := app.FindRecordsByFilter(
@@ -110,7 +108,7 @@ func loadRegionGraphInputs(ctx context.Context, app *pocketbase.PocketBase, regi
 		map[string]any{"id": regionID},
 	)
 	if systemsErr != nil {
-		logging.New(app).WithFields(logging.Fields{"region_id": regionID}).WithErr(systemsErr).Warn("system graph system lookup failed")
+		log.WithFields(logging.Fields{"region_id": regionID}).WithErr(systemsErr).Warn("system graph system lookup failed")
 		return nil, nil, systemsErr
 	}
 	if err := checkContextStride(ctx, len(gateRecords), regionGraphContextStride); err != nil {
@@ -233,7 +231,7 @@ func appendGateEdges(dot *strings.Builder, edgeList []edge) {
 	}
 }
 
-func saveRegionGraphPositions(ctx context.Context, app *pocketbase.PocketBase, region *core.Record, positions map[int]nodePos) error {
+func saveRegionGraphPositions(ctx context.Context, app *pocketbase.PocketBase, region *core.Record, positions map[int]nodePos, log *logging.Logger) error {
 	regionID := region.GetInt("eve_id")
 	for i, id := range sortedKeys(positions) {
 		if i%200 == 0 && ctx.Err() != nil {
@@ -251,12 +249,11 @@ func saveRegionGraphPositions(ctx context.Context, app *pocketbase.PocketBase, r
 		system.Set("metro_x", pos.x)
 		system.Set("metro_y", pos.y)
 		if saveErr := app.Save(system); saveErr != nil {
-			logging.New(app).
-				WithFields(logging.Fields{
-					"region_id":   regionID,
-					"system_id":   system.GetInt("eve_id"),
-					"system_name": system.GetString("name"),
-				}).
+			log.WithFields(logging.Fields{
+				"region_id":   regionID,
+				"system_id":   system.GetInt("eve_id"),
+				"system_name": system.GetString("name"),
+			}).
 				WithErr(saveErr).
 				Debug("system graph save failed")
 		}

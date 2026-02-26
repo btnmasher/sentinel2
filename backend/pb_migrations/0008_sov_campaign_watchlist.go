@@ -13,6 +13,7 @@ import (
 
 const timerScorePercentCap = 100
 
+//nolint:gocognit // migration registration block is intentionally schema-focused.
 func init() {
 	m.Register(func(app core.App) error {
 		isNewWatchlistCollection := false
@@ -23,9 +24,6 @@ func init() {
 			}
 			watchlistCollection = core.NewBaseCollection(store.CollectionSovereigntyCampaignWatchlist)
 			isNewWatchlistCollection = true
-		}
-		if watchlistCollection.Fields.GetByName("key") == nil {
-			watchlistCollection.Fields.Add(&core.TextField{Name: "key", Required: true})
 		}
 		if watchlistCollection.Fields.GetByName("hostility") == nil {
 			watchlistCollection.Fields.Add(&core.SelectField{
@@ -53,7 +51,6 @@ func init() {
 			watchlistCollection.Fields.Add(&core.TextField{Name: "alliance_ticker"})
 		}
 		if isNewWatchlistCollection {
-			watchlistCollection.AddIndex("idx_sov_campaign_watchlist_key", true, "key", "")
 			watchlistCollection.AddIndex("idx_sov_campaign_watchlist_entity", true, "alliance_id", "")
 		}
 

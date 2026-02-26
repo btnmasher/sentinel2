@@ -199,6 +199,7 @@ func IsStageLabel(value string) bool {
 	return ok
 }
 
+//nolint:gocognit // validation matrix mirrors timer business rules.
 func IsAllowedTimerContext(timerKind, structureType, stageLabel string) bool {
 	kind := strings.TrimSpace(timerKind)
 	structure := strings.TrimSpace(structureType)

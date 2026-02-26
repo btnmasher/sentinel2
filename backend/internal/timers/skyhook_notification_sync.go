@@ -674,7 +674,7 @@ func (s *Service) resolveSkyhookOwnerFromNotification(
 		out.CorporationName, out.CorporationTicker = s.resolveCorporationNameTicker(ctx, out.CorporationID)
 	}
 	if out.AllianceID > 0 {
-		out.AllianceName, out.AllianceTicker = s.resolveAllianceNameTicker(ctx, out.AllianceID)
+		out.AllianceName, out.AllianceTicker = s.resolveAllianceNameTicker(ctx, out.AllianceID, sovWatchlist{})
 	}
 	return out
 }
@@ -706,7 +706,7 @@ func (s *Service) resolveCorporationNameTicker(ctx context.Context, corporationI
 	}
 	_ = store.UpsertOrg(s.App, store.CollectionCorporations, corporationID, name, ticker)
 	if allianceID > 0 {
-		allianceName, allianceTicker := s.resolveAllianceNameTicker(ctx, allianceID)
+		allianceName, allianceTicker := s.resolveAllianceNameTicker(ctx, allianceID, sovWatchlist{})
 		if allianceName != "" {
 			_ = store.UpsertOrg(s.App, store.CollectionAlliances, allianceID, allianceName, allianceTicker)
 		}

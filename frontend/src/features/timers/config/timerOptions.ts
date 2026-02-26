@@ -29,17 +29,7 @@ import {
   TimerStandingType,
   TimerStructureType,
 } from "../types";
-
-export enum Tone {
-  Blue = "blue",
-  Yellow = "yellow",
-  Green = "green",
-  Purple = "purple",
-  Gray = "gray",
-  Red = "red",
-  LightBlue = "lightblue",
-  Orange = "orange",
-}
+import { Tone } from "@/features/shared";
 
 export type StructureTone =
   | Tone.Blue
