@@ -44,11 +44,13 @@ func DownloadDotlan(ctx context.Context, app *pocketbase.PocketBase) error {
 		}).
 		Debug("dotlan sync started")
 
+	failedRegions := 0
 	for _, region := range regions {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		if updateErr := updateRegionDotlan(ctx, app, region, log); updateErr != nil {
+			failedRegions++
 			log.
 				WithFields(logging.Fields{
 					"region_id":   region.GetInt("eve_id"),
@@ -56,8 +58,21 @@ func DownloadDotlan(ctx context.Context, app *pocketbase.PocketBase) error {
 				}).
 				WithErr(updateErr).
 				Warn("dotlan region sync failed")
-			return updateErr
+			continue
 		}
+	}
+
+	if failedRegions > 0 {
+		log.WithFields(logging.Fields{
+			"duration_ms":    time.Since(start).Milliseconds(),
+			"region_count":   len(regions),
+			"failed_regions": failedRegions,
+			"saved_regions":  len(regions) - failedRegions,
+		}).Warn("dotlan sync completed with region failures")
+		if failedRegions == len(regions) {
+			return fmt.Errorf("dotlan sync failed for all regions (%d/%d)", failedRegions, len(regions))
+		}
+		return nil
 	}
 
 	log.
