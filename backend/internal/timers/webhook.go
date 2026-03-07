@@ -1,6 +1,7 @@
 package timers
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -9,6 +10,8 @@ import (
 	"sentinel2/internal/config"
 	"sentinel2/internal/store"
 )
+
+const webhookLookupLimit = 2
 
 func (s *Service) FindByWebhookID(webhookID string) (*core.Record, error) {
 	id := strings.TrimSpace(webhookID)
@@ -20,7 +23,7 @@ func (s *Service) FindByWebhookID(webhookID string) (*core.Record, error) {
 		store.CollectionTimers,
 		"webhook_id = {:webhook_id}",
 		"",
-		2,
+		webhookLookupLimit,
 		0,
 		dbx.Params{"webhook_id": id},
 	)
@@ -48,7 +51,7 @@ func (s *Service) CreateWebhook(input *CreateInput) (*core.Record, error) {
 func (s *Service) DeleteByWebhookID(webhookID string) error {
 	record, err := s.FindByWebhookID(webhookID)
 	if err != nil {
-		if err == ErrTimerNotFound {
+		if errors.Is(err, ErrTimerNotFound) {
 			return nil
 		}
 		return err

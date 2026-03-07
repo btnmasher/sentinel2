@@ -175,7 +175,7 @@ func (r *CharacterRefresher) refreshOneRecord(ctx context.Context, record *core.
 		return r.refreshWithRetry(ctx, record, defaultRefreshRetries)
 	}
 	var refreshErr error
-	//nolint:contextcheck // runner supplies run context through callback and manages cancellation.
+	//nolint:contextcheck // runner.Run manages callback context.
 	_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
 		refreshErr = r.refreshWithRetry(ctx, record, defaultRefreshRetries)
 		return refreshErr
@@ -323,22 +323,8 @@ func (r *CharacterRefresher) handleRefreshDenied(userID string, character *core.
 
 func (r *CharacterRefresher) refreshAffiliationOnly(ctx context.Context, character *core.Record, refreshErr error) error {
 	charID := character.GetInt("eve_character_id")
-	if charID != 0 {
-		corpID, allianceID, affiliationErr := r.ESI.CharacterAffiliation(ctx, charID)
-		if affiliationErr == nil {
-			character.Set("eve_corporation_id", corpID)
-			character.Set("eve_alliance_id", allianceID)
-			ensureOrgName(ctx, r.App, r.PublicESI, store.CollectionCorporations, corpID)
-			ensureOrgName(ctx, r.App, r.PublicESI, store.CollectionAlliances, allianceID)
-		} else {
-			r.logger.
-				WithFields(logging.Fields{
-					"character_record_id": character.Id,
-					"character_id":        charID,
-				}).
-				WithErr(affiliationErr).
-				Warn("character affiliation refresh failed")
-		}
+	if charID > 0 {
+		r.refreshCharacterAffiliation(ctx, character, charID)
 	}
 
 	refreshAt, _ := types.ParseDateTime(time.Now())
@@ -349,4 +335,27 @@ func (r *CharacterRefresher) refreshAffiliationOnly(ctx context.Context, charact
 	}
 
 	return r.App.Save(character)
+}
+
+func (r *CharacterRefresher) refreshCharacterAffiliation(ctx context.Context, character *core.Record, charID int) {
+	corpID, allianceID, affiliationErr := r.ESI.CharacterAffiliation(ctx, charID)
+	if affiliationErr != nil {
+		r.logger.
+			WithFields(logging.Fields{
+				"character_record_id": character.Id,
+				"character_id":        charID,
+			}).
+			WithErr(affiliationErr).
+			Warn("character affiliation refresh failed")
+		return
+	}
+
+	character.Set("eve_corporation_id", corpID)
+	character.Set("eve_alliance_id", allianceID)
+	if err := store.WarmCorporationCache(ctx, r.App, r.PublicESI, corpID); err != nil {
+		r.logger.WithFields(logging.Fields{"corporation_id": corpID}).WithErr(err).Warn("failed to warm corporation cache")
+	}
+	if err := store.WarmAllianceCache(ctx, r.App, r.PublicESI, allianceID); err != nil {
+		r.logger.WithFields(logging.Fields{"alliance_id": allianceID}).WithErr(err).Warn("failed to warm alliance cache")
+	}
 }

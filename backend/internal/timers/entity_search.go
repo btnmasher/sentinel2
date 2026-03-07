@@ -6,10 +6,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
-
 	esipkg "sentinel2/internal/esi"
 	"sentinel2/internal/store"
 )
@@ -164,25 +160,12 @@ func (s *Service) resolveCorporation(ctx context.Context, corporationID int) (En
 	if s == nil {
 		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
 	}
-	if s.App != nil {
-		if name, ticker, ok := store.GetOrg(s.App, store.CollectionCorporations, corporationID); ok {
-			return EntitySearchItem{
-				Type:   "corporation",
-				ID:     corporationID,
-				Name:   name,
-				Ticker: ticker,
-			}, nil
-		}
-	}
-	if s.PublicESI == nil {
-		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
-	}
-	name, ticker, allianceID, err := s.PublicESI.CorporationDetails(ctx, corporationID)
+	name, ticker, allianceID, ok, err := store.GetOrFetchCorporation(ctx, s.App, s.PublicESI, corporationID)
 	if err != nil {
 		return EntitySearchItem{}, err
 	}
-	if upsertErr := upsertOrganizationRecord(s.App, store.CollectionCorporations, corporationID, name, ticker); upsertErr != nil {
-		return EntitySearchItem{}, upsertErr
+	if !ok {
+		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
 	}
 	var parentAlliance *EntitySearchAlliance
 	if allianceID > 0 {
@@ -208,25 +191,12 @@ func (s *Service) resolveAlliance(ctx context.Context, allianceID int) (EntitySe
 	if s == nil {
 		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
 	}
-	if s.App != nil {
-		if name, ticker, ok := store.GetOrg(s.App, store.CollectionAlliances, allianceID); ok {
-			return EntitySearchItem{
-				Type:   "alliance",
-				ID:     allianceID,
-				Name:   name,
-				Ticker: ticker,
-			}, nil
-		}
-	}
-	if s.PublicESI == nil {
-		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
-	}
-	name, ticker, err := s.PublicESI.AllianceDetails(ctx, allianceID)
+	name, ticker, ok, err := store.GetOrFetchAlliance(ctx, s.App, s.PublicESI, allianceID)
 	if err != nil {
 		return EntitySearchItem{}, err
 	}
-	if upsertErr := upsertOrganizationRecord(s.App, store.CollectionAlliances, allianceID, name, ticker); upsertErr != nil {
-		return EntitySearchItem{}, upsertErr
+	if !ok {
+		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
 	}
 	return EntitySearchItem{
 		Type:   "alliance",
@@ -234,33 +204,4 @@ func (s *Service) resolveAlliance(ctx context.Context, allianceID int) (EntitySe
 		Name:   name,
 		Ticker: ticker,
 	}, nil
-}
-
-func upsertOrganizationRecord(app core.App, collectionName string, eveID int, name, ticker string) error {
-	if app == nil || eveID <= 0 || strings.TrimSpace(name) == "" {
-		return nil
-	}
-	collection, err := app.FindCollectionByNameOrId(collectionName)
-	if err != nil {
-		return err
-	}
-	records, recordsErr := app.FindRecordsByFilter(collectionName, "eve_id = {:id}", "", 1, 0, dbx.Params{"id": eveID})
-	if recordsErr != nil {
-		return recordsErr
-	}
-	var record *core.Record
-	if len(records) > 0 {
-		record = records[0]
-	} else {
-		record = core.NewRecord(collection)
-		record.Set("eve_id", eveID)
-	}
-	record.Set("name", name)
-	if record.Collection().Fields.GetByName("ticker") != nil {
-		record.Set("ticker", ticker)
-	}
-	if record.Collection().Fields.GetByName("updated_at") != nil {
-		record.Set("updated_at", types.NowDateTime())
-	}
-	return app.Save(record)
 }

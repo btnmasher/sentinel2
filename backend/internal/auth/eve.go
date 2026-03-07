@@ -364,8 +364,12 @@ func (p *EVEProvider) upsertCharacterForUser(ctx context.Context, user *core.Rec
 	if upsertErr != nil {
 		return nil, ErrFailedPersistCharacter
 	}
-	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionCorporations, input.corpID)
-	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionAlliances, input.allianceID)
+	if err := store.WarmCorporationCache(ctx, p.App, p.PublicESI, input.corpID); err != nil && p.App != nil {
+		p.App.Logger().Warn("failed to warm corporation cache", "corporation_id", input.corpID, "error", err.Error())
+	}
+	if err := store.WarmAllianceCache(ctx, p.App, p.PublicESI, input.allianceID); err != nil && p.App != nil {
+		p.App.Logger().Warn("failed to warm alliance cache", "alliance_id", input.allianceID, "error", err.Error())
+	}
 	return charRecord, nil
 }
 
@@ -398,8 +402,12 @@ func (p *EVEProvider) refreshMainAffiliation(ctx context.Context, mainChar *core
 	}
 	mainChar.Set("eve_corporation_id", mainCorp)
 	mainChar.Set("eve_alliance_id", mainAlliance)
-	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionCorporations, mainCorp)
-	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionAlliances, mainAlliance)
+	if err := store.WarmCorporationCache(ctx, p.App, p.PublicESI, mainCorp); err != nil && p.App != nil {
+		p.App.Logger().Warn("failed to warm corporation cache", "corporation_id", mainCorp, "error", err.Error())
+	}
+	if err := store.WarmAllianceCache(ctx, p.App, p.PublicESI, mainAlliance); err != nil && p.App != nil {
+		p.App.Logger().Warn("failed to warm alliance cache", "alliance_id", mainAlliance, "error", err.Error())
+	}
 	if saveErr := p.App.Save(mainChar); saveErr != nil {
 		return ErrFailedPersistCharacter
 	}
@@ -566,6 +574,14 @@ func tokensFromCharacter(record *core.Record) (AuthTokens, bool) {
 	}, true
 }
 
+type refreshedCharacterData struct {
+	charID     int
+	charName   string
+	scopes     []string
+	corpID     int
+	allianceID int
+}
+
 func (p *EVEProvider) refreshCharacter(ctx context.Context, user, character *core.Record) (AuthTokens, error) {
 	if character == nil {
 		return AuthTokens{}, errors.New("missing character")
@@ -580,29 +596,18 @@ func (p *EVEProvider) refreshCharacter(ctx context.Context, user, character *cor
 	if tokenErr != nil {
 		return AuthTokens{}, tokenErr
 	}
-
-	claims, claimsErr := parseEVEToken(token.AccessToken)
-	if claimsErr != nil {
-		return AuthTokens{}, claimsErr
-	}
-	charID, charIDErr := parseCharacterID(claims.Sub)
-	if charIDErr != nil {
-		return AuthTokens{}, charIDErr
-	}
-
-	corpID, allianceID, affiliationErr := p.ESI.CharacterAffiliation(ctx, charID)
-	if affiliationErr != nil {
-		return AuthTokens{}, affiliationErr
+	data, resolveErr := p.resolveRefreshedCharacterData(ctx, token.AccessToken)
+	if resolveErr != nil {
+		return AuthTokens{}, resolveErr
 	}
 
 	isMain := character.GetBool("is_main")
-	if accessErr := p.ensureCharacterAccess(isMain, corpID, allianceID); accessErr != nil {
+	if accessErr := p.ensureCharacterAccess(isMain, data.corpID, data.allianceID); accessErr != nil {
 		return AuthTokens{}, accessErr
 	}
 
-	p.applyCharacterRefresh(character, charID, claims.Name, corpID, allianceID, token, claims.Scp)
-	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionCorporations, corpID)
-	ensureOrgName(ctx, p.App, p.PublicESI, store.CollectionAlliances, allianceID)
+	p.applyCharacterRefresh(character, data.charID, data.charName, data.corpID, data.allianceID, token, data.scopes)
+	p.warmCharacterOrganizations(ctx, data.corpID, data.allianceID)
 
 	if saveErr := p.App.Save(character); saveErr != nil {
 		return AuthTokens{}, saveErr
@@ -620,6 +625,37 @@ func (p *EVEProvider) refreshCharacter(ctx context.Context, user, character *cor
 		RefreshToken:  token.RefreshToken,
 		RefreshExpiry: time.Unix(eveRefreshExpiry(), 0),
 	}, nil
+}
+
+func (p *EVEProvider) resolveRefreshedCharacterData(ctx context.Context, accessToken string) (refreshedCharacterData, error) {
+	claims, claimsErr := parseEVEToken(accessToken)
+	if claimsErr != nil {
+		return refreshedCharacterData{}, claimsErr
+	}
+	charID, charIDErr := parseCharacterID(claims.Sub)
+	if charIDErr != nil {
+		return refreshedCharacterData{}, charIDErr
+	}
+	corpID, allianceID, affiliationErr := p.ESI.CharacterAffiliation(ctx, charID)
+	if affiliationErr != nil {
+		return refreshedCharacterData{}, affiliationErr
+	}
+	return refreshedCharacterData{
+		charID:     charID,
+		charName:   claims.Name,
+		scopes:     claims.Scp,
+		corpID:     corpID,
+		allianceID: allianceID,
+	}, nil
+}
+
+func (p *EVEProvider) warmCharacterOrganizations(ctx context.Context, corpID, allianceID int) {
+	if err := store.WarmCorporationCache(ctx, p.App, p.PublicESI, corpID); err != nil && p.App != nil {
+		p.App.Logger().Warn("failed to warm corporation cache", "corporation_id", corpID, "error", err.Error())
+	}
+	if err := store.WarmAllianceCache(ctx, p.App, p.PublicESI, allianceID); err != nil && p.App != nil {
+		p.App.Logger().Warn("failed to warm alliance cache", "alliance_id", allianceID, "error", err.Error())
+	}
 }
 
 func (p *EVEProvider) ensureCharacterAccess(isMain bool, corpID, allianceID int) error {

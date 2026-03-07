@@ -694,17 +694,10 @@ func (s *Service) resolveCorporationNameTicker(ctx context.Context, corporationI
 	if corporationID <= 0 {
 		return "", ""
 	}
-	if name, ticker, ok := store.GetOrg(s.App, store.CollectionCorporations, corporationID); ok {
-		return name, ticker
-	}
-	if s.PublicESI == nil {
+	name, ticker, allianceID, ok, err := store.GetOrFetchCorporation(ctx, s.App, s.PublicESI, corporationID)
+	if err != nil || !ok {
 		return "", ""
 	}
-	name, ticker, allianceID, err := s.PublicESI.CorporationDetails(ctx, corporationID)
-	if err != nil {
-		return "", ""
-	}
-	_ = store.UpsertOrg(s.App, store.CollectionCorporations, corporationID, name, ticker)
 	if allianceID > 0 {
 		allianceName, allianceTicker := s.resolveAllianceNameTicker(ctx, allianceID, sovWatchlist{})
 		if allianceName != "" {

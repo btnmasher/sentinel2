@@ -23,7 +23,7 @@ func RunMapDataUpdateWithContext(ctx context.Context, app *pocketbase.PocketBase
 		runner.WithFields(logging.Fields{"forced": true})
 	}
 
-	//nolint:contextcheck // runner manages lifecycle context and exposes it to each step callback.
+	//nolint:contextcheck // runner.Run manages callback context.
 	err := runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
 		importer := NewSDEImporter(app)
 		needsUpdate, etag, checkErr := runSDECheckStep(stepper, importer, force)

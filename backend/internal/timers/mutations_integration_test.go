@@ -19,7 +19,7 @@ const (
 )
 
 func TestServiceCreate(t *testing.T) {
-	svc, app, _, user := newTimerTestService(t)
+	svc, app, user := newTimerTestService(t)
 	expiresAt := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
 
 	record, err := svc.Create(&CreateInput{
@@ -78,7 +78,7 @@ func TestServiceCreate(t *testing.T) {
 }
 
 func TestServiceUpdatePartial(t *testing.T) {
-	svc, _, _, user := newTimerTestService(t)
+	svc, _, user := newTimerTestService(t)
 	record := mustCreateTimer(t, svc, user, "Before update", time.Now().UTC().Add(90*time.Minute))
 
 	title := "After update"
@@ -127,7 +127,7 @@ func TestServiceUpdatePartial(t *testing.T) {
 }
 
 func TestServiceCancelAndUncancel(t *testing.T) {
-	svc, _, _, user := newTimerTestService(t)
+	svc, _, user := newTimerTestService(t)
 	record := mustCreateTimer(t, svc, user, "Cancelable timer", time.Now().UTC().Add(2*time.Hour))
 
 	canceled, err := svc.Cancel(record.Id, user)
@@ -162,7 +162,7 @@ func TestServiceCancelAndUncancel(t *testing.T) {
 }
 
 func TestServiceDelete(t *testing.T) {
-	svc, app, _, user := newTimerTestService(t)
+	svc, app, user := newTimerTestService(t)
 	record := mustCreateTimer(t, svc, user, "Delete me", time.Now().UTC().Add(2*time.Hour))
 
 	deleted, err := svc.Delete(record.Id)
@@ -179,7 +179,7 @@ func TestServiceDelete(t *testing.T) {
 }
 
 func TestServiceListRespectsStatusAndRecentCanceledCutoff(t *testing.T) {
-	svc, app, _, user := newTimerTestService(t)
+	svc, app, user := newTimerTestService(t)
 	active := mustCreateTimer(t, svc, user, "Active timer", time.Now().UTC().Add(3*time.Hour))
 	recentCanceled := mustCreateTimer(t, svc, user, "Recent canceled timer", time.Now().UTC().Add(4*time.Hour))
 	oldCanceled := mustCreateTimer(t, svc, user, "Old canceled timer", time.Now().UTC().Add(5*time.Hour))
@@ -219,7 +219,7 @@ func TestServiceListRespectsStatusAndRecentCanceledCutoff(t *testing.T) {
 }
 
 func TestServiceCreateWebhookRequiresWebhookID(t *testing.T) {
-	svc, _, _, _ := newTimerTestService(t)
+	svc, _, _ := newTimerTestService(t)
 
 	_, err := svc.CreateWebhook(&CreateInput{
 		SystemID:      testSystemID,
@@ -233,8 +233,55 @@ func TestServiceCreateWebhookRequiresWebhookID(t *testing.T) {
 	}
 }
 
+func TestServiceCreateRequiresStructureType(t *testing.T) {
+	svc, _, user := newTimerTestService(t)
+
+	_, err := svc.Create(&CreateInput{
+		Title:      "Missing structure type",
+		SystemID:   testSystemID,
+		TimerKind:  TimerKindCustom,
+		StageLabel: TimerStageCustom,
+		ExpiresAt:  time.Now().UTC().Add(time.Hour),
+	}, user)
+	if !errors.Is(err, ErrMissingStructureType) {
+		t.Fatalf("Create() error = %v, want %v", err, ErrMissingStructureType)
+	}
+}
+
+func TestServiceCreateRequiresPlanetForSkyhook(t *testing.T) {
+	svc, _, user := newTimerTestService(t)
+
+	_, err := svc.Create(&CreateInput{
+		Title:         "Skyhook timer",
+		SystemID:      testSystemID,
+		TimerKind:     TimerKindReinforcement,
+		StructureType: TimerStructureOrbitalSkyhook,
+		StageLabel:    TimerStageInitialVulnerability,
+		ExpiresAt:     time.Now().UTC().Add(time.Hour),
+	}, user)
+	if !errors.Is(err, ErrPlanetRequired) {
+		t.Fatalf("Create() error = %v, want %v", err, ErrPlanetRequired)
+	}
+}
+
+func TestServiceCreateRequiresMoonForMetenox(t *testing.T) {
+	svc, _, user := newTimerTestService(t)
+
+	_, err := svc.Create(&CreateInput{
+		Title:         "Metenox timer",
+		SystemID:      testSystemID,
+		TimerKind:     TimerKindReinforcement,
+		StructureType: TimerStructureMetenoxMoonDrill,
+		StageLabel:    TimerStageInitialVulnerability,
+		ExpiresAt:     time.Now().UTC().Add(time.Hour),
+	}, user)
+	if !errors.Is(err, ErrMoonRequired) {
+		t.Fatalf("Create() error = %v, want %v", err, ErrMoonRequired)
+	}
+}
+
 func TestServiceWebhookLifecycle(t *testing.T) {
-	svc, _, _, _ := newTimerTestService(t)
+	svc, _, _ := newTimerTestService(t)
 	expiresAt := time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
 
 	record, err := svc.CreateWebhook(&CreateInput{
@@ -279,11 +326,94 @@ func TestServiceWebhookLifecycle(t *testing.T) {
 	}
 }
 
-func newTimerTestService(t *testing.T) (*Service, *pocketbase.PocketBase, *core.Record, *core.Record) {
+func TestServiceCreateHydratesDisplayFieldsFromIDs(t *testing.T) {
+	svc, _, user := newTimerTestService(t)
+	seedDisplayLookupRecords(t, svc.App)
+
+	record, err := svc.Create(&CreateInput{
+		Title:              "Hydrated timer",
+		SystemID:           testSystemID,
+		TimerKind:          TimerKindCustom,
+		StructureType:      TimerStructureCustom,
+		StageLabel:         TimerStageCustom,
+		ExpiresAt:          time.Now().UTC().Add(2 * time.Hour),
+		PlanetID:           40000001,
+		MoonID:             50000001,
+		OwnerCorporationID: 98000001,
+		OwnerAllianceID:    99000001,
+	}, user)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if got := record.GetString("planet_name"); got != "Alpha I" {
+		t.Fatalf("planet_name = %q, want %q", got, "Alpha I")
+	}
+	if got := record.GetString("moon_name"); got != "Alpha I - Moon 1" {
+		t.Fatalf("moon_name = %q, want %q", got, "Alpha I - Moon 1")
+	}
+	if got := record.GetString("owner_corporation_name"); got != "Acme Corp" {
+		t.Fatalf("owner_corporation_name = %q, want %q", got, "Acme Corp")
+	}
+	if got := record.GetString("owner_corporation_ticker"); got != "ACME" {
+		t.Fatalf("owner_corporation_ticker = %q, want %q", got, "ACME")
+	}
+	if got := record.GetString("owner_alliance_name"); got != "Test Alliance" {
+		t.Fatalf("owner_alliance_name = %q, want %q", got, "Test Alliance")
+	}
+	if got := record.GetString("owner_alliance_ticker"); got != "TST" {
+		t.Fatalf("owner_alliance_ticker = %q, want %q", got, "TST")
+	}
+}
+
+func TestServiceUpdateHydratesMissingDisplayFieldsFromIDs(t *testing.T) {
+	svc, app, user := newTimerTestService(t)
+	seedDisplayLookupRecords(t, app)
+	record := mustCreateTimer(t, svc, user, "Update hydrate", time.Now().UTC().Add(2*time.Hour))
+
+	record.Set("planet_id", 40000001)
+	record.Set("moon_id", 50000001)
+	record.Set("owner_corporation_id", 98000001)
+	record.Set("owner_alliance_id", 99000001)
+	record.Set("planet_name", "")
+	record.Set("moon_name", "")
+	record.Set("owner_corporation_name", "")
+	record.Set("owner_corporation_ticker", "")
+	record.Set("owner_alliance_name", "")
+	record.Set("owner_alliance_ticker", "")
+	mustSaveRecord(t, app, record)
+
+	notes := "touch existing record"
+	updated, err := svc.Update(record.Id, &UpdateInput{Notes: &notes})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	if got := updated.GetString("planet_name"); got != "Alpha I" {
+		t.Fatalf("planet_name = %q, want %q", got, "Alpha I")
+	}
+	if got := updated.GetString("moon_name"); got != "Alpha I - Moon 1" {
+		t.Fatalf("moon_name = %q, want %q", got, "Alpha I - Moon 1")
+	}
+	if got := updated.GetString("owner_corporation_name"); got != "Acme Corp" {
+		t.Fatalf("owner_corporation_name = %q, want %q", got, "Acme Corp")
+	}
+	if got := updated.GetString("owner_corporation_ticker"); got != "ACME" {
+		t.Fatalf("owner_corporation_ticker = %q, want %q", got, "ACME")
+	}
+	if got := updated.GetString("owner_alliance_name"); got != "Test Alliance" {
+		t.Fatalf("owner_alliance_name = %q, want %q", got, "Test Alliance")
+	}
+	if got := updated.GetString("owner_alliance_ticker"); got != "TST" {
+		t.Fatalf("owner_alliance_ticker = %q, want %q", got, "TST")
+	}
+}
+
+func newTimerTestService(t *testing.T) (svc *Service, app *pocketbase.PocketBase, user *core.Record) {
 	t.Helper()
 
 	dataDir := t.TempDir()
-	app := pocketbase.NewWithConfig(pocketbase.Config{
+	app = pocketbase.NewWithConfig(pocketbase.Config{
 		DefaultDataDir:       dataDir,
 		DefaultEncryptionEnv: "pb_test_env",
 	})
@@ -301,9 +431,10 @@ func newTimerTestService(t *testing.T) (*Service, *pocketbase.PocketBase, *core.
 
 	region := mustCreateRegion(t, app, testRegionID, "Test Region")
 	mustCreateSystem(t, app, testSystemID, "Alpha", region.GetInt("eve_id"), region.GetString("name"))
-	user := mustCreateUser(t, app, "staff@example.com", "Test Pilot")
+	user = mustCreateUser(t, app, "staff@example.com", "Test Pilot")
 
-	return NewService(app, nil, nil), app, region, user
+	svc = NewService(app, nil, nil)
+	return svc, app, user
 }
 
 func mustCreateRegion(t *testing.T, app *pocketbase.PocketBase, eveID int, name string) *core.Record {
@@ -353,6 +484,61 @@ func mustCreateUser(t *testing.T, app *pocketbase.PocketBase, email, characterNa
 	record.Set("eve_character_name", characterName)
 	mustSaveRecord(t, app, record)
 	return record
+}
+
+func seedDisplayLookupRecords(t *testing.T, app *pocketbase.PocketBase) {
+	t.Helper()
+
+	mustUpsertNumberRecord(t, app, store.CollectionPlanets, 40000001, map[string]any{
+		"eve_id":      40000001,
+		"name":        "Alpha I",
+		"system_id":   testSystemID,
+		"system_name": "Alpha",
+	})
+	mustUpsertNumberRecord(t, app, store.CollectionMoons, 50000001, map[string]any{
+		"eve_id":      50000001,
+		"name":        "Alpha I - Moon 1",
+		"system_id":   testSystemID,
+		"system_name": "Alpha",
+		"planet_id":   40000001,
+		"planet_name": "Alpha I",
+	})
+	mustUpsertNumberRecord(t, app, store.CollectionCorporations, 98000001, map[string]any{
+		"eve_id": 98000001,
+		"name":   "Acme Corp",
+		"ticker": "ACME",
+	})
+	mustUpsertNumberRecord(t, app, store.CollectionAlliances, 99000001, map[string]any{
+		"eve_id": 99000001,
+		"name":   "Test Alliance",
+		"ticker": "TST",
+	})
+}
+
+func mustUpsertNumberRecord(t *testing.T, app *pocketbase.PocketBase, collectionName string, eveID int, values map[string]any) {
+	t.Helper()
+
+	collection, err := app.FindCollectionByNameOrId(collectionName)
+	if err != nil {
+		t.Fatalf("FindCollectionByNameOrId(%q) error = %v", collectionName, err)
+	}
+
+	records, err := app.FindRecordsByFilter(collectionName, "eve_id = {:id}", "", 1, 0, map[string]any{"id": eveID})
+	if err != nil {
+		t.Fatalf("FindRecordsByFilter(%q) error = %v", collectionName, err)
+	}
+
+	var record *core.Record
+	if len(records) > 0 {
+		record = records[0]
+	} else {
+		record = core.NewRecord(collection)
+	}
+
+	for key, value := range values {
+		record.Set(key, value)
+	}
+	mustSaveRecord(t, app, record)
 }
 
 func mustCreateTimer(t *testing.T, svc *Service, user *core.Record, title string, expiresAt time.Time) *core.Record {

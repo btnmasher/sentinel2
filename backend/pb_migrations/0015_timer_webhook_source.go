@@ -1,12 +1,15 @@
 package pb_migrations
 
 import (
+	"slices"
+
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
 
 	"sentinel2/internal/store"
 )
 
+//nolint:gocognit // Migration registration blocks are intentionally schema-focused.
 func init() {
 	m.Register(func(app core.App) error {
 		collection, err := app.FindCollectionByNameOrId(store.CollectionTimers)
@@ -16,14 +19,7 @@ func init() {
 
 		sourceField, ok := collection.Fields.GetByName("source").(*core.SelectField)
 		if ok {
-			hasWebhook := false
-			for _, value := range sourceField.Values {
-				if value == "webhook" {
-					hasWebhook = true
-					break
-				}
-			}
-			if !hasWebhook {
+			if !slices.Contains(sourceField.Values, "webhook") {
 				sourceField.Values = append(sourceField.Values, "webhook")
 			}
 		}

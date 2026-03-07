@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sentinel2.local/docs/timer-webhook.schema.json",
   "title": "Sentinel Timer Webhook Upsert Payload",
+  "description": "Only `id` is always required in the payload. When the webhook id is new, `system_id`, `expires_at`, and a create-valid timer context are required. All display-name fields are optional; Sentinel will backfill them from its local cache when the corresponding IDs are known.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id"],
@@ -11,19 +12,32 @@
       "minLength": 1,
       "description": "External timer identifier. Stored as webhook_id."
     },
-    "title": { "type": "string" },
-    "system_id": { "type": "integer", "minimum": 1 },
-    "system": { "type": "string" },
+    "title": {
+      "type": "string",
+      "description": "Optional. Defaults to the resolved system name on create when omitted."
+    },
+    "system_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Optional on update. Required on create."
+    },
     "standing_type": {
       "type": "string",
       "enum": ["ours", "friendly", "complicated", "neutral", "hostile"]
     },
     "timer_kind": {
       "type": "string",
-      "enum": ["reinforcement", "anchoring", "unanchoring", "extraction", "custom"]
+      "enum": [
+        "reinforcement",
+        "anchoring",
+        "unanchoring",
+        "extraction",
+        "custom"
+      ]
     },
     "structure_type": {
       "type": "string",
+      "description": "Optional on update. Required on create.",
       "enum": [
         "upwell_citadel_astrahus",
         "upwell_citadel_fortizar",
@@ -45,17 +59,54 @@
         "custom"
       ]
     },
-    "stage_label": { "type": "string" },
-    "planet_id": { "type": "integer", "minimum": 0 },
-    "planet_name": { "type": "string" },
-    "moon_id": { "type": "integer", "minimum": 0 },
-    "moon_name": { "type": "string" },
-    "owner_corporation_id": { "type": "integer", "minimum": 0 },
-    "owner_corporation_name": { "type": "string" },
-    "owner_corporation_ticker": { "type": "string" },
-    "owner_alliance_id": { "type": "integer", "minimum": 0 },
-    "owner_alliance_name": { "type": "string" },
-    "owner_alliance_ticker": { "type": "string" },
+    "stage_label": {
+      "type": "string",
+      "description": "Optional on update. Required on create for a valid timer context."
+    },
+    "planet_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional. If provided without `planet_name`, Sentinel will try to fill the name from its local SDE cache."
+    },
+    "planet_name": {
+      "type": "string",
+      "description": "Optional display field. If omitted and `planet_id` is known locally, Sentinel fills it automatically."
+    },
+    "moon_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional. If provided without `moon_name`, Sentinel will try to fill the name from its local SDE cache."
+    },
+    "moon_name": {
+      "type": "string",
+      "description": "Optional display field. If omitted and `moon_id` is known locally, Sentinel fills it automatically."
+    },
+    "owner_corporation_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional. If provided without name/ticker, Sentinel will try to fill them from its local organization cache and may fall back to public ESI."
+    },
+    "owner_corporation_name": {
+      "type": "string",
+      "description": "Optional display field. If omitted and `owner_corporation_id` is available, Sentinel fills it automatically from cache or public ESI."
+    },
+    "owner_corporation_ticker": {
+      "type": "string",
+      "description": "Optional display field. If omitted and `owner_corporation_id` is available, Sentinel fills it automatically from cache or public ESI."
+    },
+    "owner_alliance_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional. If provided without name/ticker, Sentinel will try to fill them from its local organization cache and may fall back to public ESI."
+    },
+    "owner_alliance_name": {
+      "type": "string",
+      "description": "Optional display field. If omitted and `owner_alliance_id` is available, Sentinel fills it automatically from cache or public ESI."
+    },
+    "owner_alliance_ticker": {
+      "type": "string",
+      "description": "Optional display field. If omitted and `owner_alliance_id` is available, Sentinel fills it automatically from cache or public ESI."
+    },
     "skyhook_fullness_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
     "attackers_score_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
     "defender_score_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
@@ -67,11 +118,12 @@
     },
     "status": {
       "type": "string",
-      "enum": ["active", "canceled"]
+      "enum": ["active", "canceled"],
+      "description": "Optional. Defaults to `active` on create and is left unchanged on update when omitted. Only send `canceled` when you want the timer to remain stored but marked canceled."
     },
     "expires_at": {
       "type": "string",
-      "description": "UTC timestamp accepted by Sentinel flexible datetime parsing."
+      "description": "Optional on update. Required on create. UTC timestamp accepted by Sentinel flexible datetime parsing."
     },
     "source_ref": { "type": "string" },
     "notes": { "type": "string" },

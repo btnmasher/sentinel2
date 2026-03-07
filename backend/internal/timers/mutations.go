@@ -29,6 +29,7 @@ func (s *Service) Create(input *CreateInput, auth *core.Record) (*core.Record, e
 
 	record := core.NewRecord(collection)
 	s.applyCreateInput(record, system, input, auth)
+	s.hydrateDisplayFields(record)
 	if err := s.App.Save(record); err != nil {
 		return nil, err
 	}
@@ -76,6 +77,7 @@ func (s *Service) Update(id string, input *UpdateInput) (*core.Record, error) {
 	queryhelpers.SetOptional(record, "notes", input.Notes, trimValue)
 	queryhelpers.SetOptional(record, "raw_text", input.RawText, trimValue)
 	queryhelpers.SetOptional(record, "replacement_action", input.ReplacementAction, trimValue)
+	s.hydrateDisplayFields(record)
 
 	if err := s.App.Save(record); err != nil {
 		return nil, err

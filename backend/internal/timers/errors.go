@@ -12,6 +12,7 @@ var (
 	ErrMissingUpdateInput               = errors.New("missing update input")
 	ErrMissingInput                     = errors.New("missing input")
 	ErrMissingSystem                    = errors.New("missing system")
+	ErrMissingStructureType             = errors.New("missing structure_type")
 	ErrSystemNotFound                   = errors.New("system not found")
 	ErrMissingExpiresAt                 = errors.New("missing expires_at")
 	ErrMoonRequired                     = errors.New("moon is required for selected structure")

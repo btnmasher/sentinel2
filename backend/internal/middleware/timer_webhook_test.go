@@ -32,29 +32,33 @@ func TestRequireTimersWebhookToken(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPut, "/api/webhooks/timers", nil)
-			if tc.authHeader != "" {
-				req.Header.Set("Authorization", tc.authHeader)
-			}
-			c := &core.RequestEvent{
-				Event: router.Event{Request: req},
-			}
-
-			err := middlewareFn(c)
-			if tc.wantStatus == 0 {
-				if err != nil {
-					t.Fatalf("RequireTimersWebhookToken() error = %v, want nil", err)
-				}
-				return
-			}
-
-			if err == nil {
-				t.Fatalf("RequireTimersWebhookToken() error = nil, want status %d", tc.wantStatus)
-			}
-			apiErr := router.ToApiError(err)
-			if apiErr.Status != tc.wantStatus {
-				t.Fatalf("status = %d, want %d", apiErr.Status, tc.wantStatus)
-			}
+			err := middlewareFn(newWebhookRequestEvent(tc.authHeader))
+			assertMiddlewareResult(t, err, tc.wantStatus)
 		})
+	}
+}
+
+func newWebhookRequestEvent(authHeader string) *core.RequestEvent {
+	req := httptest.NewRequest(http.MethodPut, "/api/webhooks/timers", http.NoBody)
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	return &core.RequestEvent{Event: router.Event{Request: req}}
+}
+
+func assertMiddlewareResult(t *testing.T, err error, wantStatus int) {
+	t.Helper()
+	if wantStatus == 0 {
+		if err != nil {
+			t.Fatalf("RequireTimersWebhookToken() error = %v, want nil", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("RequireTimersWebhookToken() error = nil, want status %d", wantStatus)
+	}
+	apiErr := router.ToApiError(err)
+	if apiErr.Status != wantStatus {
+		t.Fatalf("status = %d, want %d", apiErr.Status, wantStatus)
 	}
 }

@@ -22,7 +22,6 @@ type upsertPayload struct {
 	ID                     string  `json:"id"`
 	Title                  *string `json:"title"`
 	SystemID               *int    `json:"system_id"`
-	System                 *string `json:"system"`
 	Standing               *string `json:"standing_type"`
 	TimerKind              *string `json:"timer_kind"`
 	StructureType          *string `json:"structure_type"`
@@ -115,6 +114,9 @@ func (h *Handler) create(webhookID string, payload *upsertPayload) (*core.Record
 	if payload == nil {
 		return nil, router.NewBadRequestError("Invalid payload.", nil)
 	}
+	if payload.SystemID == nil || *payload.SystemID <= 0 {
+		return nil, router.NewBadRequestError("Missing system_id.", nil)
+	}
 
 	expiresAt, err := parseRequiredExpiresAt(payload.ExpiresAt)
 	if err != nil {
@@ -125,7 +127,6 @@ func (h *Handler) create(webhookID string, payload *upsertPayload) (*core.Record
 		WebhookID:              webhookID,
 		Title:                  stringValue(payload.Title),
 		SystemID:               intValue(payload.SystemID),
-		System:                 stringValue(payload.System),
 		Standing:               stringValue(payload.Standing),
 		TimerKind:              stringValue(payload.TimerKind),
 		StructureType:          stringValue(payload.StructureType),
@@ -249,6 +250,7 @@ func isWebhookUserInputError(err error) bool {
 	}
 	return errors.Is(err, timerssvc.ErrMissingWebhookID) ||
 		errors.Is(err, timerssvc.ErrMissingSystem) ||
+		errors.Is(err, timerssvc.ErrMissingStructureType) ||
 		errors.Is(err, timerssvc.ErrSystemNotFound) ||
 		errors.Is(err, timerssvc.ErrMoonRequired) ||
 		errors.Is(err, timerssvc.ErrPlanetRequired) ||

@@ -13,6 +13,9 @@ func validateCreateInput(input *CreateInput) error {
 	if input.ExpiresAt.IsZero() {
 		return ErrMissingExpiresAt
 	}
+	if strings.TrimSpace(input.StructureType) == "" {
+		return ErrMissingStructureType
+	}
 	if err := validateCreateTimerContext(input); err != nil {
 		return err
 	}
@@ -67,6 +70,16 @@ func validateUpdateInput(record *core.Record, input *UpdateInput) error {
 	if input == nil {
 		return ErrMissingInput
 	}
+	if input.StructureType != nil && strings.TrimSpace(*input.StructureType) == "" {
+		return ErrMissingStructureType
+	}
+	if err := validateUpdatedTimerContext(record, input); err != nil {
+		return err
+	}
+	return validateUpdatedExtraction(record, input)
+}
+
+func validateUpdatedTimerContext(record *core.Record, input *UpdateInput) error {
 	stageLabel := strings.TrimSpace(record.GetString("stage_label"))
 	if input.StageLabel != nil {
 		stageLabel = strings.TrimSpace(*input.StageLabel)
@@ -85,7 +98,12 @@ func validateUpdateInput(record *core.Record, input *UpdateInput) error {
 	if requiresPlanet(structureType) && planetID <= 0 {
 		return ErrPlanetRequired
 	}
+	return nil
+}
 
+func validateUpdatedExtraction(record *core.Record, input *UpdateInput) error {
+	structureType, _, _ := resolveUpdateContext(record, input)
+	timerKind := resolveUpdateTimerKind(record, input)
 	if timerKind == TimerKindExtraction && structureType == TimerStructureOrbitalSkyhook {
 		fullness := resolveUpdateSkyhookFullness(record, input)
 		if fullness < 0 || fullness > 100 {

@@ -391,17 +391,10 @@ func (s *Service) resolveAllianceNameTicker(ctx context.Context, allianceID int,
 	if name, ticker, ok := watchlist.labelForAlliance(allianceID); ok {
 		return name, ticker
 	}
-	if name, ticker, ok := store.GetOrg(s.App, store.CollectionAlliances, allianceID); ok {
-		return name, ticker
-	}
-	if s.PublicESI == nil {
+	name, ticker, ok, err := store.GetOrFetchAlliance(ctx, s.App, s.PublicESI, allianceID)
+	if err != nil || !ok {
 		return "", ""
 	}
-	name, ticker, err := s.PublicESI.AllianceDetails(ctx, allianceID)
-	if err != nil {
-		return "", ""
-	}
-	_ = store.UpsertOrg(s.App, store.CollectionAlliances, allianceID, name, ticker)
 	return name, ticker
 }
 
