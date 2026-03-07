@@ -248,3 +248,28 @@ func TestRunnerRun_ManualPartialWithoutSteps_FinalizesFailed(t *testing.T) {
 		t.Fatalf("parent finish message = %q", parent.message)
 	}
 }
+
+func TestRunnerRun_PanicRecovered_FinalizesFailed(t *testing.T) {
+	ft := newFakeTracker()
+	r := newRunnerWithFakeTracker(ft)
+
+	err := r.Run(func(context.Context, Stepper) error {
+		panic("kaboom")
+	})
+	if err == nil {
+		t.Fatalf("Run() err = nil, want non-nil")
+	}
+	if got := err.Error(); got != "job panic recovered: kaboom" {
+		t.Fatalf("Run() err = %q, want %q", got, "job panic recovered: kaboom")
+	}
+	parent, ok := ft.parentFinish()
+	if !ok {
+		t.Fatalf("expected parent finish call")
+	}
+	if parent.kind != finishSuccess {
+		t.Fatalf("parent finish kind = %q, want %q (Finish with error path)", parent.kind, finishSuccess)
+	}
+	if parent.message != "job panic recovered: kaboom" {
+		t.Fatalf("parent finish message = %q", parent.message)
+	}
+}

@@ -3,7 +3,9 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
+	"runtime/debug"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -160,7 +162,7 @@ func (r *Runner) Run(fn func(ctx context.Context, step Stepper) error) error {
 	startedAt := recordTime(record.Get("started_at"))
 	log.Info(MessageJobStarted)
 
-	runErr := fn(ctx, runnerSteps{runner: r, ctx: ctx})
+	runErr := r.runWithRecover(ctx, log, fn)
 
 	if r.skipped || errors.Is(runErr, ErrJobSkipped) {
 		r.tracker.FinishSkipped(r.record, r.skipReason)
@@ -196,6 +198,24 @@ func (r *Runner) Run(fn func(ctx context.Context, step Stepper) error) error {
 	r.tracker.Finish(r.record, nil)
 	r.logCompletion(log, startedAt, StatusSuccess, "", false, false)
 	return nil
+}
+
+func (r *Runner) runWithRecover(ctx context.Context, log *logging.Logger, fn func(context.Context, Stepper) error) (err error) {
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+		err = fmt.Errorf("job panic recovered: %v", recovered)
+		if log == nil {
+			return
+		}
+		log.WithFields(logging.Fields{
+			"panic_value": fmt.Sprintf("%v", recovered),
+			"stack_trace": string(debug.Stack()),
+		}).WithErr(err).Error("job panic recovered")
+	}()
+	return fn(ctx, runnerSteps{runner: r, ctx: ctx})
 }
 
 func (r *Runner) buildContext() (ctx context.Context, cancel, timeoutCancel context.CancelFunc) {

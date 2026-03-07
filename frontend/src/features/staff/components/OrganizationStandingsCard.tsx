@@ -190,7 +190,7 @@ export default function OrganizationStandingsCard() {
       }
       bodyClassName="space-y-4"
     >
-      <ul className="space-y-2 text-sm">
+      <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1 text-sm">
         {entities.length === 0 && (
           <li className="text-slate-500">
             No organization standings configured.

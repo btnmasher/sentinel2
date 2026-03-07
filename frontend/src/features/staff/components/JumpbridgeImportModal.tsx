@@ -92,7 +92,7 @@ export default function JumpbridgeImportModal({
         replace existing jumpbridges.
       </p>
       <textarea
-        className="textarea textarea-bordered bg-base-300 flex-1 w-full"
+        className="textarea textarea-bordered bg-base-300 min-h-56 flex-1 w-full"
         value={jumpbridgeText}
         onChange={(e) => setJumpbridgeText(e.target.value)}
       />

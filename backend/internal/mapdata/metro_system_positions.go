@@ -275,18 +275,32 @@ type nodePos struct {
 	y int
 }
 
-func runNeato(ctx context.Context, dot string) (map[int]nodePos, error) {
+func runNeato(ctx context.Context, dot string) (positions map[int]nodePos, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("graphviz runtime failure: %v", recovered)
+		}
+	}()
+
 	graph, graphErr := graphviz.ParseBytes([]byte(dot))
 	if graphErr != nil {
 		return nil, fmt.Errorf("graphviz parse failed: %w", graphErr)
 	}
-	defer func() { _ = graph.Close() }()
+	defer func() {
+		if graph != nil {
+			_ = graph.Close()
+		}
+	}()
 
 	g, graphvizErr := graphviz.New(ctx)
 	if graphvizErr != nil {
 		return nil, fmt.Errorf("graphviz init failed: %w", graphvizErr)
 	}
-	defer func() { _ = g.Close() }()
+	defer func() {
+		if g != nil {
+			_ = g.Close()
+		}
+	}()
 
 	g.SetLayout(graphviz.NEATO)
 
