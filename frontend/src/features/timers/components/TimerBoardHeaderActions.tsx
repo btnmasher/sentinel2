@@ -1,9 +1,12 @@
+import { Plus } from "lucide-react";
+
 type Props = {
   showInactive: boolean;
   setShowInactive: (value: boolean) => void;
   use24Hour: boolean;
   setUse24Hour: (value: boolean) => void;
   onAddTimer: () => void;
+  readOnly: boolean;
 };
 
 export default function TimerBoardHeaderActions({
@@ -12,6 +15,7 @@ export default function TimerBoardHeaderActions({
   use24Hour,
   setUse24Hour,
   onAddTimer,
+  readOnly,
 }: Props) {
   return (
     <div className="flex items-center gap-3">
@@ -41,10 +45,11 @@ export default function TimerBoardHeaderActions({
       <button
         className="btn btn-success btn-sm h-9 min-h-9"
         onClick={onAddTimer}
+        disabled={readOnly}
+        title={readOnly ? "Timers are managed by webhook." : undefined}
       >
         <Plus className="h-4 w-4" /> Add Timer
       </button>
     </div>
   );
 }
-import { Plus } from "lucide-react";

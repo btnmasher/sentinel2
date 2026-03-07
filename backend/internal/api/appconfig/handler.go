@@ -14,6 +14,8 @@ type appConfigResponse struct {
 	DefaultRegions []string `json:"default_regions"`
 	OIDCPortalURL  string   `json:"oidc_portal_url"`
 	TimersEnabled  bool     `json:"timers_enabled"`
+	TimerSource    string   `json:"timer_source"`
+	TimersReadOnly bool     `json:"timers_read_only"`
 	Version        string   `json:"version"`
 }
 
@@ -30,6 +32,8 @@ func AppConfig(cfg *config.Config) func(*core.RequestEvent) error {
 			DefaultRegions: cfg.DefaultRegions(),
 			OIDCPortalURL:  cfg.OIDCPortalURL,
 			TimersEnabled:  cfg.TimersEnabled,
+			TimerSource:    cfg.TimerSource,
+			TimersReadOnly: cfg.TimersReadOnly(),
 			Version:        cfg.SentinelVersion,
 		})
 	}

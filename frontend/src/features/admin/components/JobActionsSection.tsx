@@ -34,12 +34,14 @@ export default function JobActionsSection() {
   const loadingLabel = useAdminMapDataStore((s) => s.loadingLabel);
   const runAction = useAdminMapDataStore((s) => s.runAction);
   const timersEnabled = useAppConfigStore((s) => s.timersEnabled);
+  const timerSource = useAppConfigStore((s) => s.timerSource);
+  const standaloneTimers = timersEnabled && timerSource === "standalone";
   const [group, setGroup] = useState<ActionGroupWithSite>("map_data");
   const availableGroups = useMemo<[ActionGroupWithSite, string][]>(() => {
     return (
       Object.entries(GROUP_LABELS) as [ActionGroupWithSite, string][]
-    ).filter(([key]) => timersEnabled || key !== "timer_data");
-  }, [timersEnabled]);
+    ).filter(([key]) => standaloneTimers || key !== "timer_data");
+  }, [standaloneTimers]);
 
   const actions = useMemo<AdminAction[]>(() => {
     switch (group) {
@@ -60,7 +62,7 @@ export default function JobActionsSection() {
           },
         ];
       case "timer_data":
-        if (!timersEnabled) {
+        if (!standaloneTimers) {
           return [];
         }
         return [
@@ -115,14 +117,14 @@ export default function JobActionsSection() {
     group,
     openAllowedOrganizationsModal,
     openAnnouncementModal,
-    timersEnabled,
+    standaloneTimers,
   ]);
 
   useEffect(() => {
-    if (!timersEnabled && group === "timer_data") {
+    if (!standaloneTimers && group === "timer_data") {
       setGroup("map_data");
     }
-  }, [group, timersEnabled]);
+  }, [group, standaloneTimers]);
   const panelActions = (
     <select
       className="select select-xs bg-base-300/70"

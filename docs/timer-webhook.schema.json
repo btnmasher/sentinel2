@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentinel2.local/docs/timer-webhook.schema.json",
+  "title": "Sentinel Timer Webhook Upsert Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "External timer identifier. Stored as webhook_id."
+    },
+    "title": { "type": "string" },
+    "system_id": { "type": "integer", "minimum": 1 },
+    "system": { "type": "string" },
+    "standing_type": {
+      "type": "string",
+      "enum": ["ours", "friendly", "complicated", "neutral", "hostile"]
+    },
+    "timer_kind": {
+      "type": "string",
+      "enum": ["reinforcement", "anchoring", "unanchoring", "extraction", "custom"]
+    },
+    "structure_type": {
+      "type": "string",
+      "enum": [
+        "upwell_citadel_astrahus",
+        "upwell_citadel_fortizar",
+        "upwell_citadel_keepstar",
+        "upwell_engineering_raitaru",
+        "upwell_engineering_azbel",
+        "upwell_engineering_sotiyo",
+        "upwell_refinery_athanor",
+        "upwell_refinery_tatara",
+        "ansiblex_jump_bridge",
+        "pharolux_cyno_beacon",
+        "tenebrex_cyno_jammer",
+        "orbital_skyhook",
+        "metenox_moon_drill",
+        "sovereignty_hub",
+        "mercenary_den",
+        "customs_office_poco",
+        "player_owned_starbase",
+        "custom"
+      ]
+    },
+    "stage_label": { "type": "string" },
+    "planet_id": { "type": "integer", "minimum": 0 },
+    "planet_name": { "type": "string" },
+    "moon_id": { "type": "integer", "minimum": 0 },
+    "moon_name": { "type": "string" },
+    "owner_corporation_id": { "type": "integer", "minimum": 0 },
+    "owner_corporation_name": { "type": "string" },
+    "owner_corporation_ticker": { "type": "string" },
+    "owner_alliance_id": { "type": "integer", "minimum": 0 },
+    "owner_alliance_name": { "type": "string" },
+    "owner_alliance_ticker": { "type": "string" },
+    "skyhook_fullness_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "attackers_score_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "defender_score_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "stage": { "type": "integer", "minimum": 0 },
+    "total_stages": { "type": "integer", "minimum": 0 },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "canceled"]
+    },
+    "expires_at": {
+      "type": "string",
+      "description": "UTC timestamp accepted by Sentinel flexible datetime parsing."
+    },
+    "source_ref": { "type": "string" },
+    "notes": { "type": "string" },
+    "raw_text": { "type": "string" },
+    "replacement_action": {
+      "type": "string",
+      "enum": [
+        "not_replaceable",
+        "logi_replacement",
+        "corp_replacement",
+        "alliance_replacement"
+      ]
+    }
+  }
+}

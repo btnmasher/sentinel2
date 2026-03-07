@@ -27,6 +27,7 @@ import (
 	mapapi "sentinel2/internal/api/maps"
 	staffapi "sentinel2/internal/api/staff"
 	timerapi "sentinel2/internal/api/timers"
+	timerwebhookapi "sentinel2/internal/api/timerwebhook"
 	uploaderapi "sentinel2/internal/api/uploader"
 )
 
@@ -50,6 +51,7 @@ type dependencies struct {
 	admin              *adminapi.Handler
 	timerService       *timerssvc.Service
 	timers             *timerapi.Handler
+	timerWebhook       *timerwebhookapi.Handler
 	uploaderReleases   *uploaderrelease.Service
 	uploaderHandler    *uploaderapi.Handler
 	realtimePublisher  *realtime.Publisher
@@ -106,6 +108,7 @@ func Run(cfg *config.Config) error {
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
 	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, timerService, auditSvc)
 	timers := timerapi.NewHandler(timerService, auditSvc, provider)
+	timerWebhook := timerwebhookapi.NewHandler(timerService)
 	uploaderReleases := uploaderrelease.New(app, cfg)
 	uploaderHandler := uploaderapi.NewHandler(uploaderReleases)
 
@@ -129,6 +132,7 @@ func Run(cfg *config.Config) error {
 		admin:              admin,
 		timerService:       timerService,
 		timers:             timers,
+		timerWebhook:       timerWebhook,
 		uploaderReleases:   uploaderReleases,
 		uploaderHandler:    uploaderHandler,
 		realtimePublisher:  realtimePublisher,

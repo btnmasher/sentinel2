@@ -24,4 +24,6 @@ var (
 	ErrInvalidTimerDate                 = errors.New("invalid timer date")
 	ErrESIPublicClientNotConfigured     = errors.New("esi public client not configured")
 	ErrESIClientNotConfigured           = errors.New("esi client not configured")
+	ErrMissingWebhookID                 = errors.New("missing webhook id")
+	ErrTimerNotFound                    = errors.New("timer not found")
 )

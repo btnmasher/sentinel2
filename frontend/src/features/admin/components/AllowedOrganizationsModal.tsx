@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import useModal from "@/app/hooks/useModal";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useModalBody } from "@/components/dialogs/ModalBodyContext";
 import SearchSuggestionField from "@/components/SearchSuggestionField";
 import { api } from "@/config/api";
@@ -37,6 +38,8 @@ type OrganizationEntityOption = {
 function AllowedOrganizationsModalBody() {
   const { close } = useModalBody();
   const setToast = useUIStore((s) => s.setToast);
+  const timersEnabled = useAppConfigStore((s) => s.timersEnabled);
+  const timerSource = useAppConfigStore((s) => s.timerSource);
   const [alliances, setAlliances] = useState<AllowedOrganization[]>([]);
   const [corporations, setCorporations] = useState<AllowedOrganization[]>([]);
   const [query, setQuery] = useState("");
@@ -45,6 +48,8 @@ function AllowedOrganizationsModalBody() {
   );
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const notificationSourcesEnabled =
+    timersEnabled && timerSource === "standalone";
   const listItems = useMemo<AllowedOrganizationListItem[]>(() => {
     const mapped = [
       ...alliances.map((entry) => ({ ...entry, type: "alliance" as const })),
@@ -89,7 +94,7 @@ function AllowedOrganizationsModalBody() {
 
   const loadOrganizationSuggestions = useCallback(async (value: string) => {
     const response = await api.get<{ entities: OrganizationEntityOption[] }>(
-      `/timers/entities?query=${encodeURIComponent(value)}`,
+      `/organizations/search?query=${encodeURIComponent(value)}`,
     );
     return (response.data.entities || []).filter(
       (entity) => entity.type === "corporation" || entity.type === "alliance",
@@ -146,8 +151,9 @@ function AllowedOrganizationsModalBody() {
   return (
     <div className="space-y-4 text-sm text-slate-300">
       <p className="text-xs leading-relaxed text-slate-400">
-        Add organizations allowed to authenticate and act as notification
-        sources.
+        {notificationSourcesEnabled
+          ? "Add organizations allowed to authenticate and act as notification sources."
+          : "Add organizations allowed to authenticate."}
       </p>
       <div className="rounded-xl border border-slate-800/70 bg-base-300/40 p-3">
         <div className="flex items-start gap-2">

@@ -19,13 +19,13 @@ func registerCrons(app *pocketbase.PocketBase, cfg *config.Config, deps *depende
 	registerCleanupCron(app, deps)
 	if cfg.AuthBackend == "eve" {
 		registerCharacterRefreshCron(app, deps)
-		if cfg.TimersEnabled {
+		if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceStandalone {
 			registerSkyhookSyncCron(app, deps)
 		}
 	}
 	registerUploaderReleaseBootstrap(app, deps)
 	registerUploaderReleaseCron(app, deps)
-	if cfg.TimersEnabled {
+	if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceStandalone {
 		registerSovCampaignSyncCron(app, deps)
 	}
 	registerZKillFeedWorker(app, cfg, deps, lifecycleCtx)

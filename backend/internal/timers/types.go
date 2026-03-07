@@ -19,6 +19,7 @@ type ListInput struct {
 }
 
 type CreateInput struct {
+	WebhookID              string
 	Title                  string
 	SystemID               int
 	System                 string
@@ -68,6 +69,8 @@ type UpdateInput struct {
 	OwnerAllianceName      *string
 	OwnerAllianceTicker    *string
 	SkyhookFullnessPct     *int
+	AttackersScorePct      *int
+	DefenderScorePct       *int
 	Stage                  *int
 	TotalStages            *int
 	Severity               *string

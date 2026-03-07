@@ -23,6 +23,9 @@ const (
 	DefaultEVEAuthURL = "https://login.eveonline.com/v2/oauth/authorize"
 	//nolint:gosec // endpoint URL, not a credential
 	DefaultEVETokenURL = "https://login.eveonline.com/v2/oauth/token"
+
+	TimerSourceStandalone = "standalone"
+	TimerSourceWebhook    = "webhook"
 )
 
 type Config struct {
@@ -59,6 +62,8 @@ type Config struct {
 	ZKillMaxEventAgeSec  int    `long:"zkill-max-event-age-seconds" env:"ZKILL_MAX_EVENT_AGE_SECONDS" default:"300"`
 	UploaderGitHubRepo   string `long:"uploader-github-repo" env:"UPLOADER_GITHUB_REPO" default:"btnmasher/sentinel2-uploader"`
 	TimersEnabled        bool   `long:"timers-enabled" env:"TIMERS_ENABLED"`
+	TimerSource          string `long:"timer-source" env:"TIMER_SOURCE" default:"standalone" choice:"standalone" choice:"webhook"`
+	TimersWebhookToken   string `long:"timers-webhook-bearer-token" env:"TIMERS_WEBHOOK_BEARER_TOKEN"`
 
 	FrontendDevProxy    string   `long:"dev-proxy" env:"DEV_PROXY"`
 	DebugEnabled        bool     `long:"dev" env:"DEBUG_ENABLED"`
@@ -80,6 +85,7 @@ func Load() Config {
 	_, parseErr := parser.Parse()
 	if parseErr == nil {
 		cfg.AuthBackend = normalizeAuthBackend(cfg.AuthBackend)
+		cfg.TimerSource = normalizeTimerSource(cfg.TimerSource)
 		return cfg
 	}
 
@@ -107,6 +113,15 @@ func normalizeAuthBackend(value string) string {
 	return value
 }
 
+func normalizeTimerSource(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case TimerSourceWebhook:
+		return TimerSourceWebhook
+	default:
+		return TimerSourceStandalone
+	}
+}
+
 func (c *Config) RequiredRoles() []string {
 	return splitCSV(c.OIDCRequiredRoles)
 }
@@ -121,6 +136,13 @@ func (c *Config) EVEScopeList() []string {
 
 func (c *Config) DefaultRegions() []string {
 	return splitRegions(c.DefaultMapRegions)
+}
+
+func (c *Config) TimersReadOnly() bool {
+	if c == nil {
+		return false
+	}
+	return c.TimerSource == TimerSourceWebhook
 }
 
 func splitCSV(value string) []string {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/config/api";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useUIStore } from "@/app/store/uiStore";
 import { useAuthStore } from "@/app/store/authStore";
 import useConfirm from "@/app/hooks/useConfirm";
@@ -48,6 +49,7 @@ export default function TimerBoard() {
   useTimerDebugTools();
   const setToast = useUIStore((s) => s.setToast);
   const canManage = useAuthStore((s) => s.isStaff || s.isAdmin);
+  const timersReadOnly = useAppConfigStore((s) => s.timersReadOnly);
   const requestConfirm = useConfirm();
   const systemsById = useSharedMapStore((s) => s.systems);
   const { getRegionName } = useRegionNames();
@@ -308,6 +310,7 @@ export default function TimerBoard() {
           use24Hour={use24Hour}
           setUse24Hour={setUse24Hour}
           onAddTimer={openCreateModal}
+          readOnly={timersReadOnly}
         />
       }
     >
@@ -385,6 +388,7 @@ export default function TimerBoard() {
                             key={timer.id}
                             timer={timer}
                             canManage={canManage}
+                            readOnly={timersReadOnly}
                             use24Hour={use24Hour}
                             nowMs={nowMs}
                             systemName={

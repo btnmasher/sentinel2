@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import useConfirm from "@/app/hooks/useConfirm";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { api } from "@/config/api";
 import Panel from "@/components/Panel";
 import SearchSuggestionField from "@/components/SearchSuggestionField";
@@ -52,6 +53,8 @@ type HostilityOption = {
 
 export default function OrganizationStandingsCard() {
   const requestConfirm = useConfirm();
+  const timersEnabled = useAppConfigStore((s) => s.timersEnabled);
+  const timerSource = useAppConfigStore((s) => s.timerSource);
   const [entities, setEntities] = useState<OrganizationStanding[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<OrganizationEntityOption | null>(
@@ -63,10 +66,11 @@ export default function OrganizationStandingsCard() {
     StandingType.Hostile,
   );
   const [includeInSovSync, setIncludeInSovSync] = useState(false);
+  const canManageSovSync = timersEnabled && timerSource === "standalone";
 
   const loadOrganizationSuggestions = useCallback(async (value: string) => {
     const response = await api.get<{ entities: OrganizationEntityOption[] }>(
-      `/timers/entities?query=${encodeURIComponent(value)}&scope=both`,
+      `/organizations/search?query=${encodeURIComponent(value)}&scope=both`,
     );
     return response.data.entities || [];
   }, []);
@@ -98,7 +102,8 @@ export default function OrganizationStandingsCard() {
       await api.post("/staff/organization-standings", {
         owner_type: selected.type,
         hostility,
-        include_in_sov_sync: includeInSovSync && canIncludeInSovSync,
+        include_in_sov_sync:
+          canManageSovSync && includeInSovSync && canIncludeInSovSync,
         corporation_id: selected.type === "corporation" ? selected.id : 0,
         corporation_name: selected.type === "corporation" ? selected.name : "",
         corporation_ticker:
@@ -130,7 +135,7 @@ export default function OrganizationStandingsCard() {
   const deleteEntity = async (id: string) => {
     requestConfirm({
       title: "Delete organization standing?",
-      body: "This removes the standing and excludes it from sovereignty sync.",
+      body: "This removes the standing.",
       onConfirm: async () => {
         await api.delete(`/staff/organization-standings/${id}`);
         await loadEntities();
@@ -178,7 +183,11 @@ export default function OrganizationStandingsCard() {
   return (
     <Panel
       title="Organization Standings"
-      hint="Set corp/alliance hostility and opt alliance-backed entities into sovereignty campaign sync."
+      hint={
+        canManageSovSync
+          ? "Set corp/alliance hostility and opt alliance-backed entities into sovereignty campaign sync."
+          : "Set corp/alliance hostility for organization-aware features."
+      }
       bodyClassName="space-y-4"
     >
       <ul className="space-y-2 text-sm">
@@ -193,6 +202,7 @@ export default function OrganizationStandingsCard() {
             key={entry.id}
             entry={entry}
             submitting={submitting}
+            showSovSyncControls={canManageSovSync}
             onToggleInSovSync={(next) =>
               void updateIncludeInSovSync(entry, next)
             }
@@ -293,37 +303,41 @@ export default function OrganizationStandingsCard() {
                   },
                 )}
               </div>
-              <label className="label cursor-pointer justify-start gap-2 rounded-md border border-slate-700/70 px-2 py-1.5">
-                <input
-                  type="checkbox"
-                  className={`checkbox checkbox-xs rounded-[0.2rem] ${
-                    !canIncludeInSovSync || submitting
-                      ? "cursor-not-allowed opacity-40"
-                      : ""
-                  }`}
-                  checked={includeInSovSync && canIncludeInSovSync}
-                  disabled={!canIncludeInSovSync || submitting}
-                  onChange={(event) =>
-                    setIncludeInSovSync(
-                      event.target.checked && canIncludeInSovSync,
-                    )
-                  }
-                />
-                <span
-                  className={`text-xs ${
-                    !canIncludeInSovSync || submitting
-                      ? "text-slate-500"
-                      : "text-slate-300"
-                  }`}
-                >
-                  Include in sovereignty campaign sync
-                </span>
-              </label>
-              {!canIncludeInSovSync && (
-                <div className="text-[11px] text-slate-500">
-                  Requires an alliance-backed entity.
-                </div>
-              )}
+              {canManageSovSync ? (
+                <>
+                  <label className="label cursor-pointer justify-start gap-2 rounded-md border border-slate-700/70 px-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      className={`checkbox checkbox-xs rounded-[0.2rem] ${
+                        !canIncludeInSovSync || submitting
+                          ? "cursor-not-allowed opacity-40"
+                          : ""
+                      }`}
+                      checked={includeInSovSync && canIncludeInSovSync}
+                      disabled={!canIncludeInSovSync || submitting}
+                      onChange={(event) =>
+                        setIncludeInSovSync(
+                          event.target.checked && canIncludeInSovSync,
+                        )
+                      }
+                    />
+                    <span
+                      className={`text-xs ${
+                        !canIncludeInSovSync || submitting
+                          ? "text-slate-500"
+                          : "text-slate-300"
+                      }`}
+                    >
+                      Include in sovereignty campaign sync
+                    </span>
+                  </label>
+                  {!canIncludeInSovSync && (
+                    <div className="text-[11px] text-slate-500">
+                      Requires an alliance-backed entity.
+                    </div>
+                  )}
+                </>
+              ) : null}
 
               <div className="flex items-center justify-between gap-2">
                 {selected ? (
@@ -381,12 +395,14 @@ export default function OrganizationStandingsCard() {
 function OrganizationStandingRow({
   entry,
   submitting,
+  showSovSyncControls,
   onToggleInSovSync,
   onSaveHostility,
   onDelete,
 }: {
   entry: OrganizationStanding;
   submitting: boolean;
+  showSovSyncControls: boolean;
   onToggleInSovSync: (next: boolean) => void;
   onSaveHostility: (nextHostility: StandingType) => void;
   onDelete: () => void;
@@ -447,30 +463,32 @@ function OrganizationStandingRow({
         </div>
       </div>
       <div className="[grid-area:actions] flex items-center gap-2">
-        <div
-          className={`flex items-center gap-1.5 ${
-            includeDisabled ? "cursor-not-allowed" : ""
-          }`}
-        >
-          <span
-            className={`text-xs whitespace-nowrap ${
-              includeDisabled ? "text-slate-500" : "text-slate-300"
+        {showSovSyncControls ? (
+          <div
+            className={`flex items-center gap-1.5 ${
+              includeDisabled ? "cursor-not-allowed" : ""
             }`}
           >
-            Include in Sov Sync
-          </span>
-          <input
-            type="checkbox"
-            className={`checkbox checkbox-xs rounded-[0.2rem] ${
-              includeDisabled ? "cursor-not-allowed opacity-40" : ""
-            }`}
-            checked={entry.include_in_sov_sync}
-            disabled={includeDisabled}
-            onChange={(event) =>
-              onToggleInSovSync(event.target.checked && canIncludeInSovSync)
-            }
-          />
-        </div>
+            <span
+              className={`text-xs whitespace-nowrap ${
+                includeDisabled ? "text-slate-500" : "text-slate-300"
+              }`}
+            >
+              Include in Sov Sync
+            </span>
+            <input
+              type="checkbox"
+              className={`checkbox checkbox-xs rounded-[0.2rem] ${
+                includeDisabled ? "cursor-not-allowed opacity-40" : ""
+              }`}
+              checked={entry.include_in_sov_sync}
+              disabled={includeDisabled}
+              onChange={(event) =>
+                onToggleInSovSync(event.target.checked && canIncludeInSovSync)
+              }
+            />
+          </div>
+        ) : null}
         {isEditing ? (
           <>
             <button

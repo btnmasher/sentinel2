@@ -67,6 +67,7 @@ import {
 type TimerRowProps = {
   timer: TimerRecord;
   canManage: boolean;
+  readOnly: boolean;
   use24Hour: boolean;
   nowMs: number;
   systemName: string;
@@ -81,6 +82,7 @@ type TimerRowProps = {
 export default function TimerRow({
   timer,
   canManage,
+  readOnly,
   use24Hour,
   nowMs,
   systemName,
@@ -140,6 +142,7 @@ export default function TimerRow({
         <TimerRowActions
           timer={timer}
           canManage={canManage}
+          readOnly={readOnly}
           systemName={systemName}
           regionName={regionName}
           onCopy={onCopy}
@@ -240,6 +243,7 @@ type TimerRowActionsProps = Pick<
   TimerRowProps,
   | "timer"
   | "canManage"
+  | "readOnly"
   | "onEdit"
   | "onCancel"
   | "onUncancel"
@@ -253,6 +257,7 @@ type TimerRowActionsProps = Pick<
 function TimerRowActions({
   timer,
   canManage,
+  readOnly,
   systemName,
   regionName,
   onCopy,
@@ -275,7 +280,7 @@ function TimerRowActions({
         <Copy className="h-3 w-3" />
         Copy
       </button>
-      {canManage && (
+      {canManage && !readOnly && (
         <button
           className="btn btn-xs btn-outline"
           onClick={() => onEdit(timer)}
@@ -284,7 +289,7 @@ function TimerRowActions({
           Edit
         </button>
       )}
-      {canManage && timer.status === TimerStatus.Active && (
+      {canManage && !readOnly && timer.status === TimerStatus.Active && (
         <button
           className="btn btn-xs btn-outline"
           onClick={() => onCancel(timer)}
@@ -292,15 +297,18 @@ function TimerRowActions({
           Cancel
         </button>
       )}
-      {canManage && timer.status === TimerStatus.Canceled && !isExpired && (
-        <button
-          className="btn btn-xs btn-outline"
-          onClick={() => onUncancel(timer)}
-        >
-          Un-cancel
-        </button>
-      )}
-      {canManage && (
+      {canManage &&
+        !readOnly &&
+        timer.status === TimerStatus.Canceled &&
+        !isExpired && (
+          <button
+            className="btn btn-xs btn-outline"
+            onClick={() => onUncancel(timer)}
+          >
+            Un-cancel
+          </button>
+        )}
+      {canManage && !readOnly && (
         <button
           className="btn btn-xs btn-error btn-outline"
           onClick={() => onDeleteConfirm(timer)}
@@ -362,7 +370,7 @@ function TimerRowLocationOwner({
               const response = await api.get<{
                 entities: TimerEntitySearchItem[];
               }>(
-                `/timers/entities?scope=alliance&query=${encodeURIComponent(attacker.query)}&limit=10`,
+                `/organizations/search?scope=alliance&query=${encodeURIComponent(attacker.query)}&limit=10`,
               );
               const matches = response.data.entities ?? [];
               const resolved = matches.find((entity) => {

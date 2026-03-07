@@ -76,20 +76,32 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		intelGroup := apiGroup.Group("/intel")
 		intelGroup.GET("/reports", deps.intelHandler.ListReports).BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app), middleware.RateLimit(intelRetrieveLimiter, userKey))
 
+		organizationGroup := apiGroup.Group("/organizations")
+		organizationGroup.BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))
+		organizationGroup.GET("/search", deps.timers.SearchEntities)
+
 		if cfg.TimersEnabled {
 			timerGroup := apiGroup.Group("/timers")
 			timerGroup.BindFunc(middleware.RequireAuth, middleware.RequireMainCharacter(app))
 			timerGroup.GET("", deps.timers.List)
-			timerGroup.GET("/systems", deps.timers.SearchSystems)
-			timerGroup.GET("/entities", deps.timers.SearchEntities)
-			timerGroup.GET("/planets", deps.timers.SearchPlanets)
-			timerGroup.GET("/moons", deps.timers.SearchMoons)
-			timerGroup.POST("", deps.timers.Create)
-			timerGroup.PATCH("/{id}", deps.timers.Update).BindFunc(middleware.RequireStaff(app))
-			timerGroup.POST("/{id}/cancel", deps.timers.Cancel).BindFunc(middleware.RequireStaff(app))
-			timerGroup.POST("/{id}/uncancel", deps.timers.Uncancel).BindFunc(middleware.RequireStaff(app))
-			timerGroup.DELETE("/{id}", deps.timers.Delete).BindFunc(middleware.RequireStaff(app))
-			timerGroup.POST("/parse", deps.timers.Parse)
+			if cfg.TimerSource == config.TimerSourceStandalone {
+				timerGroup.GET("/systems", deps.timers.SearchSystems)
+				timerGroup.GET("/planets", deps.timers.SearchPlanets)
+				timerGroup.GET("/moons", deps.timers.SearchMoons)
+				timerGroup.POST("", deps.timers.Create)
+				timerGroup.PATCH("/{id}", deps.timers.Update).BindFunc(middleware.RequireStaff(app))
+				timerGroup.POST("/{id}/cancel", deps.timers.Cancel).BindFunc(middleware.RequireStaff(app))
+				timerGroup.POST("/{id}/uncancel", deps.timers.Uncancel).BindFunc(middleware.RequireStaff(app))
+				timerGroup.DELETE("/{id}", deps.timers.Delete).BindFunc(middleware.RequireStaff(app))
+				timerGroup.POST("/parse", deps.timers.Parse)
+			}
+		}
+
+		if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceWebhook {
+			webhookTimerGroup := apiGroup.Group("/webhooks/timers")
+			webhookTimerGroup.BindFunc(middleware.RequireTimersWebhookToken(cfg))
+			webhookTimerGroup.PUT("", deps.timerWebhook.Upsert)
+			webhookTimerGroup.DELETE("/{id}", deps.timerWebhook.Delete)
 		}
 
 		uploaderGroup := apiGroup.Group("/uploader")
@@ -128,12 +140,10 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		staffGroup.GET("/channels", deps.staffChannels.List)
 		staffGroup.POST("/channels", deps.staffChannels.Create)
 		staffGroup.DELETE("/channels/{id}", deps.staffChannels.Delete)
-		if cfg.TimersEnabled {
-			staffGroup.GET("/organization-standings", deps.staffOrgStandings.List)
-			staffGroup.POST("/organization-standings", deps.staffOrgStandings.Create)
-			staffGroup.PATCH("/organization-standings/{id}", deps.staffOrgStandings.Update)
-			staffGroup.DELETE("/organization-standings/{id}", deps.staffOrgStandings.Delete)
-		}
+		staffGroup.GET("/organization-standings", deps.staffOrgStandings.List)
+		staffGroup.POST("/organization-standings", deps.staffOrgStandings.Create)
+		staffGroup.PATCH("/organization-standings/{id}", deps.staffOrgStandings.Update)
+		staffGroup.DELETE("/organization-standings/{id}", deps.staffOrgStandings.Delete)
 		staffGroup.POST("/jumpbridges/import", deps.staffJumpbridges.Import)
 		staffGroup.POST("/jumpbridges/clear", deps.staffJumpbridges.Clear)
 		staffGroup.POST("/jumpbridges/add", deps.staffJumpbridges.Add)
@@ -166,7 +176,7 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 			adminGroup.POST("/map-data/region-layout", deps.adminMapDataUpdate.RunRegionLayout)
 			adminGroup.POST("/characters/refresh-all", deps.admin.RefreshAllCharacters)
 			adminGroup.POST("/jobs/cleanup", deps.admin.RunCleanupJob)
-			if cfg.TimersEnabled {
+			if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceStandalone {
 				adminGroup.POST("/jobs/timers/sovereignty-campaign-sync", deps.admin.RunSovereigntyCampaignSyncJob)
 				adminGroup.POST("/jobs/timers/structure-notifications-sync", deps.admin.RunStructureNotificationsSyncJob)
 			}
