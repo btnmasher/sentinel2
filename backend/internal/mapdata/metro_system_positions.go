@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/goccy/go-graphviz"
@@ -20,9 +21,12 @@ import (
 )
 
 var dotPosRe = regexp.MustCompile(`^\s*(\d+)\s+\[.*?pos="([0-9eE+.\-]+),([0-9eE+.\-]+)`)
+var graphvizLayoutMu sync.Mutex
 
 const dotMatchParts = 4
 const regionGraphContextStride = 500
+const graphvizScannerInitialBuf = 64 * 1024
+const graphvizScannerMaxToken = 8 * 1024 * 1024
 
 func CalculateSystemGraphs(ctx context.Context, app *pocketbase.PocketBase) error {
 	log := logging.New(app).WithFields(logging.Fields{"component": "mapdata.metro_system_positions"})
@@ -276,6 +280,9 @@ type nodePos struct {
 }
 
 func runNeato(ctx context.Context, dot string) (positions map[int]nodePos, err error) {
+	graphvizLayoutMu.Lock()
+	defer graphvizLayoutMu.Unlock()
+
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("graphviz runtime failure: %v", recovered)
@@ -305,16 +312,14 @@ func runNeato(ctx context.Context, dot string) (positions map[int]nodePos, err e
 	g.SetLayout(graphviz.NEATO)
 
 	var output bytes.Buffer
-	if renderErr := g.Render(ctx, graph, "plain", &output); renderErr != nil {
-		return nil, fmt.Errorf("graphviz layout failed: %w", renderErr)
-	}
-
-	positions, parseErr := parsePlainPositions(output.Bytes())
-	if parseErr != nil {
-		return nil, parseErr
-	}
-	if len(positions) > 0 {
-		return positions, nil
+	if renderErr := g.Render(ctx, graph, "plain", &output); renderErr == nil {
+		positions, parseErr := parsePlainPositions(output.Bytes())
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if len(positions) > 0 {
+			return positions, nil
+		}
 	}
 
 	output.Reset()
@@ -328,8 +333,12 @@ func runNeato(ctx context.Context, dot string) (positions map[int]nodePos, err e
 func parseDotPositions(dot []byte) (map[int]nodePos, error) {
 	positions := map[int]nodePos{}
 	scanner := bufio.NewScanner(bytes.NewReader(dot))
+	scanner.Buffer(make([]byte, graphvizScannerInitialBuf), graphvizScannerMaxToken)
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
 		match := dotPosRe.FindStringSubmatch(line)
 		if len(match) != dotMatchParts {
 			continue
@@ -357,6 +366,7 @@ func parseDotPositions(dot []byte) (map[int]nodePos, error) {
 func parsePlainPositions(dot []byte) (map[int]nodePos, error) {
 	positions := map[int]nodePos{}
 	scanner := bufio.NewScanner(bytes.NewReader(dot))
+	scanner.Buffer(make([]byte, graphvizScannerInitialBuf), graphvizScannerMaxToken)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
