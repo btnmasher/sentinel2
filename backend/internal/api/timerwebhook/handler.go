@@ -18,8 +18,7 @@ type Handler struct {
 	Service *timerssvc.Service
 }
 
-type upsertPayload struct {
-	ID                     string  `json:"id"`
+type timerPayload struct {
 	Title                  *string `json:"title"`
 	SystemID               *int    `json:"system_id"`
 	Standing               *string `json:"standing_type"`
@@ -50,18 +49,29 @@ type upsertPayload struct {
 	ReplacementAction      *string `json:"replacement_action"`
 }
 
-type upsertResponse struct {
+type createPayload struct {
+	timerPayload
+
+	ID string `json:"id"`
+}
+
+type patchPayload struct {
+	timerPayload
+
+	ID *string `json:"id"`
+}
+
+type webhookResponse struct {
 	Operation string `json:"operation"`
 	ID        string `json:"id"`
-	RecordID  string `json:"record_id"`
 }
 
 func NewHandler(service *timerssvc.Service) *Handler {
 	return &Handler{Service: service}
 }
 
-func (h *Handler) Upsert(c *core.RequestEvent) error {
-	payload := upsertPayload{}
+func (h *Handler) Create(c *core.RequestEvent) error {
+	payload := createPayload{}
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -75,27 +85,50 @@ func (h *Handler) Upsert(c *core.RequestEvent) error {
 	if err != nil && !errors.Is(err, timerssvc.ErrTimerNotFound) {
 		return router.NewInternalServerError("Failed to load timer.", logging.Fields{"error": err.Error()})
 	}
-
-	if existing == nil {
-		record, createErr := h.create(webhookID, &payload)
-		if createErr != nil {
-			return createErr
-		}
-		return c.JSON(http.StatusCreated, upsertResponse{
-			Operation: "created",
-			ID:        webhookID,
-			RecordID:  record.Id,
-		})
+	if existing != nil {
+		return router.NewApiError(http.StatusConflict, "Timer already exists.", logging.Fields{"id": webhookID})
 	}
 
-	record, updateErr := h.update(existing.Id, webhookID, &payload)
+	_, createErr := h.create(webhookID, &payload)
+	if createErr != nil {
+		return createErr
+	}
+	return c.JSON(http.StatusCreated, webhookResponse{
+		Operation: "created",
+		ID:        webhookID,
+	})
+}
+
+func (h *Handler) Patch(c *core.RequestEvent) error {
+	webhookID := strings.TrimSpace(c.Request.PathValue("id"))
+	if webhookID == "" {
+		return router.NewBadRequestError("Missing id.", nil)
+	}
+
+	payload := patchPayload{}
+	if err := c.BindBody(&payload); err != nil {
+		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
+	}
+
+	if payload.ID != nil && strings.TrimSpace(*payload.ID) != webhookID {
+		return router.NewBadRequestError("Path id must match body id.", nil)
+	}
+
+	existing, err := h.Service.FindByWebhookID(webhookID)
+	if err != nil {
+		if errors.Is(err, timerssvc.ErrTimerNotFound) {
+			return router.NewNotFoundError("Timer not found.", logging.Fields{"id": webhookID})
+		}
+		return router.NewInternalServerError("Failed to load timer.", logging.Fields{"error": err.Error(), "id": webhookID})
+	}
+
+	_, updateErr := h.update(existing.Id, webhookID, &payload)
 	if updateErr != nil {
 		return updateErr
 	}
-	return c.JSON(http.StatusOK, upsertResponse{
+	return c.JSON(http.StatusOK, webhookResponse{
 		Operation: "updated",
 		ID:        webhookID,
-		RecordID:  record.Id,
 	})
 }
 
@@ -110,7 +143,7 @@ func (h *Handler) Delete(c *core.RequestEvent) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (h *Handler) create(webhookID string, payload *upsertPayload) (*core.Record, error) {
+func (h *Handler) create(webhookID string, payload *createPayload) (*core.Record, error) {
 	if payload == nil {
 		return nil, router.NewBadRequestError("Invalid payload.", nil)
 	}
@@ -164,7 +197,7 @@ func (h *Handler) create(webhookID string, payload *upsertPayload) (*core.Record
 	return record, nil
 }
 
-func (h *Handler) update(recordID, webhookID string, payload *upsertPayload) (*core.Record, error) {
+func (h *Handler) update(recordID, webhookID string, payload *patchPayload) (*core.Record, error) {
 	expiresAt, err := parseOptionalExpiresAt(payload.ExpiresAt)
 	if err != nil {
 		return nil, err

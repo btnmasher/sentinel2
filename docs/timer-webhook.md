@@ -20,15 +20,16 @@ Authorization: Bearer <TIMERS_WEBHOOK_BEARER_TOKEN>
 
 ## Identifier Contract
 
-- The request payload `id` field is required for create and update.
+- Create payload `id` is required.
+- Update target `id` is required in the request path.
+- Update payload `id` is optional, but when present it must match the path id.
 - Sentinel stores this in the timer record `webhook_id` field.
 - PocketBase record ids remain internal.
 
 ## Field Semantics
 
-- Only `id` is always required in the payload.
-- `system_id` is required when the webhook id is new.
-- `expires_at` is required when the webhook id is new, and optional for updates.
+- Create payload requires `id`, `system_id`, and `expires_at`.
+- Update payload is partial; all fields are optional.
 - `region_id` is not part of the webhook contract. Sentinel derives region fields from `system_id`.
 - `status` is optional. If omitted:
   - create defaults to `active`
@@ -52,13 +53,13 @@ Authorization: Bearer <TIMERS_WEBHOOK_BEARER_TOKEN>
 
 ## Endpoints
 
-### Upsert
+### Create
 
-`PUT /api/webhooks/timers`
+`POST /api/webhooks/timers`
 
-- Creates a timer when `id` is new.
-- Applies a partial update when `id` already exists.
-- Create requests must still satisfy normal timer validation.
+- Creates a timer for a new external `id`.
+- Returns `409 Conflict` when the `id` already exists.
+- Requests must satisfy normal timer validation.
 
 Example create:
 
@@ -78,13 +79,12 @@ Example create:
 }
 ```
 
-Example partial update:
+Example create response:
 
 ```json
 {
-  "id": "ext-123",
-  "severity": "critical",
-  "notes": "Escalated after scout update"
+  "operation": "created",
+  "id": "ext-123"
 }
 ```
 
@@ -107,13 +107,30 @@ Example create with IDs only for display-backed fields:
 
 If Sentinel already has those IDs in its local cache, it will populate the corresponding names and tickers automatically.
 
-Example upsert response:
+### Update
+
+`PATCH /api/webhooks/timers/{id}`
+
+- Applies a partial update to the timer identified by `webhook_id`.
+- Returns `404 Not Found` when the timer does not exist.
+- If payload `id` is present, it must match `{id}`.
+- Existing business-rule validation still applies after merge.
+
+Example partial update:
 
 ```json
 {
-  "operation": "created",
-  "id": "ext-123",
-  "record_id": "pocketbase-record-id"
+  "severity": "critical",
+  "notes": "Escalated after scout update"
+}
+```
+
+Example update response:
+
+```json
+{
+  "operation": "updated",
+  "id": "ext-123"
 }
 ```
 

@@ -100,7 +100,8 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 		if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceWebhook {
 			webhookTimerGroup := apiGroup.Group("/webhooks/timers")
 			webhookTimerGroup.BindFunc(middleware.RequireTimersWebhookToken(cfg))
-			webhookTimerGroup.PUT("", deps.timerWebhook.Upsert)
+			webhookTimerGroup.POST("", deps.timerWebhook.Create)
+			webhookTimerGroup.PATCH("/{id}", deps.timerWebhook.Patch)
 			webhookTimerGroup.DELETE("/{id}", deps.timerWebhook.Delete)
 		}
 
