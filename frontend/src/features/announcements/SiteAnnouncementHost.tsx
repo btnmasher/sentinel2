@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { BellRing, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -130,11 +131,33 @@ export default function SiteAnnouncementHost() {
 
   if (announcement.variant === "banner") {
     return (
-      <div className="mx-6 mt-3 rounded-lg border border-sky-700/60 bg-sky-900/25 px-3 py-2 text-sm text-sky-100 flex items-start gap-3">
-        <div className="flex-1">{plainText}</div>
-        <button className="btn btn-xs btn-ghost" onClick={dismiss}>
-          Dismiss
-        </button>
+      <div className="pointer-events-none fixed inset-x-0 top-20 z-[65] flex justify-center px-4 md:px-6">
+        <section
+          aria-label="Site announcement"
+          className="announcement-toast pointer-events-auto w-full max-w-4xl rounded-[1.4rem] px-5 py-4 backdrop-blur-md md:px-6 md:py-5"
+        >
+          <div className="flex items-start gap-4">
+            <div className="announcement-toast-icon mt-0.5 hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl md:inline-flex">
+              <BellRing className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="announcement-toast-label mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.28em]">
+                Site announcement
+              </div>
+              <p className="announcement-toast-text text-sm leading-6 md:text-lg md:leading-7">
+                {plainText}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="announcement-toast-dismiss inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2"
+              onClick={dismiss}
+              aria-label="Dismiss announcement"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
       </div>
     );
   }

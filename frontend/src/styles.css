@@ -2022,6 +2022,80 @@ html[data-theme="sentinel-light"] .map-gate-unloaded:hover rect.map-gate {
   text-decoration: underline;
 }
 
+.announcement-toast {
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: rgba(248, 250, 252, 0.94);
+  color: #0f172a;
+  box-shadow: 0 22px 65px rgba(15, 23, 42, 0.18);
+}
+
+.announcement-toast-icon {
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  background: rgba(14, 165, 233, 0.1);
+  color: #0369a1;
+}
+
+.announcement-toast-label {
+  color: rgba(3, 105, 161, 0.82);
+}
+
+.announcement-toast-text {
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.announcement-toast-dismiss {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(226, 232, 240, 0.78);
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.announcement-toast-dismiss:hover {
+  border-color: rgba(14, 165, 233, 0.35);
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1;
+}
+
+.announcement-toast-dismiss:focus-visible {
+  --tw-ring-color: rgba(14, 165, 233, 0.35);
+}
+
+html[data-theme="sentinel"] .announcement-toast {
+  border-color: rgba(125, 211, 252, 0.35);
+  background: rgba(2, 6, 23, 0.88);
+  color: rgb(240, 249, 255);
+  box-shadow: 0 22px 65px rgba(8, 47, 73, 0.5);
+}
+
+html[data-theme="sentinel"] .announcement-toast-icon {
+  border-color: rgba(125, 211, 252, 0.2);
+  background: rgba(56, 189, 248, 0.12);
+  color: rgb(186, 230, 253);
+}
+
+html[data-theme="sentinel"] .announcement-toast-label {
+  color: rgba(186, 230, 253, 0.8);
+}
+
+html[data-theme="sentinel"] .announcement-toast-text {
+  color: rgba(240, 249, 255, 0.95);
+}
+
+html[data-theme="sentinel"] .announcement-toast-dismiss {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgb(224, 242, 254);
+}
+
+html[data-theme="sentinel"] .announcement-toast-dismiss:hover {
+  border-color: rgba(186, 230, 253, 0.4);
+  background: rgba(125, 211, 252, 0.15);
+  color: rgb(255, 255, 255);
+}
+
+html[data-theme="sentinel"] .announcement-toast-dismiss:focus-visible {
+  --tw-ring-color: rgba(125, 211, 252, 0.45);
+}
+
 .timer-styled-date {
   @apply inline-flex items-center gap-0.5 whitespace-nowrap font-mono text-[0.82rem] font-semibold tracking-[0.03em] tabular-nums text-slate-800;
 }
