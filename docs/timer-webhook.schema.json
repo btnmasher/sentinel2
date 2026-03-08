@@ -26,6 +26,7 @@
     },
     "timer_kind": {
       "type": "string",
+      "description": "Timer type. Valid with structure_type/stage_label only when the business-rule context matrix is satisfied (see docs/timer-webhook.md, section 'Timer Context Rules').",
       "enum": [
         "reinforcement",
         "anchoring",
@@ -36,7 +37,7 @@
     },
     "structure_type": {
       "type": "string",
-      "description": "Optional on update. Required on create for a valid timer context.",
+      "description": "Optional on update. Required on create for a valid timer context. Specific allowed stage_label values depend on timer_kind and structure_type (see docs/timer-webhook.md, section 'Timer Context Rules').",
       "enum": [
         "upwell_citadel_astrahus",
         "upwell_citadel_fortizar",
@@ -60,7 +61,18 @@
     },
     "stage_label": {
       "type": "string",
-      "description": "Optional on update. Required on create for a valid timer context."
+      "description": "Optional on update. Required on create for a valid timer context. The accepted value also depends on timer_kind and structure_type (see docs/timer-webhook.md, section 'Timer Context Rules').",
+      "enum": [
+        "armor",
+        "reinforcement",
+        "hull",
+        "initial_vulnerability",
+        "not_applicable",
+        "anchoring",
+        "unanchoring",
+        "extraction_window",
+        "custom"
+      ]
     },
     "planet_id": {
       "type": "integer",

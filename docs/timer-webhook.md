@@ -51,6 +51,121 @@ Authorization: Bearer <TIMERS_WEBHOOK_BEARER_TOKEN>
   - corporations and alliances from the local organization cache, falling back to public ESI by ID when needed
 - `system_name` and `region_name` are internal derived fields and are not part of the webhook contract.
 
+## Timer Context Rules
+
+Sentinel validates the timer context using the `timer_kind` + `structure_type` + `stage_label` combination.
+
+Accepted `stage_label` values:
+
+- `armor`
+- `reinforcement`
+- `hull`
+- `initial_vulnerability`
+- `not_applicable`
+- `anchoring`
+- `unanchoring`
+- `extraction_window`
+- `custom`
+
+### `timer_kind = reinforcement`
+
+Allowed stages and why:
+
+- `armor` or `hull` only for dual-stage reinforcement structures:
+  - `upwell_citadel_fortizar`
+  - `upwell_citadel_keepstar`
+  - `upwell_engineering_azbel`
+  - `upwell_engineering_sotiyo`
+  - `upwell_refinery_tatara`
+  - Reason: these structures have separate armor and hull reinforcement milestones.
+- `reinforcement` only for single-stage reinforcement structures:
+  - `upwell_citadel_astrahus`
+  - `upwell_engineering_raitaru`
+  - `upwell_refinery_athanor`
+  - `ansiblex_jump_bridge`
+  - `pharolux_cyno_beacon`
+  - `tenebrex_cyno_jammer`
+  - `orbital_skyhook`
+  - `metenox_moon_drill`
+  - `sovereignty_hub`
+  - `mercenary_den`
+  - `customs_office_poco`
+  - `player_owned_starbase`
+  - Reason: these structures use a single reinforcement stage.
+- `not_applicable` with any structure.
+  - Reason: flexibility
+
+### `timer_kind = anchoring`
+
+- `stage_label` must be `anchoring`.
+- `structure_type` must be one of:
+  - `upwell_citadel_astrahus`
+  - `upwell_citadel_fortizar`
+  - `upwell_citadel_keepstar`
+  - `upwell_engineering_raitaru`
+  - `upwell_engineering_azbel`
+  - `upwell_engineering_sotiyo`
+  - `upwell_refinery_athanor`
+  - `upwell_refinery_tatara`
+  - `ansiblex_jump_bridge`
+  - `pharolux_cyno_beacon`
+  - `tenebrex_cyno_jammer`
+  - `orbital_skyhook`
+  - `metenox_moon_drill`
+  - `customs_office_poco`
+  - `player_owned_starbase`
+  - `custom`
+- Reason: anchoring timers are only valid for deployable structures that can be anchored.
+
+### `timer_kind = unanchoring`
+
+- `stage_label` must be `unanchoring`.
+- `structure_type` must be one of:
+  - `upwell_citadel_astrahus`
+  - `upwell_citadel_fortizar`
+  - `upwell_citadel_keepstar`
+  - `upwell_engineering_raitaru`
+  - `upwell_engineering_azbel`
+  - `upwell_engineering_sotiyo`
+  - `upwell_refinery_athanor`
+  - `upwell_refinery_tatara`
+  - `ansiblex_jump_bridge`
+  - `pharolux_cyno_beacon`
+  - `tenebrex_cyno_jammer`
+  - `orbital_skyhook`
+  - `metenox_moon_drill`
+  - `customs_office_poco`
+  - `player_owned_starbase`
+  - `custom`
+- Reason: unanchoring timers are only valid for structures that support unanchoring.
+
+### `timer_kind = extraction`
+
+- `stage_label` must be `extraction_window`.
+- `structure_type` must be one of:
+  - `upwell_refinery_athanor`
+  - `upwell_refinery_tatara`
+  - `orbital_skyhook`
+  - `metenox_moon_drill`
+  - `mercenary_den`
+- Reason: extraction windows apply to resource extraction style structures.
+- Extra rule: if `structure_type = orbital_skyhook`, `skyhook_fullness_pct` is required (0-100).
+
+### `timer_kind = custom`
+
+- `stage_label` must be `custom`.
+- Reason: custom timers use an explicit custom stage to avoid accidental overlap with structured timer semantics.
+
+## Structure-specific extra requirements
+
+- `planet_id` is required for:
+  - `orbital_skyhook`
+  - `mercenary_den`
+  - Reason: these structures are planet-bound.
+- `moon_id` is required for:
+  - `metenox_moon_drill`
+  - Reason: this structure is moon-bound.
+
 ## Endpoints
 
 ### Create
@@ -71,7 +186,7 @@ Example create:
   "standing_type": "hostile",
   "timer_kind": "reinforcement",
   "structure_type": "ansiblex_jump_bridge",
-  "stage_label": "armor",
+  "stage_label": "reinforcement",
   "replacement_action": "alliance_replacement",
   "severity": "high",
   "expires_at": "2026-03-08T02:30:00Z",
