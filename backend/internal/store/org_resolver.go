@@ -14,6 +14,9 @@ func GetOrFetchAlliance(ctx context.Context, app *pocketbase.PocketBase, publicE
 		return "", "", false, nil
 	}
 	if app != nil {
+		if IsOrgClosed(app, CollectionAlliances, allianceID) {
+			return "", "", false, esi.ErrOrganizationInactive
+		}
 		if name, ticker, ok = GetOrg(app, CollectionAlliances, allianceID); ok {
 			return name, ticker, true, nil
 		}
@@ -36,19 +39,38 @@ func GetOrFetchCorporation(ctx context.Context, app *pocketbase.PocketBase, publ
 		return "", "", 0, false, nil
 	}
 	if app != nil {
-		if name, ticker, ok = GetOrg(app, CollectionCorporations, corporationID); ok {
-			return name, ticker, 0, true, nil
+		entry, exists := GetOrgCacheEntries(app, CollectionCorporations, []int{corporationID})[corporationID]
+		if exists {
+			if entry.Closed {
+				return "", "", 0, false, esi.ErrOrganizationInactive
+			}
+			if strings.TrimSpace(entry.Name) != "" {
+				return entry.Name, entry.Ticker, entry.AllianceID, true, nil
+			}
 		}
 	}
 	if publicESI == nil {
 		return "", "", 0, false, nil
 	}
-	name, ticker, allianceID, err = publicESI.CorporationDetails(ctx, corporationID)
-	if err != nil || strings.TrimSpace(name) == "" {
-		return "", "", 0, false, err
+	profile, profileErr := publicESI.CorporationProfile(ctx, corporationID)
+	if profileErr != nil {
+		return "", "", 0, false, profileErr
+	}
+	name = profile.Name
+	ticker = profile.Ticker
+	allianceID = profile.AllianceID
+	if strings.TrimSpace(name) == "" {
+		return "", "", 0, false, nil
 	}
 	if app != nil {
-		_ = UpsertOrg(app, CollectionCorporations, corporationID, name, ticker)
+		_ = UpsertCorporationProfile(
+			app,
+			corporationID,
+			name,
+			ticker,
+			profile.AllianceID,
+			profile.MemberCount,
+		)
 	}
 	return name, ticker, allianceID, true, nil
 }

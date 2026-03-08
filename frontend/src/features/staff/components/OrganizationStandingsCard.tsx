@@ -68,12 +68,16 @@ export default function OrganizationStandingsCard() {
   const [includeInSovSync, setIncludeInSovSync] = useState(false);
   const canManageSovSync = timersEnabled && timerSource === "standalone";
 
-  const loadOrganizationSuggestions = useCallback(async (value: string) => {
-    const response = await api.get<{ entities: OrganizationEntityOption[] }>(
-      `/organizations/search?query=${encodeURIComponent(value)}&scope=both`,
-    );
-    return response.data.entities || [];
-  }, []);
+  const loadOrganizationSuggestions = useCallback(
+    async (value: string, signal?: AbortSignal) => {
+      const response = await api.get<{ entities: OrganizationEntityOption[] }>(
+        `/organizations/search?query=${encodeURIComponent(value)}&scope=both`,
+        { signal },
+      );
+      return response.data.entities || [];
+    },
+    [],
+  );
 
   const loadEntities = useCallback(async () => {
     try {

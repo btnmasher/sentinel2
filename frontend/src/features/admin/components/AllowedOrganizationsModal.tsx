@@ -92,14 +92,18 @@ function AllowedOrganizationsModalBody() {
     void load();
   }, [load]);
 
-  const loadOrganizationSuggestions = useCallback(async (value: string) => {
-    const response = await api.get<{ entities: OrganizationEntityOption[] }>(
-      `/organizations/search?query=${encodeURIComponent(value)}`,
-    );
-    return (response.data.entities || []).filter(
-      (entity) => entity.type === "corporation" || entity.type === "alliance",
-    );
-  }, []);
+  const loadOrganizationSuggestions = useCallback(
+    async (value: string, signal?: AbortSignal) => {
+      const response = await api.get<{ entities: OrganizationEntityOption[] }>(
+        `/organizations/search?query=${encodeURIComponent(value)}`,
+        { signal },
+      );
+      return (response.data.entities || []).filter(
+        (entity) => entity.type === "corporation" || entity.type === "alliance",
+      );
+    },
+    [],
+  );
 
   const addSelected = async () => {
     if (!selected || submitting) return;

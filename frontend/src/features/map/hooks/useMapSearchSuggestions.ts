@@ -29,7 +29,10 @@ export function useMapSearchSuggestions({
   const { getRegionName } = useRegionNames();
 
   const loadSuggestions = useCallback(
-    async (query: string): Promise<MapSearchSuggestion[]> => {
+    async (
+      query: string,
+      signal?: AbortSignal,
+    ): Promise<MapSearchSuggestion[]> => {
       const trimmed = query.trim();
       const lower = trimmed.toLowerCase();
 
@@ -50,12 +53,13 @@ export function useMapSearchSuggestions({
           region: string;
           region_id: number;
         }>;
-      }>(`/map/search?q=${encodeURIComponent(trimmed)}`);
+      }>(`/map/search?q=${encodeURIComponent(trimmed)}`, { signal });
 
       const systemMatches: SystemResult[] = (response.data.systems || []).map(
         (system) => ({
           ...system,
-          region: system.region || getRegionName(system.region_id, "Unknown Region"),
+          region:
+            system.region || getRegionName(system.region_id, "Unknown Region"),
           kind: "system",
         }),
       );

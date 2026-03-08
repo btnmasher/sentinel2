@@ -6,7 +6,7 @@ type SearchSuggestionFieldProps<T> = {
   query: string;
   onQueryChange: (value: string) => void;
   onSelect: (item: T) => void;
-  loadSuggestions: (query: string) => Promise<T[]>;
+  loadSuggestions: (query: string, signal?: AbortSignal) => Promise<T[]>;
   getSuggestionKey: (item: T) => string | number;
   getInputValueFromSuggestion?: (item: T) => string;
   selectionInputMode?: "set" | "clear" | "preserve";
@@ -80,25 +80,32 @@ export default function SearchSuggestionField<T>({
       setLoading(false);
       return;
     }
+    let cancelled = false;
+    let controller: AbortController | undefined;
     const timeout = window.setTimeout(async () => {
       const requestId = ++requestIdRef.current;
+      controller = new AbortController();
       setLoading(true);
       try {
-        const next = await loadSuggestions(trimmedQuery);
-        if (requestId !== requestIdRef.current) return;
+        const next = await loadSuggestions(trimmedQuery, controller.signal);
+        if (cancelled || requestId !== requestIdRef.current) return;
         setSuggestions(next || []);
         setCursor(next?.length ? 0 : -1);
       } catch {
-        if (requestId !== requestIdRef.current) return;
+        if (cancelled || requestId !== requestIdRef.current) return;
         setSuggestions([]);
         setCursor(-1);
       } finally {
-        if (requestId === requestIdRef.current) {
+        if (!cancelled && requestId === requestIdRef.current) {
           setLoading(false);
         }
       }
     }, debounceMs);
-    return () => window.clearTimeout(timeout);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller?.abort();
+    };
   }, [
     debounceMs,
     isInputActive,

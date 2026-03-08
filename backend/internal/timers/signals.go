@@ -148,6 +148,43 @@ func (s *Service) ActiveSystemsByStructureTypes(structureTypes []string, now tim
 	return out, nil
 }
 
+func (s *Service) ActiveSystemsByStructureTypesInSystems(structureTypes []string, now time.Time, systemIDs []int) (map[int]struct{}, error) {
+	exists, err := s.hasTimersCollection()
+	if err != nil {
+		return nil, err
+	}
+	if !exists || len(structureTypes) == 0 || len(systemIDs) == 0 {
+		return map[int]struct{}{}, nil
+	}
+
+	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilter("structure_type", structureTypes)
+	systemFilter, systemParams := queryhelpers.BuildOrEqualsFilter("system_id", systemIDs)
+	filter := queryhelpers.AppendAnd("status = {:status}", "expires_at > {:now}")
+	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
+	filter = queryhelpers.AppendAnd(filter, "("+systemFilter+")")
+	params := dbx.Params{
+		"status": timerStatusActive,
+		"now":    now.UTC().Format(time.RFC3339),
+	}
+	stdmaps.Copy(params, structureParams)
+	stdmaps.Copy(params, systemParams)
+
+	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionTimers, filter, "", 0, 0, params)
+	if recordsErr != nil {
+		return nil, recordsErr
+	}
+
+	out := make(map[int]struct{}, len(records))
+	for _, record := range records {
+		systemID := record.GetInt("system_id")
+		if systemID <= 0 {
+			continue
+		}
+		out[systemID] = struct{}{}
+	}
+	return out, nil
+}
+
 func (s *Service) hasTimersCollection() (bool, error) {
 	if _, err := s.App.FindCollectionByNameOrId(store.CollectionTimers); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

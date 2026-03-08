@@ -155,11 +155,6 @@ func (h *MapHandler) fetchGates(regionIDs []int) ([]Gate, error) {
 }
 
 func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]Jumpbridge, error) {
-	disabledSystems, disabledErr := h.fetchDisabledAnsiblexSystems(regionIDs)
-	if disabledErr != nil {
-		disabledSystems = map[int]struct{}{}
-	}
-
 	filter, params := queryhelpers.BuildOrEqualsFilter("from_region", regionIDs)
 	filterTo, paramsTo := queryhelpers.BuildOrEqualsFilter("to_region", regionIDs)
 	stdmaps.Copy(params, paramsTo)
@@ -169,6 +164,23 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]Jumpbridge, error) {
 	records, recordsErr := h.App.FindRecordsByFilter(store.CollectionJumpbridges, combinedFilter, "", 0, 0, params)
 	if recordsErr != nil {
 		return nil, recordsErr
+	}
+
+	jumpbridgeSystemIDs := make(map[int]struct{}, len(records)*2)
+	for _, rec := range records {
+		from := rec.GetInt("from_solarsystem")
+		to := rec.GetInt("to_solarsystem")
+		if from > 0 {
+			jumpbridgeSystemIDs[from] = struct{}{}
+		}
+		if to > 0 {
+			jumpbridgeSystemIDs[to] = struct{}{}
+		}
+	}
+
+	disabledSystems, disabledErr := h.fetchDisabledAnsiblexSystems(keysFromSet(jumpbridgeSystemIDs))
+	if disabledErr != nil {
+		disabledSystems = map[int]struct{}{}
 	}
 
 	out := []Jumpbridge{}
@@ -199,14 +211,14 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]Jumpbridge, error) {
 	return out, nil
 }
 
-func (h *MapHandler) fetchDisabledAnsiblexSystems(regionIDs []int) (map[int]struct{}, error) {
+func (h *MapHandler) fetchDisabledAnsiblexSystems(systemIDs []int) (map[int]struct{}, error) {
 	if h.Timers == nil {
 		return map[int]struct{}{}, nil
 	}
-	return h.Timers.ActiveSystemsByStructureTypes(
+	return h.Timers.ActiveSystemsByStructureTypesInSystems(
 		[]string{ansiblexJumpBridgeStructureType},
 		time.Now().UTC(),
-		regionIDs,
+		systemIDs,
 	)
 }
 

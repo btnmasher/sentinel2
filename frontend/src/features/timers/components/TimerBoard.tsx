@@ -446,10 +446,7 @@ function isMiningTimer(timer: TimerRecord): boolean {
   if (!isMiningStructure) {
     return false;
   }
-  return (
-    timer.timer_kind === TimerKind.Extraction ||
-    timer.timer_kind === TimerKind.Reinforcement
-  );
+  return timer.timer_kind === TimerKind.Extraction;
 }
 
 function isRattingTimer(timer: TimerRecord): boolean {

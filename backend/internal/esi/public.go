@@ -30,6 +30,14 @@ type ESIPublicClient struct {
 	limiter  *esiRateLimiter
 }
 
+type CorporationProfile struct {
+	Name          string
+	Ticker        string
+	AllianceID    int
+	MemberCount   int
+	HomeStationID int
+}
+
 func NewESIPublicClient(userAgent string) *ESIPublicClient {
 	return &ESIPublicClient{
 		client:   goesi.NewPublicESIClient(userAgent),
@@ -79,13 +87,23 @@ func (c *ESIPublicClient) CorporationName(ctx context.Context, corpID int) (stri
 }
 
 func (c *ESIPublicClient) CorporationDetails(ctx context.Context, corporationID int) (name, ticker string, allianceID int, err error) {
-	if err := c.ensureConfigured(); err != nil {
+	profile, err := c.CorporationProfile(ctx, corporationID)
+	if err != nil {
 		return "", "", 0, err
+	}
+	return profile.Name, profile.Ticker, profile.AllianceID, nil
+}
+
+func (c *ESIPublicClient) CorporationProfile(ctx context.Context, corporationID int) (CorporationProfile, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return CorporationProfile{}, err
 	}
 
 	var responseName string
 	var responseTicker string
 	var responseAllianceID int
+	var responseMemberCount int
+	var responseHomeStationID int
 	//nolint:bodyclose // Body is closed in the callback immediately after Execute().
 	httpResp, fetchErr := executeWithPublicRetry(
 		c,
@@ -105,6 +123,10 @@ func (c *ESIPublicClient) CorporationDetails(ctx context.Context, corporationID 
 			}
 			responseName = strings.TrimSpace(response.GetName())
 			responseTicker = strings.TrimSpace(response.GetTicker())
+			responseMemberCount = int(response.GetMemberCount())
+			if responseHomeStationIDPtr, ok := response.GetHomeStationIdOk(); ok {
+				responseHomeStationID = int(*responseHomeStationIDPtr)
+			}
 			if responseAllianceIDPtr, ok := response.GetAllianceIdOk(); ok {
 				responseAllianceID = int(*responseAllianceIDPtr)
 			}
@@ -112,10 +134,16 @@ func (c *ESIPublicClient) CorporationDetails(ctx context.Context, corporationID 
 		},
 	)
 	if fetchErr != nil {
-		return "", "", 0, fetchErr
+		return CorporationProfile{}, fetchErr
 	}
 	c.setCached(corporationCacheKey(corporationID), responseName, httpResp)
-	return responseName, responseTicker, responseAllianceID, nil
+	return CorporationProfile{
+		Name:          responseName,
+		Ticker:        responseTicker,
+		AllianceID:    responseAllianceID,
+		MemberCount:   responseMemberCount,
+		HomeStationID: responseHomeStationID,
+	}, nil
 }
 
 func (c *ESIPublicClient) AllianceDetails(ctx context.Context, allianceID int) (name, ticker string, err error) {
@@ -152,6 +180,38 @@ func (c *ESIPublicClient) AllianceDetails(ctx context.Context, allianceID int) (
 	}
 	c.setCached(allianceCacheKey(allianceID), responseName, httpResp)
 	return responseName, responseTicker, nil
+}
+
+func (c *ESIPublicClient) AllianceCorporationIDs(ctx context.Context, allianceID int) ([]int, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return []int{}, err
+	}
+	var corporationIDs []int
+	httpResp, fetchErr := executeWithPublicRetry(
+		c,
+		ctx,
+		publicRequestOptions{
+			operation:   fmt.Sprintf("esi alliance corporations fetch failed (alliance_id=%d)", allianceID),
+			notFoundErr: fmt.Errorf("%w: alliance_id=%d", ErrOrganizationInactive, allianceID),
+		},
+		func(ctx context.Context) (*http.Response, error) {
+			response, httpResp, respErr := c.client.AllianceAPI.GetAlliancesAllianceIdCorporations(ctx, int64(allianceID)).Execute()
+			defer closeResponseBody(httpResp)
+			if respErr != nil {
+				return httpResp, respErr
+			}
+			corporationIDs = make([]int, 0, len(response))
+			for _, corporationID := range response {
+				corporationIDs = append(corporationIDs, int(corporationID))
+			}
+			return httpResp, nil
+		},
+	)
+	if fetchErr != nil {
+		return []int{}, fetchErr
+	}
+	defer closeResponseBody(httpResp)
+	return corporationIDs, nil
 }
 
 func (c *ESIPublicClient) ResolveOrganizationNames(ctx context.Context, names []string) (*esi.UniverseIdsPost, error) {
