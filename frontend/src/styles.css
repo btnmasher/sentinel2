@@ -893,6 +893,19 @@ html[data-theme="sentinel-light"] .map-gate.jumpbridge {
   opacity: 0.5;
 }
 
+html[data-theme="sentinel-light"] .map-gate.jumpbridge.jumpbridge-disabled {
+  stroke: #ef4444;
+  color: #ef4444;
+  opacity: 0.65;
+}
+
+html[data-theme="sentinel-light"] .map-gate.route.route-disabled {
+  stroke: #ef4444;
+  color: #ef4444;
+  stroke-dasharray: 12 6;
+  animation: none;
+}
+
 html[data-theme="sentinel-light"] .map-gate-unloaded line.map-gate {
   stroke: #94a3b8;
 }
@@ -1168,10 +1181,6 @@ html[data-theme="sentinel-light"] .rdp {
   fill: none;
   vector-effect: non-scaling-stroke;
   transition: opacity 200ms;
-}
-
-.map-gate:hover {
-  opacity: 1;
 }
 
 .map-gate.solarsystem {

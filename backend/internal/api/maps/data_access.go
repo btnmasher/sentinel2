@@ -180,7 +180,14 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]Jumpbridge, error) {
 
 	disabledSystems, disabledErr := h.fetchDisabledAnsiblexSystems(keysFromSet(jumpbridgeSystemIDs))
 	if disabledErr != nil {
-		disabledSystems = map[int]struct{}{}
+		// Fallback for large endpoint sets: load global disabled ansiblex systems
+		// and intersect in-memory with the jumpbridge endpoints.
+		globalDisabledSystems, fallbackErr := h.fetchDisabledAnsiblexSystems(nil)
+		if fallbackErr != nil {
+			disabledSystems = map[int]struct{}{}
+		} else {
+			disabledSystems = intersectSystems(globalDisabledSystems, jumpbridgeSystemIDs)
+		}
 	}
 
 	out := []Jumpbridge{}
@@ -215,11 +222,31 @@ func (h *MapHandler) fetchDisabledAnsiblexSystems(systemIDs []int) (map[int]stru
 	if h.Timers == nil {
 		return map[int]struct{}{}, nil
 	}
+	if len(systemIDs) == 0 {
+		return h.Timers.ActiveSystemsByStructureTypes(
+			[]string{ansiblexJumpBridgeStructureType},
+			time.Now().UTC(),
+			nil,
+		)
+	}
 	return h.Timers.ActiveSystemsByStructureTypesInSystems(
 		[]string{ansiblexJumpBridgeStructureType},
 		time.Now().UTC(),
 		systemIDs,
 	)
+}
+
+func intersectSystems(all, allowed map[int]struct{}) map[int]struct{} {
+	if len(all) == 0 || len(allowed) == 0 {
+		return map[int]struct{}{}
+	}
+	out := make(map[int]struct{}, min(len(all), len(allowed)))
+	for systemID := range all {
+		if _, ok := allowed[systemID]; ok {
+			out[systemID] = struct{}{}
+		}
+	}
+	return out
 }
 
 func jumpbridgeTouchesDisabledSystem(from, to int, disabledSystems map[int]struct{}) bool {

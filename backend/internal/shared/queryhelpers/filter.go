@@ -42,6 +42,34 @@ func BuildOrEqualsFilter[T any](field string, values []T) (string, dbx.Params) {
 	return filter.String(), params
 }
 
+// BuildOrEqualsFilterWithPrefix builds
+// "field = {:<prefix>0} || field = {:<prefix>1} ..." with prefixed params.
+func BuildOrEqualsFilterWithPrefix[T any](field, prefix string, values []T) (string, dbx.Params) {
+	if prefix == "" {
+		return BuildOrEqualsFilter(field, values)
+	}
+	if len(values) == 0 {
+		return "", dbx.Params{}
+	}
+	var filter strings.Builder
+	firstKey := prefix + "0"
+	filter.WriteString(field)
+	filter.WriteString(" = {:")
+	filter.WriteString(firstKey)
+	filter.WriteString("}")
+	params := dbx.Params{firstKey: values[0]}
+	for i := 1; i < len(values); i++ {
+		key := prefix + strconv.Itoa(i)
+		filter.WriteString(" || ")
+		filter.WriteString(field)
+		filter.WriteString(" = {:")
+		filter.WriteString(key)
+		filter.WriteString("}")
+		params[key] = values[i]
+	}
+	return filter.String(), params
+}
+
 func AppendDateTimeClauseUTC(filter string, params dbx.Params, value *time.Time, paramKey, clause string) string {
 	if value == nil {
 		return filter

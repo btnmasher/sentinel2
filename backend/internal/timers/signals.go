@@ -122,7 +122,7 @@ func (s *Service) ActiveSystemsByStructureTypes(structureTypes []string, now tim
 		return map[int]struct{}{}, nil
 	}
 
-	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilter("structure_type", structureTypes)
+	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilterWithPrefix("structure_type", "st", structureTypes)
 	filter := queryhelpers.AppendAnd("status = {:status}", "expires_at > {:now}")
 	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
 	params := dbx.Params{
@@ -157,8 +157,8 @@ func (s *Service) ActiveSystemsByStructureTypesInSystems(structureTypes []string
 		return map[int]struct{}{}, nil
 	}
 
-	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilter("structure_type", structureTypes)
-	systemFilter, systemParams := queryhelpers.BuildOrEqualsFilter("system_id", systemIDs)
+	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilterWithPrefix("structure_type", "st", structureTypes)
+	systemFilter, systemParams := queryhelpers.BuildOrEqualsFilterWithPrefix("system_id", "sys", systemIDs)
 	filter := queryhelpers.AppendAnd("status = {:status}", "expires_at > {:now}")
 	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
 	filter = queryhelpers.AppendAnd(filter, "("+systemFilter+")")

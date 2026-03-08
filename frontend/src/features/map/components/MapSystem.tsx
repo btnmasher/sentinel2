@@ -6,6 +6,7 @@ import {
   timerSeverityDotColor,
   timerSeverityRank,
 } from "@/features/timers";
+import { useUIStore } from "@/app/store/uiStore";
 import { useMapStore } from "../store/mapStore";
 import { colorToHex, transformComponent } from "../utils/mapUtils";
 import { useSystemRouteState } from "../hooks/useSystemRouteState";
@@ -44,6 +45,7 @@ export default function MapSystem({
 
   const system = systems[systemId];
   const timerSignal = displayTimers ? timerSignals[systemId] : undefined;
+  const hasContextMenuOpen = useUIStore((s) => Boolean(s.contextMenu));
   const [isSystemHovered, setIsSystemHovered] = useState(false);
   const [isHoverCardHovered, setIsHoverCardHovered] = useState(false);
   const [timerTooltipAnchor, setTimerTooltipAnchor] = useState({ x: 0, y: 0 });
@@ -74,7 +76,18 @@ export default function MapSystem({
     }, 70);
   };
 
-  const timerTooltipOpen = isSystemHovered || isHoverCardHovered;
+  const handleSystemContextMenu = (event: React.MouseEvent<SVGGElement>) => {
+    if (hideTimerTooltipTimeoutRef.current) {
+      window.clearTimeout(hideTimerTooltipTimeoutRef.current);
+      hideTimerTooltipTimeoutRef.current = undefined;
+    }
+    setIsSystemHovered(false);
+    setIsHoverCardHovered(false);
+    handleContextMenu(event);
+  };
+
+  const timerTooltipOpen =
+    !hasContextMenuOpen && (isSystemHovered || isHoverCardHovered);
 
   return (
     <g
@@ -82,7 +95,7 @@ export default function MapSystem({
       transform={transformComponent(system.position, scale)}
       style={{ display: showSystem ? "block" : "none" }}
       onMouseUp={handleMouseUp}
-      onContextMenu={handleContextMenu}
+      onContextMenu={handleSystemContextMenu}
     >
       <rect
         x={-8}
