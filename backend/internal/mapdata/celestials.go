@@ -27,6 +27,7 @@ func listCelestialsBySystem(app core.App, collectionName string, systemID, limit
 	if app == nil || systemID <= 0 {
 		return []CelestialSearchItem{}, nil
 	}
+
 	if limit <= 0 {
 		limit = defaultCelestialListLimit
 	}

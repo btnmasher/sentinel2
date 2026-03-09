@@ -31,7 +31,6 @@ func ParseFlexibleDateRangeUTC(values url.Values, startAtKey, endAtKey, startDat
 	endAtRaw := strings.TrimSpace(values.Get(endAtKey))
 	startDateRaw := strings.TrimSpace(values.Get(startDateKey))
 	endDateRaw := strings.TrimSpace(values.Get(endDateKey))
-
 	if startAtRaw != "" {
 		parsed, err := format.ParseDateTimeFlexibleUTC(startAtRaw)
 		if err != nil {

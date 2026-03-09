@@ -83,6 +83,7 @@ func loadEnvFilesFromList(loadList []string) {
 	if len(loadList) == 0 {
 		return
 	}
+
 	if err := godotenv.Load(loadList...); err != nil {
 		log.Printf("startup: failed to load env files: %v", err)
 		return

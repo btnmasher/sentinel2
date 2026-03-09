@@ -19,6 +19,7 @@ func TestParseDotPositionsHandlesLongLine(t *testing.T) {
 	if !ok {
 		t.Fatalf("parseDotPositions() missing node 123")
 	}
+
 	if pos.x != 10 || pos.y != 20 {
 		t.Fatalf("parseDotPositions() = %+v, want {x:10 y:20}", pos)
 	}
@@ -38,6 +39,7 @@ func TestParsePlainPositionsHandlesLongLine(t *testing.T) {
 	if !ok {
 		t.Fatalf("parsePlainPositions() missing node 456")
 	}
+
 	if pos.x != 15 || pos.y != 25 {
 		t.Fatalf("parsePlainPositions() = %+v, want {x:15 y:25}", pos)
 	}

@@ -104,6 +104,7 @@ func (r *CharacterRefresher) RefreshAllBatched(ctx context.Context, records []*c
 	if batchSize <= 0 {
 		batchSize = defaultRefreshBatchSize
 	}
+
 	if pause < 0 {
 		pause = 0
 	}
@@ -171,6 +172,7 @@ func (r *CharacterRefresher) refreshOneRecord(ctx context.Context, record *core.
 	if !started {
 		return nil
 	}
+
 	if runner == nil {
 		return r.refreshWithRetry(ctx, record, defaultRefreshRetries)
 	}
@@ -193,6 +195,7 @@ func (r *CharacterRefresher) waitAtBatchBoundary(ctx context.Context, index, bat
 			waitFor = delay
 		}
 	}
+
 	if waitFor <= 0 {
 		return nil
 	}
@@ -241,7 +244,6 @@ func (r *CharacterRefresher) refreshWithRetry(ctx context.Context, record *core.
 	var lastErr error
 	for attempt := 0; attempt <= retries; attempt++ {
 		refreshErr := r.RefreshCharacter(ctx, record)
-
 		if refreshErr == nil {
 			return nil
 		}
@@ -301,9 +303,11 @@ func (r *CharacterRefresher) handleRefreshDenied(userID string, character *core.
 	if userID == "" || !errors.Is(refreshErr, ErrAccessDenied) {
 		return
 	}
+
 	if r.Intel != nil {
 		_ = r.Intel.RevokeUploaderTokensForUser(userID)
 	}
+
 	if r.Audit != nil {
 		r.Audit.LogEvent(&audit.Event{
 			Action:          audit.ActionUserRevokeUploadTokens,
@@ -355,6 +359,7 @@ func (r *CharacterRefresher) refreshCharacterAffiliation(ctx context.Context, ch
 	if err := store.WarmCorporationCache(ctx, r.App, r.PublicESI, corpID); err != nil {
 		r.logger.WithFields(logging.Fields{"corporation_id": corpID}).WithErr(err).Warn("failed to warm corporation cache")
 	}
+
 	if err := store.WarmAllianceCache(ctx, r.App, r.PublicESI, allianceID); err != nil {
 		r.logger.WithFields(logging.Fields{"alliance_id": allianceID}).WithErr(err).Warn("failed to warm alliance cache")
 	}

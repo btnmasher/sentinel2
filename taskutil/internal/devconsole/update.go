@@ -319,6 +319,7 @@ func (m viewState) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		m.backend, cmd = m.backend.Update(msg)
 	}
+
 	if didManualScroll(msg) {
 		if shouldResumeFollow(msg) && m.focusedAtBottom() {
 			m.setFollowFocused(true)
@@ -346,6 +347,7 @@ func (m *viewState) copyLineMode() {
 		m.resize(m.width, m.height)
 		return
 	}
+
 	if err := writeClipboard(line); err != nil {
 		m.status = "clipboard copy failed: " + err.Error()
 	} else {

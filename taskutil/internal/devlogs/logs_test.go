@@ -38,9 +38,11 @@ func TestReadNewLines_RespectsOffsetAndRemainder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readNewLines() error = %v", err)
 	}
+
 	if next <= 0 {
 		t.Fatalf("next offset = %d, want > 0", next)
 	}
+
 	if rem != "bc" {
 		t.Fatalf("remainder = %q, want bc", rem)
 	}
@@ -52,9 +54,11 @@ func TestReadNewLines_RespectsOffsetAndRemainder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readNewLines() error with appended data = %v", err)
 	}
+
 	if next2 <= next {
 		t.Fatalf("next2 offset = %d, want > %d", next2, next)
 	}
+
 	if rem2 != "" {
 		t.Fatalf("remainder after full lines = %q, want empty", rem2)
 	}
@@ -75,6 +79,7 @@ func TestResolveDevLogDir_UsesLatestThenFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveDevLogDir() error = %v", err)
 	}
+
 	if got != latest {
 		t.Fatalf("resolveDevLogDir() = %q, want %q", got, latest)
 	}

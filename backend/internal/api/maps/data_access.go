@@ -19,6 +19,7 @@ import (
 
 const findByNameCandidatesLimit = 50
 const ansiblexJumpBridgeStructureType = "ansiblex_jump_bridge"
+const jumpbridgeSystemsPerRecord = 2
 
 func (h *MapHandler) fetchRegions(regionIDs []int, mode string) (map[int]Region, error) {
 	filter, params := queryhelpers.BuildOrEqualsFilter("eve_id", regionIDs)
@@ -166,7 +167,7 @@ func (h *MapHandler) fetchJumpbridges(regionIDs []int) ([]Jumpbridge, error) {
 		return nil, recordsErr
 	}
 
-	jumpbridgeSystemIDs := make(map[int]struct{}, len(records)*2)
+	jumpbridgeSystemIDs := make(map[int]struct{}, len(records)*jumpbridgeSystemsPerRecord)
 	for _, rec := range records {
 		from := rec.GetInt("from_solarsystem")
 		to := rec.GetInt("to_solarsystem")
@@ -222,6 +223,7 @@ func (h *MapHandler) fetchDisabledAnsiblexSystems(systemIDs []int) (map[int]stru
 	if h.Timers == nil {
 		return map[int]struct{}{}, nil
 	}
+
 	if len(systemIDs) == 0 {
 		return h.Timers.ActiveSystemsByStructureTypes(
 			[]string{ansiblexJumpBridgeStructureType},

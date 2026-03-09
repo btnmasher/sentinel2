@@ -7,17 +7,19 @@ import (
 	"sentinel2/internal/auth"
 	"sentinel2/internal/cleanup"
 	"sentinel2/internal/intel"
+	"sentinel2/internal/jumpbridges"
 	timerssvc "sentinel2/internal/timers"
 )
 
 type Handler struct {
-	App       *pocketbase.PocketBase
-	Refresher *auth.CharacterRefresher
-	Provider  *auth.EVEProvider
-	Cleanup   *cleanup.Service
-	Intel     *intel.IntelService
-	Timers    *timerssvc.Service
-	Audit     *audit.Service
+	App         *pocketbase.PocketBase
+	Refresher   *auth.CharacterRefresher
+	Provider    *auth.EVEProvider
+	Cleanup     *cleanup.Service
+	Intel       *intel.IntelService
+	Timers      *timerssvc.Service
+	Jumpbridges *jumpbridges.JumpbridgeService
+	Audit       *audit.Service
 }
 
 type searchItem struct {
@@ -66,6 +68,7 @@ type jobRunEntry struct {
 	JobID            string `json:"job_id"`
 	Kind             string `json:"kind"`
 	Step             string `json:"step"`
+	Message          string `json:"message"`
 	Trigger          string `json:"trigger"`
 	Status           string `json:"status"`
 	ActorID          string `json:"actor_id"`
@@ -73,7 +76,6 @@ type jobRunEntry struct {
 	StartedAt        string `json:"started_at"`
 	CompletedAt      string `json:"completed_at"`
 	DurationMs       int64  `json:"duration_ms"`
-	Error            string `json:"error"`
 }
 
 type jobRunGroup struct {

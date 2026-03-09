@@ -54,6 +54,7 @@ func assertMiddlewareResult(t *testing.T, err error, wantStatus int) {
 		}
 		return
 	}
+
 	if err == nil {
 		t.Fatalf("RequireTimersWebhookToken() error = nil, want status %d", wantStatus)
 	}

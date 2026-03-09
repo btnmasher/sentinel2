@@ -97,9 +97,11 @@ func (c *Config) resolvePaths() error {
 	} else {
 		c.BackendBinPath = resolvePath(c.RootDir, c.BackendBinPath)
 	}
+
 	if strings.TrimSpace(c.LogDir) == "" {
 		return fmt.Errorf("log-dir cannot be empty")
 	}
+
 	if err := c.loadCleanRules(); err != nil {
 		return err
 	}
@@ -192,9 +194,11 @@ func (c *Config) loadCleanRules() error {
 		c.CleanRules = string(data)
 		return nil
 	}
+
 	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read clean rules file %s: %w", rulesFile, err)
 	}
+
 	if customFile && errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("clean rules file not found: %s", rulesFile)
 	}

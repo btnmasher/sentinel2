@@ -24,6 +24,7 @@ func TestESIPublicCacheSetAndGet(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected cached entry")
 	}
+
 	if name != "Acme Corp" {
 		t.Fatalf("unexpected name: %q", name)
 	}
@@ -32,6 +33,7 @@ func TestESIPublicCacheSetAndGet(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected cache entry")
 	}
+
 	if entry.etag != "etag-1" {
 		t.Fatalf("unexpected etag: %q", entry.etag)
 	}
@@ -48,6 +50,7 @@ func TestESIPublicCacheGetDeletesExpiredEntry(t *testing.T) {
 	if _, ok := client.getCached("k"); ok {
 		t.Fatalf("expected cache miss for expired value")
 	}
+
 	if _, ok := client.getAny("k"); ok {
 		t.Fatalf("expected expired entry to be removed")
 	}
@@ -76,6 +79,7 @@ func TestESIPublicCacheNotModifiedRefreshesExpiry(t *testing.T) {
 	if !handled {
 		t.Fatalf("expected 304 to be handled from cache")
 	}
+
 	if name != "Persisted" {
 		t.Fatalf("unexpected cached name: %q", name)
 	}
@@ -84,6 +88,7 @@ func TestESIPublicCacheNotModifiedRefreshesExpiry(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected cache entry to remain")
 	}
+
 	if entry.expires.Before(newExpiry.Add(-1*time.Second)) || entry.expires.After(newExpiry.Add(time.Second)) {
 		t.Fatalf("expected refreshed expiry near %s, got %s", newExpiry, entry.expires)
 	}

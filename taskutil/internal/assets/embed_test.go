@@ -15,6 +15,7 @@ func TestCopyDirContents(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "a", "b", "x.txt"), []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write src file: %v", err)
 	}
+
 	if err := copyDirContents(src, dst); err != nil {
 		t.Fatalf("copyDirContents() error = %v", err)
 	}
@@ -22,6 +23,7 @@ func TestCopyDirContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read dst file: %v", err)
 	}
+
 	if string(data) != "hello" {
 		t.Fatalf("copied content = %q, want hello", string(data))
 	}

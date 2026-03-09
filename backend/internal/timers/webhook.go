@@ -30,6 +30,7 @@ func (s *Service) FindByWebhookID(webhookID string) (*core.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(records) == 0 {
 		return nil, ErrTimerNotFound
 	}

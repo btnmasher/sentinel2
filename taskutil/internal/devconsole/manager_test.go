@@ -48,9 +48,11 @@ func TestProcessManagerStartAll_BackendStartFailureStopsFrontend(t *testing.T) {
 	if pm.processes["frontend"].cmd != nil {
 		t.Fatalf("frontend cmd should be nil after backend start failure")
 	}
+
 	if pm.processes["frontend"].cancel != nil {
 		t.Fatalf("frontend cancel should be nil after stop")
 	}
+
 	if pm.processes["frontend"].logFile != nil {
 		t.Fatalf("frontend logFile should be nil after stop")
 	}

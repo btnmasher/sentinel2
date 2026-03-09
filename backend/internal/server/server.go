@@ -85,7 +85,7 @@ func Run(cfg *config.Config) error {
 	esiClient := buildESIClient(app, cfg)
 
 	intelHandler := intelapi.NewIntelHandler(app, cfg, intelService)
-	jumpbridgeService := jumpbridges.NewJumpbridgeService(app)
+	jumpbridgeService := jumpbridges.NewJumpbridgeService(app, esiClient, publicESI)
 	timerService := timerssvc.NewService(app, publicESI, esiClient)
 	realtimePublisher := realtime.NewPublisher(app)
 	defer realtimePublisher.Stop()
@@ -106,7 +106,7 @@ func Run(cfg *config.Config) error {
 	staffOrgStandings := staffapi.NewOrganizationStandingsHandler(app, auditSvc)
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
-	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, timerService, auditSvc)
+	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, timerService, jumpbridgeService, auditSvc)
 	timers := timerapi.NewHandler(timerService, auditSvc, provider)
 	timerWebhook := timerwebhookapi.NewHandler(timerService)
 	uploaderReleases := uploaderrelease.New(app, cfg)
@@ -182,6 +182,7 @@ func buildESIClient(app *pocketbase.PocketBase, cfg *config.Config) esi.ESIClien
 	if cfg == nil {
 		return esi.NewESIDirectClient("", logging.New(app))
 	}
+
 	if cfg.AuthBackend == "eve" {
 		return esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
 	}

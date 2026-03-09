@@ -18,6 +18,7 @@ func TestRunBatchedRunsAllItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+
 	if len(seen) != len(items) {
 		t.Fatalf("expected %d items, got %d", len(items), len(seen))
 	}
@@ -43,6 +44,7 @@ func TestRunBatchedStopsOnRunError(t *testing.T) {
 	if !errors.Is(err, expected) {
 		t.Fatalf("expected %v, got %v", expected, err)
 	}
+
 	if calls != 2 {
 		t.Fatalf("expected 2 calls before stop, got %d", calls)
 	}
@@ -69,6 +71,7 @@ func TestRunBatchedHonorsPauseAtBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+
 	if time.Since(start) < 35*time.Millisecond {
 		t.Fatalf("expected boundary pauses to elapse")
 	}

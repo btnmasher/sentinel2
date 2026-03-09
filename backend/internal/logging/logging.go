@@ -26,6 +26,7 @@ func EnsureRequestID(c *core.RequestEvent) string {
 	if c == nil {
 		return ""
 	}
+
 	if existing, ok := c.Get(RequestIDKey).(string); ok && existing != "" {
 		return existing
 	}
@@ -38,6 +39,7 @@ func RequestID(c *core.RequestEvent) string {
 	if c == nil {
 		return ""
 	}
+
 	if existing, ok := c.Get(RequestIDKey).(string); ok {
 		return existing
 	}
@@ -148,6 +150,7 @@ func (l *Logger) log(level slog.Level, msg string, attrs ...slog.Attr) {
 	if l == nil || l.logger == nil {
 		return
 	}
+
 	if level < minLevel {
 		return
 	}
@@ -158,6 +161,7 @@ func (l *Logger) log(level slog.Level, msg string, attrs ...slog.Attr) {
 	if !prettyViaPB {
 		prettyPrint(level, msg, all)
 	}
+
 	if !jsonViaPB {
 		writeJSONLog(level, msg, all)
 	}
@@ -214,9 +218,11 @@ func requestAttrs(c *core.RequestEvent) []slog.Attr {
 		slog.String("path", c.Request.URL.Path),
 		slog.String("ip", clientIP(c.Request, c)),
 	}
+
 	if c.Request.Pattern != "" {
 		attrs = append(attrs, slog.String("pattern", c.Request.Pattern))
 	}
+
 	if c.Auth != nil {
 		attrs = append(attrs,
 			slog.String("auth_provider", c.Auth.GetString("auth_provider")),
@@ -234,6 +240,7 @@ func clientIP(req *http.Request, c *core.RequestEvent) string {
 			return realIP
 		}
 	}
+
 	if req == nil {
 		return ""
 	}

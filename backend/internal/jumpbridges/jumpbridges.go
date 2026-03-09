@@ -1,9 +1,9 @@
 package jumpbridges
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"hash/fnv"
 	"math"
 	"regexp"
 	"strconv"
@@ -14,11 +14,12 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 
+	"sentinel2/internal/esi"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/store"
 )
 
-var jumpbridgePattern = regexp.MustCompile(`^(?:(?P<structure_id>\d+)\s+)?(?P<from>\S+)\s*(?:»|->|-->|—>|=>|→)\s*(?P<to>\S+)(?:\s+-\s+.*)?$`)
+var jumpbridgePattern = regexp.MustCompile(`^(?P<from>\S+)\s*(?:»|->|-->|—>|=>|→)\s*(?P<to>\S+)(?:\s+-\s+.*)?$`)
 
 const (
 	maxJumpbridgeDistanceLY = 5.0
@@ -27,13 +28,34 @@ const (
 )
 
 type JumpbridgeService struct {
-	App    *pocketbase.PocketBase
-	logger *logging.Logger
+	App       *pocketbase.PocketBase
+	ESI       esi.ESIClient
+	PublicESI *esi.ESIPublicClient
+	logger    *logging.Logger
 }
 
-func NewJumpbridgeService(app *pocketbase.PocketBase) *JumpbridgeService {
+type ImportPairFailure struct {
+	FromSystemID   int
+	ToSystemID     int
+	FromSystemName string
+	ToSystemName   string
+	Reason         string
+}
+
+type UpdateFromLinesResult struct {
+	LineCount     int
+	ParsedPairs   int
+	ImportedPairs int
+	FailedPairs   int
+	Failures      []ImportPairFailure
+	Applied       bool
+}
+
+func NewJumpbridgeService(app *pocketbase.PocketBase, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient) *JumpbridgeService {
 	return &JumpbridgeService{
-		App: app,
+		App:       app,
+		ESI:       esiClient,
+		PublicESI: publicESI,
 		logger: logging.New(app).WithFields(logging.Fields{
 			"component": "jumpbridges",
 		}),
@@ -41,71 +63,61 @@ func NewJumpbridgeService(app *pocketbase.PocketBase) *JumpbridgeService {
 }
 
 func (s *JumpbridgeService) UpdateFromLines(lines []string) (int, error) {
+	return s.UpdateFromLinesWithContext(context.Background(), lines)
+}
+
+func (s *JumpbridgeService) UpdateFromLinesWithContext(ctx context.Context, lines []string) (int, error) {
+	result, err := s.UpdateFromLinesDetailedWithContext(ctx, lines)
+	if err != nil {
+		return 0, err
+	}
+	return result.ImportedPairs, nil
+}
+
+func (s *JumpbridgeService) UpdateFromLinesDetailedWithContext(ctx context.Context, lines []string) (UpdateFromLinesResult, error) {
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionJumpbridges)
 	if collErr != nil {
-		return 0, collErr
+		return UpdateFromLinesResult{}, collErr
 	}
-
 	parsed, parseErr := parseJumpbridgeLines(lines)
 	if parseErr != nil {
-		return 0, parseErr
+		return UpdateFromLinesResult{}, parseErr
 	}
 	pairs, validationErr := buildJumpbridgePairs(parsed)
 	if validationErr != nil {
-		return 0, validationErr
+		return UpdateFromLinesResult{}, validationErr
 	}
 	resolvedPairs, resolveErr := s.resolvePairs(pairs)
 	if resolveErr != nil {
-		return 0, resolveErr
+		return UpdateFromLinesResult{}, resolveErr
 	}
 
-	existing, _ := s.App.FindRecordsByFilter(coll.Name, "", "", 0, 0, nil)
-	deleteFailed := 0
-	for _, rec := range existing {
-		if deleteErr := s.App.Delete(rec); deleteErr != nil {
-			deleteFailed++
-			s.logger.
-				WithFields(logging.Fields{
-					"record_id":  rec.Id,
-					"collection": coll.Name,
-				}).
-				WithErr(deleteErr).
-				Debug("jumpbridge delete failed")
-		}
+	result := UpdateFromLinesResult{
+		LineCount:   len(lines),
+		ParsedPairs: len(resolvedPairs),
+		Failures:    make([]ImportPairFailure, 0),
 	}
-	if deleteFailed > 0 {
-		s.logger.
-			WithFields(logging.Fields{
-				"failed": deleteFailed,
-			}).
-			Warn("jumpbridge delete failures")
+	validatedPairs := s.validateImportPairs(ctx, resolvedPairs, &result)
+	if len(validatedPairs) == 0 && len(resolvedPairs) > 0 {
+		return result, nil
 	}
 
-	count := 0
-	saveFailed := 0
-	for _, pair := range resolvedPairs {
-		saved, savedErr := s.savePair(coll, pair.structureID, pair.fromSystem, pair.toSystem)
-		if savedErr != nil {
-			saveFailed += pairDirectionCount - saved
-			continue
-		}
-		count += saved
-	}
-	if saveFailed > 0 {
-		s.logger.
-			WithFields(logging.Fields{
-				"failed": saveFailed,
-			}).
-			Warn("jumpbridge save failures")
-	}
-
-	return count / pairDirectionCount, nil
+	s.deleteExistingJumpbridgeRows(coll.Name)
+	count := s.saveValidatedJumpbridgePairs(coll, validatedPairs, &result)
+	result.ImportedPairs = count / pairDirectionCount
+	result.Applied = true
+	return result, nil
 }
 
 func (s *JumpbridgeService) AddPair(fromSystemID, toSystemID int) (bool, error) {
+	return s.AddPairWithContext(context.Background(), fromSystemID, toSystemID)
+}
+
+func (s *JumpbridgeService) AddPairWithContext(ctx context.Context, fromSystemID, toSystemID int) (bool, error) {
 	if fromSystemID <= 0 || toSystemID <= 0 {
 		return false, fmt.Errorf("invalid system id")
 	}
+
 	if fromSystemID == toSystemID {
 		return false, fmt.Errorf("jumpbridge endpoints must be different systems")
 	}
@@ -134,18 +146,24 @@ func (s *JumpbridgeService) AddPair(fromSystemID, toSystemID int) (bool, error) 
 	if partner, ok := existingBySystem[a]; ok && partner != b {
 		return false, fmt.Errorf("system already linked: %s", fromSystem.GetString("name"))
 	}
+
 	if partner, ok := existingBySystem[b]; ok && partner != a {
 		return false, fmt.Errorf("system already linked: %s", toSystem.GetString("name"))
 	}
+
 	if !withinMaxDistance(fromSystem, toSystem) {
 		return false, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears", maxJumpbridgeDistanceLY)
+	}
+	fromStructureID, toStructureID, validateErr := s.resolvePairStructureIDsWithAllowedCharacters(ctx, fromSystem, toSystem, 0, 0)
+	if validateErr != nil {
+		return false, validateErr
 	}
 
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionJumpbridges)
 	if collErr != nil {
 		return false, collErr
 	}
-	_, saveErr := s.savePair(coll, "", fromSystem, toSystem)
+	_, saveErr := s.savePair(coll, fromStructureID, toStructureID, fromSystem, toSystem)
 	if saveErr != nil {
 		return false, saveErr
 	}
@@ -180,6 +198,10 @@ func (s *JumpbridgeService) RemovePair(fromSystemID, toSystemID int) (int, error
 }
 
 func (s *JumpbridgeService) UpdatePair(oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID int) (bool, error) {
+	return s.UpdatePairWithContext(context.Background(), oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID)
+}
+
+func (s *JumpbridgeService) UpdatePairWithContext(ctx context.Context, oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID int) (bool, error) {
 	oldKey, newKey, validateErr := validateUpdatePairInput(oldFromSystemID, oldToSystemID, newFromSystemID, newToSystemID)
 	if validateErr != nil || oldKey == newKey {
 		return false, validateErr
@@ -188,6 +210,7 @@ func (s *JumpbridgeService) UpdatePair(oldFromSystemID, oldToSystemID, newFromSy
 	if stateErr != nil {
 		return false, stateErr
 	}
+
 	if _, exists := existingPairs[newKey]; exists {
 		return false, nil
 	}
@@ -195,7 +218,12 @@ func (s *JumpbridgeService) UpdatePair(oldFromSystemID, oldToSystemID, newFromSy
 	if pairErr != nil {
 		return false, pairErr
 	}
-	if saveErr := s.replacePair(oldFromSystemID, oldToSystemID, fromSystem, toSystem); saveErr != nil {
+	fromStructureID, toStructureID, validateErr := s.resolvePairStructureIDsWithAllowedCharacters(ctx, fromSystem, toSystem, 0, 0)
+	if validateErr != nil {
+		return false, validateErr
+	}
+
+	if saveErr := s.replacePair(oldFromSystemID, oldToSystemID, fromSystem, toSystem, fromStructureID, toStructureID); saveErr != nil {
 		return false, saveErr
 	}
 	return true, nil
@@ -205,6 +233,7 @@ func validateUpdatePairInput(oldFromSystemID, oldToSystemID, newFromSystemID, ne
 	if oldFromSystemID <= 0 || oldToSystemID <= 0 || newFromSystemID <= 0 || newToSystemID <= 0 {
 		return "", "", fmt.Errorf("invalid system id")
 	}
+
 	if newFromSystemID == newToSystemID {
 		return "", "", fmt.Errorf("jumpbridge endpoints must be different systems")
 	}
@@ -218,6 +247,7 @@ func (s *JumpbridgeService) updatePairState(oldFromSystemID, oldToSystemID int, 
 	if existingErr != nil {
 		return nil, nil, existingErr
 	}
+
 	if _, exists := existingPairs[oldKey]; !exists {
 		return nil, nil, fmt.Errorf("original jumpbridge pair was not found")
 	}
@@ -226,6 +256,7 @@ func (s *JumpbridgeService) updatePairState(oldFromSystemID, oldToSystemID int, 
 	if partner, ok := existingBySystem[oldFromSystemID]; ok && partner == oldToSystemID {
 		delete(existingBySystem, oldFromSystemID)
 	}
+
 	if partner, ok := existingBySystem[oldToSystemID]; ok && partner == oldFromSystemID {
 		delete(existingBySystem, oldToSystemID)
 	}
@@ -246,21 +277,24 @@ func (s *JumpbridgeService) resolveUpdatePairEndpoints(existingBySystem map[int]
 	if partner, ok := existingBySystem[a]; ok && partner != b {
 		return nil, nil, fmt.Errorf("system already linked: %s", fromSystem.GetString("name"))
 	}
+
 	if partner, ok := existingBySystem[b]; ok && partner != a {
 		return nil, nil, fmt.Errorf("system already linked: %s", toSystem.GetString("name"))
 	}
+
 	if !withinMaxDistance(fromSystem, toSystem) {
 		return nil, nil, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears", maxJumpbridgeDistanceLY)
 	}
 	return fromSystem, toSystem, nil
 }
 
-func (s *JumpbridgeService) replacePair(oldFromSystemID, oldToSystemID int, fromSystem, toSystem *core.Record) error {
+func (s *JumpbridgeService) replacePair(oldFromSystemID, oldToSystemID int, fromSystem, toSystem *core.Record, fromStructureID, toStructureID int64) error {
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionJumpbridges)
 	if collErr != nil {
 		return collErr
 	}
-	if _, saveErr := s.savePair(coll, "", fromSystem, toSystem); saveErr != nil {
+
+	if _, saveErr := s.savePair(coll, fromStructureID, toStructureID, fromSystem, toSystem); saveErr != nil {
 		return saveErr
 	}
 	_, removeErr := s.RemovePair(oldFromSystemID, oldToSystemID)
@@ -268,15 +302,15 @@ func (s *JumpbridgeService) replacePair(oldFromSystemID, oldToSystemID int, from
 }
 
 type jumpbridgeEntry struct {
-	structureID string
-	from        string
-	to          string
+	from string
+	to   string
 }
 
 type resolvedJumpbridgeEntry struct {
-	structureID string
-	fromSystem  *core.Record
-	toSystem    *core.Record
+	fromStructureID int64
+	toStructureID   int64
+	fromSystem      *core.Record
+	toSystem        *core.Record
 }
 
 func parseJumpbridgeLines(lines []string) ([]jumpbridgeEntry, error) {
@@ -298,9 +332,8 @@ func parseJumpbridgeLines(lines []string) ([]jumpbridgeEntry, error) {
 			data[name] = match[i]
 		}
 		entries = append(entries, jumpbridgeEntry{
-			structureID: data["structure_id"],
-			from:        strings.TrimSpace(data["from"]),
-			to:          strings.TrimSpace(data["to"]),
+			from: strings.TrimSpace(data["from"]),
+			to:   strings.TrimSpace(data["to"]),
 		})
 	}
 	return entries, nil
@@ -319,7 +352,6 @@ func buildJumpbridgePairs(entries []jumpbridgeEntry) ([]jumpbridgeEntry, error) 
 			return nil, fmt.Errorf("jumpbridge endpoints must be different systems: %s", entry.from)
 		}
 		pairKey := pairKey(keyFrom, keyTo)
-
 		if partner, ok := pairedWith[keyFrom]; ok && partner != keyTo {
 			return nil, fmt.Errorf("system appears in multiple pairs: %s", entry.from)
 		}
@@ -358,9 +390,8 @@ func (s *JumpbridgeService) resolvePairs(entries []jumpbridgeEntry) ([]resolvedJ
 			return nil, fmt.Errorf("jumpbridge distance exceeds %.0f lightyears: %s <-> %s", maxJumpbridgeDistanceLY, entry.from, entry.to)
 		}
 		resolved = append(resolved, resolvedJumpbridgeEntry{
-			structureID: entry.structureID,
-			fromSystem:  fromSystem,
-			toSystem:    toSystem,
+			fromSystem: fromSystem,
+			toSystem:   toSystem,
 		})
 	}
 	return resolved, nil
@@ -373,26 +404,6 @@ func pairKey(a, b string) string {
 	return b + "|" + a
 }
 
-func parseStructureID(raw, from, to string) int64 {
-	if raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed != 0 {
-			return parsed
-		}
-	}
-	if from == "" || to == "" {
-		return 0
-	}
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(strings.ToLower(from)))
-	_, _ = hasher.Write([]byte("->"))
-	_, _ = hasher.Write([]byte(strings.ToLower(to)))
-	hash := int64(hasher.Sum32())
-	if hash == 0 {
-		return -1
-	}
-	return -hash
-}
-
 func withinMaxDistance(from, to *core.Record) bool {
 	dx := from.GetFloat("raw_x") - to.GetFloat("raw_x")
 	dy := from.GetFloat("raw_y") - to.GetFloat("raw_y")
@@ -402,25 +413,30 @@ func withinMaxDistance(from, to *core.Record) bool {
 	return lightyears <= maxJumpbridgeDistanceLY
 }
 
-func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, fromSystem, toSystem *core.Record) (int, error) {
+func (s *JumpbridgeService) savePair(
+	coll *core.Collection,
+	fromStructureID int64,
+	toStructureID int64,
+	fromSystem,
+	toSystem *core.Record,
+) (int, error) {
 	saved := 0
 	directions := []struct {
-		fromName   string
-		toName     string
 		fromRecord *core.Record
 		toRecord   *core.Record
+		fromID     int64
+		toID       int64
 	}{
-		{fromName: fromSystem.GetString("name"), toName: toSystem.GetString("name"), fromRecord: fromSystem, toRecord: toSystem},
-		{fromName: toSystem.GetString("name"), toName: fromSystem.GetString("name"), fromRecord: toSystem, toRecord: fromSystem},
+		{fromRecord: fromSystem, toRecord: toSystem, fromID: fromStructureID, toID: toStructureID},
+		{fromRecord: toSystem, toRecord: fromSystem, fromID: toStructureID, toID: fromStructureID},
 	}
 
 	for _, direction := range directions {
 		record := core.NewRecord(coll)
-		recordStructureID := parseStructureID(structureID, direction.fromName, direction.toName)
-		if recordStructureID == 0 {
-			continue
-		}
-		record.Set("structure_id", recordStructureID)
+		recordFromStructureID := direction.fromID
+		recordToStructureID := direction.toID
+		record.Set("from_structure_id", recordFromStructureID)
+		record.Set("to_structure_id", recordToStructureID)
 		record.Set("from_solarsystem", direction.fromRecord.GetInt("eve_id"))
 		record.Set("to_solarsystem", direction.toRecord.GetInt("eve_id"))
 		record.Set("from_region", direction.fromRecord.GetInt("region_id"))
@@ -431,7 +447,8 @@ func (s *JumpbridgeService) savePair(coll *core.Collection, structureID string, 
 		if saveErr := s.App.Save(record); saveErr != nil {
 			s.logger.
 				WithFields(logging.Fields{
-					"structure_id": recordStructureID,
+					"from_structure_id": recordFromStructureID,
+					"to_structure_id":   recordToStructureID,
 				}).
 				WithErr(saveErr).
 				Debug("jumpbridge save failed")
@@ -486,8 +503,9 @@ func (s *JumpbridgeService) removeSingles() int {
 				deleteFailed++
 				s.logger.
 					WithFields(logging.Fields{
-						"structure_id": bridge.GetInt("structure_id"),
-						"record_id":    bridge.Id,
+						"from_structure_id": bridge.GetInt("from_structure_id"),
+						"to_structure_id":   bridge.GetInt("to_structure_id"),
+						"record_id":         bridge.Id,
 					}).
 					WithErr(deleteErr).
 					Debug("jumpbridge delete failed")
@@ -496,6 +514,7 @@ func (s *JumpbridgeService) removeSingles() int {
 			}
 		}
 	}
+
 	if deleteFailed > 0 {
 		s.logger.
 			WithFields(logging.Fields{
@@ -516,6 +535,7 @@ func (s *JumpbridgeService) findSystemByName(name string) (*core.Record, error) 
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) == 0 {
 		lowerName := strings.ToLower(name)
 		records, recordsErr = s.App.FindRecordsByFilter(
@@ -548,8 +568,106 @@ func (s *JumpbridgeService) findSystemByEveID(id int) (*core.Record, error) {
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) == 0 {
 		return nil, sql.ErrNoRows
 	}
 	return records[0], nil
+}
+
+func (s *JumpbridgeService) validateImportPairs(
+	ctx context.Context,
+	resolvedPairs []resolvedJumpbridgeEntry,
+	result *UpdateFromLinesResult,
+) []resolvedJumpbridgeEntry {
+	validatedPairs := make([]resolvedJumpbridgeEntry, 0, len(resolvedPairs))
+	for _, pair := range resolvedPairs {
+		fromName := strings.TrimSpace(pair.fromSystem.GetString("name"))
+		toName := strings.TrimSpace(pair.toSystem.GetString("name"))
+		fromID := pair.fromSystem.GetInt("eve_id")
+		toID := pair.toSystem.GetInt("eve_id")
+		fromStructureID, toStructureID, validateErr := s.resolvePairStructureIDsWithAllowedCharacters(
+			ctx,
+			pair.fromSystem,
+			pair.toSystem,
+			pair.fromStructureID,
+			pair.toStructureID,
+		)
+		if validateErr != nil {
+			// ESI structure validation is advisory for manual imports.
+			// We keep the pair and report the validation issue in the response.
+			result.FailedPairs++
+			result.Failures = append(result.Failures, ImportPairFailure{
+				FromSystemID:   fromID,
+				ToSystemID:     toID,
+				FromSystemName: fromName,
+				ToSystemName:   toName,
+				Reason:         validateErr.Error(),
+			})
+			s.logger.WithFields(logging.Fields{
+				"from_system_id":   fromID,
+				"to_system_id":     toID,
+				"from_system_name": fromName,
+				"to_system_name":   toName,
+				"error":            validateErr.Error(),
+			}).Warn("jumpbridge import validation failed; importing pair without structure ids")
+			validatedPairs = append(validatedPairs, pair)
+			continue
+		}
+		pair.fromStructureID = fromStructureID
+		pair.toStructureID = toStructureID
+		validatedPairs = append(validatedPairs, pair)
+	}
+	return validatedPairs
+}
+
+func (s *JumpbridgeService) deleteExistingJumpbridgeRows(collectionName string) {
+	existing, _ := s.App.FindRecordsByFilter(collectionName, "", "", 0, 0, nil)
+	deleteFailed := 0
+	for _, rec := range existing {
+		if deleteErr := s.App.Delete(rec); deleteErr != nil {
+			deleteFailed++
+			s.logger.
+				WithFields(logging.Fields{
+					"record_id":  rec.Id,
+					"collection": collectionName,
+				}).
+				WithErr(deleteErr).
+				Debug("jumpbridge delete failed")
+		}
+	}
+
+	if deleteFailed > 0 {
+		s.logger.WithFields(logging.Fields{"failed": deleteFailed}).Warn("jumpbridge delete failures")
+	}
+}
+
+func (s *JumpbridgeService) saveValidatedJumpbridgePairs(
+	coll *core.Collection,
+	validatedPairs []resolvedJumpbridgeEntry,
+	result *UpdateFromLinesResult,
+) int {
+	count := 0
+	saveFailed := 0
+	for _, pair := range validatedPairs {
+		saved, savedErr := s.savePair(coll, pair.fromStructureID, pair.toStructureID, pair.fromSystem, pair.toSystem)
+		if savedErr != nil {
+			saveFailed += pairDirectionCount - saved
+			result.FailedPairs++
+			result.Failures = append(result.Failures, ImportPairFailure{
+				FromSystemID:   pair.fromSystem.GetInt("eve_id"),
+				ToSystemID:     pair.toSystem.GetInt("eve_id"),
+				FromSystemName: strings.TrimSpace(pair.fromSystem.GetString("name")),
+				ToSystemName:   strings.TrimSpace(pair.toSystem.GetString("name")),
+				Reason:         savedErr.Error(),
+			})
+			continue
+		}
+		count += saved
+	}
+
+	if saveFailed > 0 {
+		s.logger.WithFields(logging.Fields{"failed": saveFailed}).Warn("jumpbridge save failures")
+	}
+	return count
 }

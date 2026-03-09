@@ -78,7 +78,6 @@ func (h *IntelHandler) UploaderConfig(c *core.RequestEvent) error {
 func (h *IntelHandler) UploaderRealtimeToken(c *core.RequestEvent) error {
 	ctxUserID := requestctx.String(c, "uploader_user_id")
 	ctxUploaderTokenID := requestctx.String(c, "uploader_token_id")
-
 	if ctxUserID == "" || ctxUploaderTokenID == "" {
 		return router.NewUnauthorizedError("Invalid uploader token.", logging.Fields{
 			"user_id":           ctxUserID,

@@ -115,9 +115,11 @@ func loadRegionGraphInputs(ctx context.Context, app *pocketbase.PocketBase, regi
 		log.WithFields(logging.Fields{"region_id": regionID}).WithErr(systemsErr).Warn("system graph system lookup failed")
 		return nil, nil, systemsErr
 	}
+
 	if err := checkContextStride(ctx, len(gateRecords), regionGraphContextStride); err != nil {
 		return nil, nil, err
 	}
+
 	if err := checkContextStride(ctx, len(systems), regionGraphContextStride); err != nil {
 		return nil, nil, err
 	}
@@ -212,6 +214,7 @@ func normalizeEdge(from, to int) (left, right int, ok bool) {
 	if from == 0 || to == 0 {
 		return 0, 0, false
 	}
+
 	if from > to {
 		from, to = to, from
 	}
@@ -357,6 +360,7 @@ func parseDotPositions(dot []byte) (map[int]nodePos, error) {
 		}
 		positions[id] = nodePos{x: int(x), y: int(y)}
 	}
+
 	if scanErr := scanner.Err(); scanErr != nil {
 		return nil, scanErr
 	}
@@ -390,6 +394,7 @@ func parsePlainPositions(dot []byte) (map[int]nodePos, error) {
 		}
 		positions[id] = nodePos{x: int(x), y: int(y)}
 	}
+
 	if scanErr := scanner.Err(); scanErr != nil {
 		return nil, scanErr
 	}

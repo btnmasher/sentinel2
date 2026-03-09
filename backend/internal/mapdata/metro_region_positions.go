@@ -305,6 +305,7 @@ func nonZeroAxis(delta float64, preferNegative bool) float64 {
 	if delta != 0 {
 		return delta
 	}
+
 	if preferNegative {
 		return -1
 	}

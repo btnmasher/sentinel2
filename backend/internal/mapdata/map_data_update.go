@@ -73,6 +73,7 @@ func runMapDataPipeline(ctx context.Context, stepper jobs.Stepper, importer *SDE
 	if err := runOptionalStepFromLatestJSONL(ctx, stepper, importer, service, "mapPlanets.jsonl", StepPlanetsImport); err != nil {
 		return err
 	}
+
 	if err := runOptionalStepFromLatestJSONL(ctx, stepper, importer, service, "mapMoons.jsonl", StepMoonsImport); err != nil {
 		return err
 	}
@@ -123,6 +124,7 @@ func runOptionalStepFromLatestJSONL(
 	if checkErr != nil {
 		return checkErr
 	}
+
 	if !shouldImport {
 		_ = stepper.SkipStep(stepName, skipReason)
 		return nil

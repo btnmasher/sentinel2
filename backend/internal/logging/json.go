@@ -29,6 +29,7 @@ func writeJSONLog(level slog.Level, msg string, attrs []slog.Attr) {
 		Level: level.String(),
 		Msg:   msg,
 	}
+
 	if fields := attrsToMap(attrs); len(fields) > 0 {
 		entry.Fields = fields
 	}

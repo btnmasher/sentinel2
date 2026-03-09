@@ -14,6 +14,7 @@ func GetQueryList(values url.Values, key string) []string {
 	if extra := values[key+"[]"]; len(extra) > 0 {
 		raw = append(raw, extra...)
 	}
+
 	if len(raw) == 0 {
 		if single := strings.TrimSpace(values.Get(key)); single != "" {
 			raw = append(raw, single)
@@ -53,6 +54,7 @@ func GetPositiveInt(values url.Values, key string, defaultValue, maxValue int) i
 	if err != nil || parsed <= 0 {
 		return defaultValue
 	}
+
 	if maxValue > 0 && parsed > maxValue {
 		return defaultValue
 	}

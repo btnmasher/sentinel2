@@ -17,18 +17,23 @@ func TestShouldRetryPublicESI(t *testing.T) {
 	if shouldRetryPublicESI(nil, nil) {
 		t.Fatalf("nil error should not retry")
 	}
+
 	if !shouldRetryPublicESI(nil, errors.New("network")) {
 		t.Fatalf("error without response should retry")
 	}
+
 	if !shouldRetryPublicESI(nil, timeoutErr{}) {
 		t.Fatalf("timeout error should retry")
 	}
+
 	if !shouldRetryPublicESI(&http.Response{StatusCode: http.StatusTooManyRequests}, errors.New("rate limit")) {
 		t.Fatalf("429 should retry")
 	}
+
 	if !shouldRetryPublicESI(&http.Response{StatusCode: http.StatusBadGateway}, errors.New("upstream")) {
 		t.Fatalf("5xx should retry")
 	}
+
 	if shouldRetryPublicESI(&http.Response{StatusCode: http.StatusBadRequest}, errors.New("bad request")) {
 		t.Fatalf("4xx should not retry")
 	}
@@ -56,9 +61,11 @@ func TestExecuteWithPublicRetryRetriesThenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if attempts != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempts)
 	}
+
 	if resp == nil || resp.StatusCode != http.StatusOK {
 		t.Fatalf("unexpected response: %#v", resp)
 	}
@@ -106,6 +113,7 @@ func TestExecuteWithPublicRetryDoesNotRetryNonRetryError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
+
 	if attempts != 1 {
 		t.Fatalf("expected single attempt, got %d", attempts)
 	}
@@ -120,6 +128,18 @@ func TestNormalizeCharacterSearchInput(t *testing.T) {
 	_, _, ok = normalizeCharacterSearchInput(0, "tok", "q")
 	if ok {
 		t.Fatalf("expected invalid input for character id 0")
+	}
+}
+
+func TestNormalizeCharacterStructureSearchInput(t *testing.T) {
+	q, token, ok := normalizeCharacterStructureSearchInput(1, "  tok  ", "  »  ")
+	if !ok || q != "  »  " || token != "tok" {
+		t.Fatalf("unexpected normalize result: q=%q token=%q ok=%v", q, token, ok)
+	}
+
+	_, _, ok = normalizeCharacterStructureSearchInput(1, "tok", "   ")
+	if ok {
+		t.Fatalf("expected invalid input for whitespace-only query")
 	}
 }
 

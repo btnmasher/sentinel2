@@ -33,6 +33,7 @@ const (
 	ActionJobCleanupRun             = "job.cleanup_run"
 	ActionJobSovCampaignSyncRun     = "job.sov_campaign_sync_run"
 	ActionJobSkyhookSyncRun         = "job.skyhook_sync_run"
+	ActionJobJumpbridgeUpdateRun    = "job.jumpbridge_update_run"
 	ActionAnnouncementCreate        = "announcement.create"
 	ActionAnnouncementArchiveLatest = "announcement.archive_latest"
 	ActionAdminMapDataRunAll        = "admin.map_data.run_all"

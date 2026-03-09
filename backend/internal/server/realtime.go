@@ -188,6 +188,7 @@ func uploaderConfigForbiddenReason(authRecord *core.Record, intelService *intel.
 	if authRecord == nil || authRecord.Collection() == nil || authRecord.Collection().Name != store.CollectionUploaderSessions {
 		return "Uploader realtime subscription requires uploader session auth."
 	}
+
 	if authRecord.GetString("scope") != intel.UploaderSessionScopeConfig {
 		return "Invalid uploader session scope."
 	}
@@ -195,6 +196,7 @@ func uploaderConfigForbiddenReason(authRecord *core.Record, intelService *intel.
 	if expiresAt.IsZero() || expiresAt.Time().Before(time.Now()) {
 		return "Uploader realtime session expired."
 	}
+
 	if intelService == nil {
 		return ""
 	}
@@ -202,6 +204,7 @@ func uploaderConfigForbiddenReason(authRecord *core.Record, intelService *intel.
 	if uploaderTokenID == "" {
 		return "Uploader realtime session missing token linkage."
 	}
+
 	if _, tokenErr := intelService.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
 		return "Uploader token revoked."
 	}
@@ -267,6 +270,7 @@ func resolveRecord(model core.Model) *core.Record {
 	if record, ok := model.(*core.Record); ok {
 		return record
 	}
+
 	if proxy, ok := model.(core.RecordProxy); ok {
 		return proxy.ProxyRecord()
 	}

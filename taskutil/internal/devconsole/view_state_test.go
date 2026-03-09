@@ -20,6 +20,7 @@ func TestAppendWithCap(t *testing.T) {
 
 func TestFocusedName(t *testing.T) {
 	m := viewState{focus: 0}
+
 	if got := m.focusedName(); got != "frontend" {
 		t.Fatalf("focusedName() = %q, want frontend", got)
 	}
@@ -33,12 +34,15 @@ func TestExitSummary(t *testing.T) {
 	if got := exitSummary(nil, 0); got != "exit=0" {
 		t.Fatalf("exitSummary(nil,0) = %q", got)
 	}
+
 	if got := exitSummary(context.Canceled, -1); got != "canceled" {
 		t.Fatalf("exitSummary(canceled,-1) = %q", got)
 	}
+
 	if got := exitSummary(context.DeadlineExceeded, 3); got != "exit=3" {
 		t.Fatalf("exitSummary(err,3) = %q", got)
 	}
+
 	if got := exitSummary(context.DeadlineExceeded, -1); got != "error" {
 		t.Fatalf("exitSummary(err,-1) = %q", got)
 	}
@@ -81,6 +85,7 @@ func TestUpdate_MouseClickFocusAndWheelScrollAffectsFocusedPane(t *testing.T) {
 	if m.followBackend {
 		t.Fatalf("followBackend should be false after backend wheel scroll")
 	}
+
 	if !m.followFrontend {
 		t.Fatalf("followFrontend should remain true after backend wheel scroll")
 	}
@@ -181,6 +186,7 @@ func TestLineMode_MouseHoverAndClickSelectsAndCopiesLine(t *testing.T) {
 	if !m.lineMode || m.lineModeProc != "backend" {
 		t.Fatalf("line mode state = (%v,%q), want (true,backend)", m.lineMode, m.lineModeProc)
 	}
+
 	if !strings.Contains(m.status, "copied line") || !strings.Contains(m.status, "backend") {
 		t.Fatalf("status = %q, want copied line status for backend", m.status)
 	}
@@ -200,6 +206,7 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	if m.status != "rebuild backend + restart succeeded" {
 		t.Fatalf("status = %q", m.status)
 	}
+
 	if !m.procs["backend"].running {
 		t.Fatalf("backend should be marked running after success")
 	}
@@ -215,6 +222,7 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	if !m.procs["frontend"].running || m.procs["frontend"].pid != 77 {
 		t.Fatalf("frontend proc state = %#v", m.procs["frontend"])
 	}
+
 	if len(m.frontendLines) == 0 {
 		t.Fatalf("expected session marker line after proc start")
 	}
@@ -222,6 +230,7 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected marker token in frontend log after start")
 	}
+
 	if startColor != "10" || !strings.Contains(startMsg, "started") {
 		t.Fatalf("unexpected start marker color/message: color=%q msg=%q", startColor, startMsg)
 	}
@@ -231,12 +240,15 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	if m.procs["frontend"].running {
 		t.Fatalf("frontend should not be running after exit")
 	}
+
 	if m.procs["frontend"].lastExit != "exit=2" {
 		t.Fatalf("lastExit = %q, want exit=2", m.procs["frontend"].lastExit)
 	}
+
 	if !strings.Contains(m.status, "frontend exit=2") {
 		t.Fatalf("status = %q", m.status)
 	}
+
 	if len(m.frontendLines) < 2 {
 		t.Fatalf("expected stop marker line after proc exit")
 	}
@@ -244,6 +256,7 @@ func TestUpdate_LifecycleStatusTransitions(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected marker token in frontend log after exit")
 	}
+
 	if stopColor != "9" || !strings.Contains(stopMsg, "stopped (exit=2)") {
 		t.Fatalf("unexpected stop marker color/message: color=%q msg=%q", stopColor, stopMsg)
 	}
@@ -263,9 +276,11 @@ func TestUpdate_StaleProcExitIgnoredAfterRestart(t *testing.T) {
 	if !m.procs["backend"].running {
 		t.Fatalf("backend should remain running after stale exit")
 	}
+
 	if m.procs["backend"].pid != 200 {
 		t.Fatalf("backend pid = %d, want 200", m.procs["backend"].pid)
 	}
+
 	if m.procs["backend"].lastExit != "" {
 		t.Fatalf("lastExit = %q, want empty", m.procs["backend"].lastExit)
 	}
@@ -331,6 +346,7 @@ func TestMarkerLine_ReflowsOnResize(t *testing.T) {
 	if wide == narrow {
 		t.Fatalf("expected marker rendering to change after resize")
 	}
+
 	if !strings.Contains(ansi.Strip(narrow), "12:34:56  backend started") {
 		t.Fatalf("narrow marker missing expected body: %q", ansi.Strip(narrow))
 	}

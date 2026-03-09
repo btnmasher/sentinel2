@@ -45,7 +45,6 @@ func CalculateRealPositions(ctx context.Context, app *pocketbase.PocketBase) err
 	}
 
 	regionScales := buildRegionScales(regionBounds)
-
 	if saveErr := saveSystemRealPositions(ctx, app, systems, regionScales, log); saveErr != nil {
 		return saveErr
 	}

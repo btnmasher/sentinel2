@@ -26,7 +26,20 @@ type ChannelsHandler struct {
 }
 
 type jumpbridgeImportResponse struct {
-	Count int `json:"count"`
+	Count     int                       `json:"count"`
+	LineCount int                       `json:"line_count"`
+	PairCount int                       `json:"pair_count"`
+	Failed    int                       `json:"failed"`
+	Failures  []jumpbridgeImportFailure `json:"failures,omitempty"`
+	Applied   bool                      `json:"applied"`
+}
+
+type jumpbridgeImportFailure struct {
+	FromID   int    `json:"from_id"`
+	ToID     int    `json:"to_id"`
+	FromName string `json:"from_name"`
+	ToName   string `json:"to_name"`
+	Reason   string `json:"reason"`
 }
 
 type jumpbridgeMutationResponse struct {

@@ -177,6 +177,7 @@ func registerRoutes(app *pocketbase.PocketBase, cfg *config.Config, deps *depend
 			adminGroup.POST("/map-data/region-layout", deps.adminMapDataUpdate.RunRegionLayout)
 			adminGroup.POST("/characters/refresh-all", deps.admin.RefreshAllCharacters)
 			adminGroup.POST("/jobs/cleanup", deps.admin.RunCleanupJob)
+			adminGroup.POST("/jobs/jumpbridges/update", deps.admin.RunUpdateJumpbridgesJob)
 			if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceStandalone {
 				adminGroup.POST("/jobs/timers/sovereignty-campaign-sync", deps.admin.RunSovereigntyCampaignSyncJob)
 				adminGroup.POST("/jobs/timers/structure-notifications-sync", deps.admin.RunStructureNotificationsSyncJob)

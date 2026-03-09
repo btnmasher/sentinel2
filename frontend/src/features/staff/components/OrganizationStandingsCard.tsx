@@ -7,6 +7,7 @@ import { api } from "@/config/api";
 import Panel from "@/components/Panel";
 import SearchSuggestionField from "@/components/SearchSuggestionField";
 import { useAllianceLogo, useCorporationLogo } from "@/hooks/useEveImage";
+import ShadowedScrollArea from "@/components/ShadowedScrollArea";
 import {
   formatStanding,
   hostilityOptions,
@@ -62,6 +63,7 @@ export default function OrganizationStandingsCard() {
   );
   const [isAdding, setIsAdding] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [listHasOverflow, setListHasOverflow] = useState(false);
   const [hostility, setHostility] = useState<StandingType>(
     StandingType.Hostile,
   );
@@ -192,206 +194,413 @@ export default function OrganizationStandingsCard() {
           ? "Set corp/alliance hostility and opt alliance-backed entities into sovereignty campaign sync."
           : "Set corp/alliance hostility for organization-aware features."
       }
-      bodyClassName="space-y-4"
+      className="h-full min-h-0"
+      bodyClassName="flex h-full min-h-0 flex-col gap-4 overflow-hidden"
     >
-      <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1 text-sm">
-        {entities.length === 0 && (
-          <li className="text-slate-500">
-            No organization standings configured.
-          </li>
-        )}
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <ShadowedScrollArea
+          className="min-h-0 flex-1"
+          scrollClassName="pr-1"
+          onStateChange={(state) => setListHasOverflow(state.hasOverflow)}
+        >
+          <div className="space-y-2 text-sm">
+            <ul className="space-y-2">
+              {entities.length === 0 && (
+                <li className="text-slate-500">
+                  No organization standings configured.
+                </li>
+              )}
 
-        {entities.map((entry) => (
-          <OrganizationStandingRow
-            key={entry.id}
-            entry={entry}
-            submitting={submitting}
-            showSovSyncControls={canManageSovSync}
-            onToggleInSovSync={(next) =>
-              void updateIncludeInSovSync(entry, next)
-            }
-            onSaveHostility={(nextHostility) =>
-              void updateHostility(entry, nextHostility)
-            }
-            onDelete={() => void deleteEntity(entry.id)}
-          />
-        ))}
+              {entities.map((entry) => (
+                <OrganizationStandingRow
+                  key={entry.id}
+                  entry={entry}
+                  submitting={submitting}
+                  showSovSyncControls={canManageSovSync}
+                  onToggleInSovSync={(next) =>
+                    void updateIncludeInSovSync(entry, next)
+                  }
+                  onSaveHostility={(nextHostility) =>
+                    void updateHostility(entry, nextHostility)
+                  }
+                  onDelete={() => void deleteEntity(entry.id)}
+                />
+              ))}
+            </ul>
 
-        <li className="rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 px-3 py-2">
-          {isAdding ? (
-            <div className="space-y-2">
-              <SearchSuggestionField<OrganizationEntityOption>
-                query={query}
-                onQueryChange={(value) => {
-                  setQuery(value);
-                  const selectedLabel = selected
-                    ? selected.ticker
-                      ? `[${selected.ticker}] ${selected.name}`
-                      : selected.name
-                    : "";
-                  if (
-                    selected &&
-                    selectedLabel.trim().toLowerCase() !==
-                      value.trim().toLowerCase()
-                  ) {
-                    setSelected(null);
-                    setIncludeInSovSync(false);
-                  }
-                }}
-                onSelect={(entity) => {
-                  setSelected(entity);
-                  if (
-                    entity.type !== "alliance" &&
-                    !(entity.parent_alliance && entity.parent_alliance.id > 0)
-                  ) {
-                    setIncludeInSovSync(false);
-                  }
-                }}
-                selectionInputMode="set"
-                placeholder="Search corporation or alliance"
-                inputClassName="input input-xs input-bordered bg-base-300"
-                loadSuggestions={loadOrganizationSuggestions}
-                getSuggestionKey={(entity) => `${entity.type}-${entity.id}`}
-                getInputValueFromSuggestion={(entity) =>
-                  entity.ticker
-                    ? `[${entity.ticker}] ${entity.name}`
-                    : entity.name
-                }
-                renderSuggestion={(entity) => (
-                  <>
-                    <div className="font-semibold text-slate-100">
-                      {entity.ticker
-                        ? `[${entity.ticker}] ${entity.name}`
-                        : entity.name}
-                    </div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                      <span
-                        className={`badge badge-xs ${
-                          entity.type === "corporation"
-                            ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
-                            : "border-violet-400/50 bg-violet-500/20 text-violet-200"
-                        }`}
-                      >
-                        {entity.type === "alliance"
-                          ? "Alliance"
-                          : "Corporation"}
-                      </span>
-                      {entity.parent_alliance ? (
-                        <span>
-                          Alliance: [{entity.parent_alliance.ticker}]{" "}
-                          {entity.parent_alliance.name}
+            {!listHasOverflow ? (
+              <div>
+                {isAdding ? (
+                  <div className="rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 p-2">
+                    <div className="space-y-2">
+                      <SearchSuggestionField<OrganizationEntityOption>
+                        query={query}
+                        onQueryChange={(value) => {
+                          setQuery(value);
+                          const selectedLabel = selected
+                            ? selected.ticker
+                              ? `[${selected.ticker}] ${selected.name}`
+                              : selected.name
+                            : "";
+                          if (
+                            selected &&
+                            selectedLabel.trim().toLowerCase() !==
+                              value.trim().toLowerCase()
+                          ) {
+                            setSelected(null);
+                            setIncludeInSovSync(false);
+                          }
+                        }}
+                        onSelect={(entity) => {
+                          setSelected(entity);
+                          if (
+                            entity.type !== "alliance" &&
+                            !(
+                              entity.parent_alliance &&
+                              entity.parent_alliance.id > 0
+                            )
+                          ) {
+                            setIncludeInSovSync(false);
+                          }
+                        }}
+                        selectionInputMode="set"
+                        placeholder="Search corporation or alliance"
+                        inputClassName="input input-xs input-bordered bg-base-300"
+                        loadSuggestions={loadOrganizationSuggestions}
+                        getSuggestionKey={(entity) =>
+                          `${entity.type}-${entity.id}`
+                        }
+                        getInputValueFromSuggestion={(entity) =>
+                          entity.ticker
+                            ? `[${entity.ticker}] ${entity.name}`
+                            : entity.name
+                        }
+                        renderSuggestion={(entity) => (
+                          <>
+                            <div className="font-semibold text-slate-100">
+                              {entity.ticker
+                                ? `[${entity.ticker}] ${entity.name}`
+                                : entity.name}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                              <span
+                                className={`badge badge-xs ${
+                                  entity.type === "corporation"
+                                    ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
+                                    : "border-violet-400/50 bg-violet-500/20 text-violet-200"
+                                }`}
+                              >
+                                {entity.type === "alliance"
+                                  ? "Alliance"
+                                  : "Corporation"}
+                              </span>
+                              {entity.parent_alliance ? (
+                                <span>
+                                  Alliance: [{entity.parent_alliance.ticker}]{" "}
+                                  {entity.parent_alliance.name}
+                                </span>
+                              ) : null}
+                            </div>
+                          </>
+                        )}
+                      />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">
+                          Hostility:
                         </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+                        {(hostilityOptions as readonly HostilityOption[]).map(
+                          (option) => {
+                            const Icon = option.icon;
+                            const active = hostility === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                className={`btn btn-xs h-auto min-h-10 justify-start py-2 text-left leading-tight whitespace-normal ${toneButtonClass(option.tone, active)}`}
+                                onClick={() => setHostility(option.value)}
+                                disabled={submitting}
+                              >
+                                <Icon className="h-3.5 w-3.5" /> {option.label}
+                              </button>
+                            );
+                          },
+                        )}
+                      </div>
+                      {canManageSovSync ? (
+                        <>
+                          <label className="label cursor-pointer justify-start gap-2 rounded-md border border-slate-700/70 px-2 py-1.5">
+                            <input
+                              type="checkbox"
+                              className={`checkbox checkbox-xs rounded-[0.2rem] ${
+                                !canIncludeInSovSync || submitting
+                                  ? "cursor-not-allowed opacity-40"
+                                  : ""
+                              }`}
+                              checked={includeInSovSync && canIncludeInSovSync}
+                              disabled={!canIncludeInSovSync || submitting}
+                              onChange={(event) =>
+                                setIncludeInSovSync(
+                                  event.target.checked && canIncludeInSovSync,
+                                )
+                              }
+                            />
+                            <span
+                              className={`text-xs ${
+                                !canIncludeInSovSync || submitting
+                                  ? "text-slate-500"
+                                  : "text-slate-300"
+                              }`}
+                            >
+                              Include in sovereignty campaign sync
+                            </span>
+                          </label>
+                          {!canIncludeInSovSync && (
+                            <div className="text-[11px] text-slate-500">
+                              Requires an alliance-backed entity.
+                            </div>
+                          )}
+                        </>
                       ) : null}
-                    </div>
-                  </>
-                )}
-              />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Hostility:</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
-                {(hostilityOptions as readonly HostilityOption[]).map(
-                  (option) => {
-                    const Icon = option.icon;
-                    const active = hostility === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        className={`btn btn-xs h-auto min-h-10 justify-start py-2 text-left leading-tight whitespace-normal ${toneButtonClass(option.tone, active)}`}
-                        onClick={() => setHostility(option.value)}
-                        disabled={submitting}
-                      >
-                        <Icon className="h-3.5 w-3.5" /> {option.label}
-                      </button>
-                    );
-                  },
-                )}
-              </div>
-              {canManageSovSync ? (
-                <>
-                  <label className="label cursor-pointer justify-start gap-2 rounded-md border border-slate-700/70 px-2 py-1.5">
-                    <input
-                      type="checkbox"
-                      className={`checkbox checkbox-xs rounded-[0.2rem] ${
-                        !canIncludeInSovSync || submitting
-                          ? "cursor-not-allowed opacity-40"
-                          : ""
-                      }`}
-                      checked={includeInSovSync && canIncludeInSovSync}
-                      disabled={!canIncludeInSovSync || submitting}
-                      onChange={(event) =>
-                        setIncludeInSovSync(
-                          event.target.checked && canIncludeInSovSync,
-                        )
-                      }
-                    />
-                    <span
-                      className={`text-xs ${
-                        !canIncludeInSovSync || submitting
-                          ? "text-slate-500"
-                          : "text-slate-300"
-                      }`}
-                    >
-                      Include in sovereignty campaign sync
-                    </span>
-                  </label>
-                  {!canIncludeInSovSync && (
-                    <div className="text-[11px] text-slate-500">
-                      Requires an alliance-backed entity.
-                    </div>
-                  )}
-                </>
-              ) : null}
 
-              <div className="flex items-center justify-between gap-2">
-                {selected ? (
-                  <div className="flex items-center gap-1.5 text-xs text-success">
-                    <Check className="h-3.5 w-3.5" />
-                    <span>Selected</span>
+                      <div className="flex items-center justify-between gap-2">
+                        {selected ? (
+                          <div className="flex items-center gap-1.5 text-xs text-success">
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Selected</span>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-500">
+                            Select an organization
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1">
+                          <button
+                            className="btn btn-xs btn-outline btn-square"
+                            onClick={() => void addEntity()}
+                            aria-label="Save organization standing"
+                            disabled={!selected || submitting}
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="btn btn-xs btn-outline btn-square"
+                            onClick={() => {
+                              setSelected(null);
+                              setQuery("");
+                              setIsAdding(false);
+                              setHostility(StandingType.Hostile);
+                              setIncludeInSovSync(false);
+                            }}
+                            aria-label="Cancel add"
+                            disabled={submitting}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-slate-500">
-                    Select an organization
-                  </div>
+                  <button
+                    className="w-full rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 px-3 py-2 text-slate-300 transition hover:bg-base-300/40 hover:text-slate-100"
+                    onClick={() => setIsAdding(true)}
+                    aria-label="Add organization standing"
+                  >
+                    <span className="flex items-center justify-center gap-2 text-sm">
+                      <Plus className="h-4 w-4" />
+                      Add organization
+                    </span>
+                  </button>
                 )}
-                <div className="flex items-center gap-1">
-                  <button
-                    className="btn btn-xs btn-outline btn-square"
-                    onClick={() => void addEntity()}
-                    aria-label="Save organization standing"
-                    disabled={!selected || submitting}
-                  >
-                    <Check className="h-4 w-4" />
-                  </button>
-                  <button
-                    className="btn btn-xs btn-outline btn-square"
-                    onClick={() => {
-                      setSelected(null);
-                      setQuery("");
-                      setIsAdding(false);
-                      setHostility(StandingType.Hostile);
-                      setIncludeInSovSync(false);
+              </div>
+            ) : null}
+          </div>
+        </ShadowedScrollArea>
+        {listHasOverflow ? (
+          <div>
+            {isAdding ? (
+              <div className="rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 p-2">
+                <div className="space-y-2">
+                  <SearchSuggestionField<OrganizationEntityOption>
+                    query={query}
+                    onQueryChange={(value) => {
+                      setQuery(value);
+                      const selectedLabel = selected
+                        ? selected.ticker
+                          ? `[${selected.ticker}] ${selected.name}`
+                          : selected.name
+                        : "";
+                      if (
+                        selected &&
+                        selectedLabel.trim().toLowerCase() !==
+                          value.trim().toLowerCase()
+                      ) {
+                        setSelected(null);
+                        setIncludeInSovSync(false);
+                      }
                     }}
-                    aria-label="Cancel add"
-                    disabled={submitting}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                    onSelect={(entity) => {
+                      setSelected(entity);
+                      if (
+                        entity.type !== "alliance" &&
+                        !(
+                          entity.parent_alliance &&
+                          entity.parent_alliance.id > 0
+                        )
+                      ) {
+                        setIncludeInSovSync(false);
+                      }
+                    }}
+                    selectionInputMode="set"
+                    placeholder="Search corporation or alliance"
+                    inputClassName="input input-xs input-bordered bg-base-300"
+                    loadSuggestions={loadOrganizationSuggestions}
+                    getSuggestionKey={(entity) => `${entity.type}-${entity.id}`}
+                    getInputValueFromSuggestion={(entity) =>
+                      entity.ticker
+                        ? `[${entity.ticker}] ${entity.name}`
+                        : entity.name
+                    }
+                    renderSuggestion={(entity) => (
+                      <>
+                        <div className="font-semibold text-slate-100">
+                          {entity.ticker
+                            ? `[${entity.ticker}] ${entity.name}`
+                            : entity.name}
+                        </div>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                          <span
+                            className={`badge badge-xs ${
+                              entity.type === "corporation"
+                                ? "border-sky-400/50 bg-sky-500/20 text-sky-200"
+                                : "border-violet-400/50 bg-violet-500/20 text-violet-200"
+                            }`}
+                          >
+                            {entity.type === "alliance"
+                              ? "Alliance"
+                              : "Corporation"}
+                          </span>
+                          {entity.parent_alliance ? (
+                            <span>
+                              Alliance: [{entity.parent_alliance.ticker}]{" "}
+                              {entity.parent_alliance.name}
+                            </span>
+                          ) : null}
+                        </div>
+                      </>
+                    )}
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">Hostility:</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+                    {(hostilityOptions as readonly HostilityOption[]).map(
+                      (option) => {
+                        const Icon = option.icon;
+                        const active = hostility === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            className={`btn btn-xs h-auto min-h-10 justify-start py-2 text-left leading-tight whitespace-normal ${toneButtonClass(option.tone, active)}`}
+                            onClick={() => setHostility(option.value)}
+                            disabled={submitting}
+                          >
+                            <Icon className="h-3.5 w-3.5" /> {option.label}
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
+                  {canManageSovSync ? (
+                    <>
+                      <label className="label cursor-pointer justify-start gap-2 rounded-md border border-slate-700/70 px-2 py-1.5">
+                        <input
+                          type="checkbox"
+                          className={`checkbox checkbox-xs rounded-[0.2rem] ${
+                            !canIncludeInSovSync || submitting
+                              ? "cursor-not-allowed opacity-40"
+                              : ""
+                          }`}
+                          checked={includeInSovSync && canIncludeInSovSync}
+                          disabled={!canIncludeInSovSync || submitting}
+                          onChange={(event) =>
+                            setIncludeInSovSync(
+                              event.target.checked && canIncludeInSovSync,
+                            )
+                          }
+                        />
+                        <span
+                          className={`text-xs ${
+                            !canIncludeInSovSync || submitting
+                              ? "text-slate-500"
+                              : "text-slate-300"
+                          }`}
+                        >
+                          Include in sovereignty campaign sync
+                        </span>
+                      </label>
+                      {!canIncludeInSovSync && (
+                        <div className="text-[11px] text-slate-500">
+                          Requires an alliance-backed entity.
+                        </div>
+                      )}
+                    </>
+                  ) : null}
+
+                  <div className="flex items-center justify-between gap-2">
+                    {selected ? (
+                      <div className="flex items-center gap-1.5 text-xs text-success">
+                        <Check className="h-3.5 w-3.5" />
+                        <span>Selected</span>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500">
+                        Select an organization
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="btn btn-xs btn-outline btn-square"
+                        onClick={() => void addEntity()}
+                        aria-label="Save organization standing"
+                        disabled={!selected || submitting}
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                      <button
+                        className="btn btn-xs btn-outline btn-square"
+                        onClick={() => {
+                          setSelected(null);
+                          setQuery("");
+                          setIsAdding(false);
+                          setHostility(StandingType.Hostile);
+                          setIncludeInSovSync(false);
+                        }}
+                        aria-label="Cancel add"
+                        disabled={submitting}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-md px-2 py-1.5 text-slate-300 hover:bg-base-300/40 hover:text-slate-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-slate-500/70"
-              onClick={() => setIsAdding(true)}
-              aria-label="Add organization standing"
-            >
-              <Plus className="h-4 w-4" />
-              Add organization
-            </button>
-          )}
-        </li>
-      </ul>
+            ) : (
+              <button
+                className="w-full rounded-lg border border-dashed border-slate-700/80 bg-base-300/20 px-3 py-2 text-slate-300 transition hover:bg-base-300/40 hover:text-slate-100"
+                onClick={() => setIsAdding(true)}
+                aria-label="Add organization standing"
+              >
+                <span className="flex items-center justify-center gap-2 text-sm">
+                  <Plus className="h-4 w-4" />
+                  Add organization
+                </span>
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
     </Panel>
   );
 }

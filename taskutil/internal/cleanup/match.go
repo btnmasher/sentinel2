@@ -26,6 +26,7 @@ func ruleMatches(rel string, isDir bool, rule cleanRule) bool {
 	if dirOnly {
 		pattern = strings.TrimSuffix(pattern, "/")
 	}
+
 	if !hasGlob(pattern) {
 		if dirOnly && !strings.Contains(pattern, "/") {
 			if rule.anchored {

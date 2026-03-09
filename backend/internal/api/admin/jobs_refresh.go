@@ -95,6 +95,7 @@ func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
 	if resolveErr != nil {
 		return resolveErr
 	}
+
 	if pendingErr := h.ensureNoRunningUserRefresh(userID); pendingErr != nil {
 		return pendingErr
 	}
@@ -103,6 +104,7 @@ func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
 	if recordsErr != nil {
 		return recordsErr
 	}
+
 	if pendingErr := h.ensureNoRunningCharacterRefreshes(userID, records); pendingErr != nil {
 		return pendingErr
 	}
@@ -126,6 +128,7 @@ func parseRefreshAllUserID(c *core.RequestEvent) (string, error) {
 	payload := struct {
 		UserID string `json:"user_id"`
 	}{}
+
 	if c.Request.ContentLength > 0 {
 		if bindErr := c.BindBody(&payload); bindErr != nil {
 			return "", router.NewBadRequestError("Invalid payload.", logging.Fields{"error": bindErr})

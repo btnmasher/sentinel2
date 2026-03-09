@@ -7,6 +7,7 @@ import (
 	"sentinel2/internal/store"
 )
 
+//nolint:gocognit // migration setup/teardown is intentionally linear and verbose.
 func init() {
 	m.Register(func(app core.App) error {
 		for _, collectionName := range []string{store.CollectionCorporations, store.CollectionAlliances} {

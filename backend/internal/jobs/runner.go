@@ -78,9 +78,11 @@ type runnerSteps struct {
 
 func NewRunner(app *pocketbase.PocketBase, opts *RunOptions) *Runner {
 	runOpts := RunOptions{}
+
 	if opts != nil {
 		runOpts = *opts
 	}
+
 	if runOpts.JobID == "" {
 		name := runOpts.JobName
 		if name == "" {
@@ -107,9 +109,11 @@ func (r *Runner) WithFields(fields logging.Fields) *Runner {
 	if r == nil {
 		return nil
 	}
+
 	if len(fields) == 0 {
 		return r
 	}
+
 	if r.fields == nil {
 		r.fields = logging.Fields{}
 	}
@@ -163,38 +167,47 @@ func (r *Runner) Run(fn func(ctx context.Context, step Stepper) error) error {
 	log.Info(MessageJobStarted)
 
 	runErr := r.runWithRecover(ctx, log, fn)
-
 	if r.skipped || errors.Is(runErr, ErrJobSkipped) {
+		r.applyCompletionMessage()
 		r.tracker.FinishSkipped(r.record, r.skipReason)
 		r.logCompletion(log, startedAt, StatusSkipped, r.skipReason, false, false)
 		return nil
 	}
 
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		r.applyCompletionMessage()
 		r.tracker.FinishPartial(r.record, ctx.Err())
 		r.logCompletion(log, startedAt, StatusTimeout, ctx.Err().Error(), true, true)
 		return runErr
 	}
+
 	if errors.Is(ctx.Err(), context.Canceled) {
+		r.applyCompletionMessage()
 		r.tracker.FinishCanceled(r.record, MessageCanceled)
 		r.logCompletion(log, startedAt, StatusCanceled, MessageCanceled, false, false)
 		return runErr
 	}
+
 	if runErr != nil {
+		r.applyCompletionMessage()
 		r.tracker.Finish(r.record, runErr)
 		r.logCompletion(log, startedAt, StatusFailed, runErr.Error(), true, false)
 		return runErr
 	}
+
 	if r.partialErr != nil {
 		if r.shouldFinalizeAsPartial() {
+			r.applyCompletionMessage()
 			r.tracker.FinishPartial(r.record, r.partialErr)
 			r.logCompletion(log, startedAt, StatusPartial, r.partialErr.Error(), false, false)
 			return nil
 		}
+		r.applyCompletionMessage()
 		r.tracker.Finish(r.record, r.partialErr)
 		r.logCompletion(log, startedAt, StatusFailed, r.partialErr.Error(), true, false)
 		return r.partialErr
 	}
+	r.applyCompletionMessage()
 	r.tracker.Finish(r.record, nil)
 	r.logCompletion(log, startedAt, StatusSuccess, "", false, false)
 	return nil
@@ -231,6 +244,7 @@ func (r *Runner) buildContext() (ctx context.Context, cancel, timeoutCancel cont
 	if timeout == 0 {
 		timeout = DefaultTimeout
 	}
+
 	if timeout > 0 {
 		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, timeout)
 		return timeoutCtx, cancel, timeoutCancel
@@ -250,12 +264,15 @@ func (r *Runner) logger() *logging.Logger {
 		"job_id": r.opts.JobID,
 		"kind":   r.opts.Kind,
 	}
+
 	if r.opts.Step != "" {
 		fields["step"] = r.opts.Step
 	}
+
 	if r.opts.Trigger != "" {
 		fields["trigger"] = r.opts.Trigger
 	}
+
 	if r.opts.ActorID != "" {
 		fields["actor_id"] = r.opts.ActorID
 	}
@@ -269,9 +286,11 @@ func (r *Runner) stepLogger(step string) *logging.Logger {
 		"kind":   r.stepKind(),
 		"step":   step,
 	}
+
 	if r.opts.Trigger != "" {
 		fields["trigger"] = r.opts.Trigger
 	}
+
 	if r.opts.ActorID != "" {
 		fields["actor_id"] = r.opts.ActorID
 	}
@@ -291,6 +310,7 @@ func (r *Runner) logCompletion(log *logging.Logger, startedAt time.Time, status,
 	if finalMessage == "" {
 		finalMessage = r.message
 	}
+
 	if finalMessage != "" {
 		fields["message"] = finalMessage
 	}
@@ -330,9 +350,25 @@ func (r *Runner) markPartial(err error) {
 	if err == nil {
 		return
 	}
+
 	if r.partialErr == nil {
 		r.partialErr = err
 	}
+}
+
+func (r *Runner) applyCompletionMessage() {
+	if r == nil || r.record == nil {
+		return
+	}
+	message := r.message
+	if message == "" {
+		return
+	}
+
+	if r.record.GetString("message") != "" {
+		return
+	}
+	r.record.Set("message", message)
 }
 
 func (r *Runner) markSkipped(reason string) {
@@ -368,6 +404,7 @@ func (r *Runner) noteStepFailure(critical bool) {
 	if r == nil {
 		return
 	}
+
 	if critical {
 		r.stepState.criticalFailed++
 		return
@@ -401,6 +438,7 @@ func (s runnerSteps) Run(name string, critical bool, fn func(context.Context) er
 	if ctxErr := s.ctx.Err(); ctxErr != nil {
 		return s.handleStepContextError(stepRecord, stepLog, stepStartedAt, ctxErr, critical)
 	}
+
 	if runErr != nil {
 		return s.handleStepRunError(stepRecord, stepLog, stepStartedAt, runErr, critical)
 	}
@@ -545,6 +583,7 @@ func (r *Runner) logStepCompletion(log *logging.Logger, startedAt time.Time, sta
 	if finalMessage == "" {
 		finalMessage = r.message
 	}
+
 	if finalMessage != "" {
 		fields["message"] = finalMessage
 	}

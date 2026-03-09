@@ -73,6 +73,7 @@ func (h *Handler) SeedSearchUsers(c *core.RequestEvent) error {
 		Count  int    `json:"count"`
 		Prefix string `json:"prefix"`
 	}{}
+
 	if c.Request.ContentLength > 0 {
 		if bindErr := c.BindBody(&payload); bindErr != nil {
 			return router.NewBadRequestError("Invalid payload.", logging.Fields{
@@ -80,9 +81,11 @@ func (h *Handler) SeedSearchUsers(c *core.RequestEvent) error {
 			})
 		}
 	}
+
 	if payload.Count <= 0 {
 		payload.Count = defaultSeedCount
 	}
+
 	if payload.Count > maxSeedCount {
 		payload.Count = maxSeedCount
 	}
@@ -224,11 +227,13 @@ func parseSearchOptions(values url.Values) searchOptions {
 func buildCharacterSearchFilter(query, startsWith string) (string, dbx.Params) {
 	filter := "user != \"\""
 	params := dbx.Params{}
+
 	if query != "" {
 		filter = queryhelpers.AppendAnd(filter, "(eve_character_name ~ {:q} || user ~ {:q} || user = {:userID})")
 		params["q"] = "%" + query + "%"
 		params["userID"] = query
 	}
+
 	if isSearchPrefix(startsWith) {
 		filter = queryhelpers.AppendAnd(filter, "eve_character_name ~ {:startsWith}")
 		params["startsWith"] = startsWith + "%"

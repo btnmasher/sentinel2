@@ -24,11 +24,13 @@ func (h *IntelHandler) Submit(c *core.RequestEvent) error {
 	if ctxErr != nil {
 		return ctxErr
 	}
+
 	if refreshErr := h.refreshUploaderHeartbeat(userID); refreshErr != nil {
 		return refreshErr
 	}
 
 	payload := submitPayload{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Malformed JSON.", logging.Fields{
 			"error": bindErr.Error(),
@@ -47,6 +49,7 @@ func (h *IntelHandler) Heartbeat(c *core.RequestEvent) error {
 	if ctxErr != nil {
 		return ctxErr
 	}
+
 	if refreshErr := h.refreshUploaderHeartbeat(userID); refreshErr != nil {
 		return refreshErr
 	}
@@ -121,6 +124,7 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 			"author": parsed.Author,
 		})
 	}
+
 	if len(systems) == 0 {
 		return router.NewApiError(
 			http.StatusUnprocessableEntity,
@@ -137,6 +141,7 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 			"author": parsed.Author,
 		})
 	}
+
 	if !shouldCreate {
 		return router.NewApiError(
 			http.StatusConflict,
@@ -157,6 +162,7 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 		Uploader:  userID,
 		ChannelID: channelID,
 	}
+
 	if createErr := h.Service.CreateReport(&report); createErr != nil {
 		return normalizeCreateReportError(createErr)
 	}
@@ -185,6 +191,7 @@ func (h *IntelHandler) resolveSubmitChannelID(rawChannelID, userID string) (stri
 			"uploader_user_id": userID,
 		})
 	}
+
 	if _, channelErr := h.App.FindRecordById(store.CollectionIntelChannels, channelID); channelErr != nil {
 		return "", router.NewBadRequestError("Invalid channel id.", logging.Fields{
 			"channel_id":       channelID,
@@ -213,6 +220,7 @@ func (h *IntelHandler) parseSubmitPayload(text, channelID, userID string) (intel
 			"uploader_user_id": userID,
 		})
 	}
+
 	if parsed.Text == "" {
 		return intel.ParsedReport{}, router.NewBadRequestError("Missing report text.", logging.Fields{
 			"channel_id":       channelID,

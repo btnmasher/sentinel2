@@ -113,9 +113,11 @@ func validateSystemRow(row *systemRowData) string {
 	if row.id == 0 {
 		return "missing_id"
 	}
+
 	if row.constID == 0 || row.regionID == 0 {
 		return "missing_region_or_constellation"
 	}
+
 	if row.name == "" {
 		return "missing_name"
 	}
@@ -138,6 +140,7 @@ func (row *systemRowData) payload() map[string]any {
 		"metro_x":         0,
 		"metro_y":         0,
 	}
+
 	if row.coordsMissing() {
 		payload["raw_x"] = nil
 		payload["raw_y"] = nil
@@ -147,6 +150,7 @@ func (row *systemRowData) payload() map[string]any {
 		payload["raw_y"] = row.y
 		payload["raw_z"] = row.z
 	}
+
 	if row.hasPos2D {
 		payload["eve2d_x"] = row.pos2dX
 		payload["eve2d_y"] = row.pos2dY

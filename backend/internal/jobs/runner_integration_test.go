@@ -80,9 +80,11 @@ func (f *fakeTracker) stepOf(record *core.Record) string {
 	if record == nil {
 		return ""
 	}
+
 	if opts, ok := f.records[record]; ok {
 		return opts.Step
 	}
+
 	if step := record.GetString("step"); step != "" {
 		return step
 	}
@@ -124,9 +126,11 @@ func TestRunnerRun_NonCriticalSingleFailure_FinalizesFailed(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishSuccess {
 		t.Fatalf("parent finish kind = %q, want %q (Finish with error path)", parent.kind, finishSuccess)
 	}
+
 	if parent.message != "noncritical boom" {
 		t.Fatalf("parent finish message = %q", parent.message)
 	}
@@ -149,6 +153,7 @@ func TestRunnerRun_NonCriticalFailureWithSuccess_FinalizesPartial(t *testing.T) 
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishPartial {
 		t.Fatalf("parent finish kind = %q, want %q", parent.kind, finishPartial)
 	}
@@ -170,9 +175,11 @@ func TestRunnerRun_CriticalFailure_FinalizesFailed(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishSuccess {
 		t.Fatalf("parent finish kind = %q, want %q (Finish with error path)", parent.kind, finishSuccess)
 	}
+
 	if parent.message != "critical boom" {
 		t.Fatalf("parent finish message = %q", parent.message)
 	}
@@ -192,9 +199,11 @@ func TestRunnerRun_SkippedOnlyStep_FinalizesSuccess(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishSuccess {
 		t.Fatalf("parent finish kind = %q, want %q", parent.kind, finishSuccess)
 	}
+
 	if parent.message != "" {
 		t.Fatalf("parent finish message = %q, want empty", parent.message)
 	}
@@ -218,9 +227,11 @@ func TestRunnerRun_ManualPartialWithoutFailedSteps_FinalizesFailed(t *testing.T)
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishSuccess {
 		t.Fatalf("parent finish kind = %q, want %q (Finish with error path)", parent.kind, finishSuccess)
 	}
+
 	if parent.message != "manual partial" {
 		t.Fatalf("parent finish message = %q", parent.message)
 	}
@@ -241,9 +252,11 @@ func TestRunnerRun_ManualPartialWithoutSteps_FinalizesFailed(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishSuccess {
 		t.Fatalf("parent finish kind = %q, want %q (Finish with error path)", parent.kind, finishSuccess)
 	}
+
 	if parent.message != "manual partial" {
 		t.Fatalf("parent finish message = %q", parent.message)
 	}
@@ -259,6 +272,7 @@ func TestRunnerRun_PanicRecovered_FinalizesFailed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Run() err = nil, want non-nil")
 	}
+
 	if got := err.Error(); got != "job panic recovered: kaboom" {
 		t.Fatalf("Run() err = %q, want %q", got, "job panic recovered: kaboom")
 	}
@@ -266,9 +280,11 @@ func TestRunnerRun_PanicRecovered_FinalizesFailed(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected parent finish call")
 	}
+
 	if parent.kind != finishSuccess {
 		t.Fatalf("parent finish kind = %q, want %q (Finish with error path)", parent.kind, finishSuccess)
 	}
+
 	if parent.message != "job panic recovered: kaboom" {
 		t.Fatalf("parent finish message = %q", parent.message)
 	}

@@ -75,6 +75,7 @@ func (h *Handler) Parse(c *core.RequestEvent) error {
 	payload := struct {
 		Text string `json:"text"`
 	}{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -139,6 +140,7 @@ func (h *Handler) entitySearchRequester(c *core.RequestEvent) (*timerssvc.Entity
 	if err != nil {
 		return nil, err
 	}
+
 	if record == nil {
 		return nil, nil
 	}
@@ -180,6 +182,7 @@ func (h *Handler) findMainCharacter(userID string) (*core.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -202,6 +205,7 @@ func (h *Handler) refreshEntitySearchToken(c *core.RequestEvent, authRecord *cor
 	if errors.Is(refreshErr, auth.ErrAccessDenied) {
 		return false
 	}
+
 	if refreshErr != nil {
 		h.Service.App.Logger().Warn("timer entity search token refresh failed", "error", refreshErr.Error(), "user_id", authRecord.Id)
 		return false
@@ -231,6 +235,7 @@ func (h *Handler) SearchPlanets(c *core.RequestEvent) error {
 
 func (h *Handler) Create(c *core.RequestEvent) error {
 	payload := createPayload{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -288,6 +293,7 @@ func (h *Handler) Update(c *core.RequestEvent) error {
 	}
 
 	payload := updatePayload{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -383,6 +389,7 @@ func (h *Handler) handleMutationError(err error, fallback string) error {
 	if err == nil {
 		return nil
 	}
+
 	if strings.Contains(strings.ToLower(err.Error()), "not found") {
 		return router.NewNotFoundError("Timer not found.", nil)
 	}

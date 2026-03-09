@@ -124,9 +124,11 @@ func BaseLogDir(cfg project.Config) string {
 	if baseLogDir == "" {
 		baseLogDir = "dev-logs"
 	}
+
 	if runtime.GOOS == "windows" && strings.HasPrefix(baseLogDir, unixTmpPrefix) {
 		baseLogDir = filepath.Join(os.TempDir(), filepath.Base(baseLogDir))
 	}
+
 	if !filepath.IsAbs(baseLogDir) {
 		baseLogDir = filepath.Join(cfg.RootDir, baseLogDir)
 	}
@@ -144,6 +146,7 @@ func resolveDevLogDir(cfg project.Config) (string, error) {
 			}
 		}
 	}
+
 	if info, err := os.Stat(baseLogDir); err == nil && info.IsDir() {
 		entries, readErr := os.ReadDir(baseLogDir)
 		if readErr == nil {
@@ -182,6 +185,7 @@ func readNewLines(path string, offset int64, remainder string, label string) (in
 	if err != nil {
 		return offset, remainder, err
 	}
+
 	if len(data) == 0 {
 		return size, remainder, nil
 	}
@@ -208,6 +212,7 @@ func splitLinesKeepRemainder(s string) lineSplitResult {
 		raw = raw[:len(raw)-1]
 		return lineSplitResult{lines: raw}
 	}
+
 	if len(raw) == 0 {
 		return lineSplitResult{}
 	}

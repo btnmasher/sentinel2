@@ -119,7 +119,6 @@ func (p *EVEProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, err
 	}
 
 	linkUserID := flow.LinkUserID
-
 	if linkUserID != "" {
 		return p.handleLinkCallback(c, flow, linkContext{
 			token:        token,
@@ -191,6 +190,7 @@ func (p *EVEProvider) handleLinkCallback(c *core.RequestEvent, flow AuthFlow, ct
 	if ctx.existingChar != nil && ctx.existingChar.GetBool("is_main") {
 		isMain = true
 	}
+
 	if isMain {
 		if authorizeErr := p.authorizeAccess(ctx.corpID, ctx.allianceID); authorizeErr != nil {
 			return nil, AuthFlow{}, authorizeErr
@@ -209,6 +209,7 @@ func (p *EVEProvider) handleLinkCallback(c *core.RequestEvent, flow AuthFlow, ct
 	if upsertErr != nil {
 		return nil, AuthFlow{}, upsertErr
 	}
+
 	if isMain {
 		if updateErr := p.updateUserFromCharacter(user, charRecord); updateErr != nil {
 			return nil, AuthFlow{}, ErrFailedPersistUser
@@ -250,6 +251,7 @@ func (p *EVEProvider) handleLoginCallback(c *core.RequestEvent, ctx loginContext
 		RefreshToken:  ctx.token.RefreshToken,
 		RefreshExpiry: time.Unix(eveRefreshExpiry(), 0),
 	}
+
 	if mainChar != nil {
 		if tokens, ok := tokensFromCharacter(mainChar); ok {
 			sessionTokens = tokens
@@ -275,6 +277,7 @@ func (p *EVEProvider) resolveLoginMainCharacter(ctx context.Context, user *core.
 		token:      loginCtx.token,
 		scopes:     loginCtx.claims.Scp,
 	}
+
 	if loginCtx.existingChar == nil {
 		return p.handleLoginNewCharacter(ctx, user, input)
 	}
@@ -289,6 +292,7 @@ func (p *EVEProvider) handleLoginNewCharacter(ctx context.Context, user *core.Re
 	if upsertErr != nil {
 		return nil, upsertErr
 	}
+
 	if updateErr := p.updateUserFromCharacter(user, mainChar); updateErr != nil {
 		return nil, ErrFailedPersistUser
 	}
@@ -304,6 +308,7 @@ func (p *EVEProvider) handleLoginExistingCharacter(ctx context.Context, user *co
 	if mainErr != nil {
 		return nil, mainErr
 	}
+
 	if mainChar != nil {
 		if updateErr := p.updateUserFromCharacter(user, mainChar); updateErr != nil {
 			return nil, ErrFailedPersistUser
@@ -324,12 +329,14 @@ func (p *EVEProvider) ensureMainCharacter(ctx context.Context, user, current *co
 		}
 		return current, nil
 	}
+
 	if mainChar.Id == current.Id {
 		if authorizeErr := p.authorizeAccess(corpID, allianceID); authorizeErr != nil {
 			return nil, authorizeErr
 		}
 		return mainChar, nil
 	}
+
 	if ensureErr := p.refreshMainAffiliation(ctx, mainChar); ensureErr != nil {
 		return nil, ensureErr
 	}
@@ -364,9 +371,11 @@ func (p *EVEProvider) upsertCharacterForUser(ctx context.Context, user *core.Rec
 	if upsertErr != nil {
 		return nil, ErrFailedPersistCharacter
 	}
+
 	if err := store.WarmCorporationCache(ctx, p.App, p.PublicESI, input.corpID); err != nil && p.App != nil {
 		p.App.Logger().Warn("failed to warm corporation cache", "corporation_id", input.corpID, "error", err.Error())
 	}
+
 	if err := store.WarmAllianceCache(ctx, p.App, p.PublicESI, input.allianceID); err != nil && p.App != nil {
 		p.App.Logger().Warn("failed to warm alliance cache", "alliance_id", input.allianceID, "error", err.Error())
 	}
@@ -378,6 +387,7 @@ func (p *EVEProvider) authorizeAccess(corpID, allianceID int) error {
 	if accessErr != nil {
 		return ErrFailedCheckAccess
 	}
+
 	if !allowed {
 		return ErrAccessDenied
 	}
@@ -405,9 +415,11 @@ func (p *EVEProvider) refreshMainAffiliation(ctx context.Context, mainChar *core
 	if err := store.WarmCorporationCache(ctx, p.App, p.PublicESI, mainCorp); err != nil && p.App != nil {
 		p.App.Logger().Warn("failed to warm corporation cache", "corporation_id", mainCorp, "error", err.Error())
 	}
+
 	if err := store.WarmAllianceCache(ctx, p.App, p.PublicESI, mainAlliance); err != nil && p.App != nil {
 		p.App.Logger().Warn("failed to warm alliance cache", "alliance_id", mainAlliance, "error", err.Error())
 	}
+
 	if saveErr := p.App.Save(mainChar); saveErr != nil {
 		return ErrFailedPersistCharacter
 	}
@@ -419,6 +431,7 @@ func (p *EVEProvider) resolveCharacterAffiliationForCallback(ctx context.Context
 	if affiliationErr == nil {
 		return corpID, allianceID, nil
 	}
+
 	if existingChar == nil {
 		return 0, 0, ErrFailedFetchCharacter
 	}
@@ -653,6 +666,7 @@ func (p *EVEProvider) warmCharacterOrganizations(ctx context.Context, corpID, al
 	if err := store.WarmCorporationCache(ctx, p.App, p.PublicESI, corpID); err != nil && p.App != nil {
 		p.App.Logger().Warn("failed to warm corporation cache", "corporation_id", corpID, "error", err.Error())
 	}
+
 	if err := store.WarmAllianceCache(ctx, p.App, p.PublicESI, allianceID); err != nil && p.App != nil {
 		p.App.Logger().Warn("failed to warm alliance cache", "alliance_id", allianceID, "error", err.Error())
 	}
@@ -666,6 +680,7 @@ func (p *EVEProvider) ensureCharacterAccess(isMain bool, corpID, allianceID int)
 	if accessErr != nil {
 		return accessErr
 	}
+
 	if !allowed {
 		return ErrAccessDenied
 	}
@@ -701,9 +716,11 @@ func (p *EVEProvider) allowedAccess(corpID, allianceID int) (bool, error) {
 	if allianceErr != nil {
 		return false, allianceErr
 	}
+
 	if corpAllowed || allianceAllowed {
 		return true, nil
 	}
+
 	if !p.hasAllowlist("allowed_corporations") && !p.hasAllowlist("allowed_alliances") {
 		return false, nil
 	}
@@ -743,6 +760,7 @@ func (p *EVEProvider) findOrCreateUser(characterID int) (*core.Record, error) {
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) > 0 {
 		return records[0], nil
 	}
@@ -757,6 +775,7 @@ func (p *EVEProvider) findOrCreateUser(characterID int) (*core.Record, error) {
 	if saveErr := p.App.Save(record); saveErr != nil {
 		return nil, saveErr
 	}
+
 	if p.Intel != nil {
 		if _, tokenErr := p.Intel.GetOrCreateUploaderToken(record.Id); tokenErr != nil {
 			return nil, tokenErr

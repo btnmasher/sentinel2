@@ -21,6 +21,7 @@ func SliceByOffsetLimit[T any](items []T, offset, limit int) ([]T, bool) {
 	if limit <= 0 {
 		return nil, false
 	}
+
 	if offset < 0 {
 		offset = 0
 	}
@@ -37,6 +38,7 @@ func TrimToLimit[T any](items []T, limit int) ([]T, bool) {
 	if limit <= 0 {
 		return nil, len(items) > 0
 	}
+
 	if len(items) <= limit {
 		return items, false
 	}

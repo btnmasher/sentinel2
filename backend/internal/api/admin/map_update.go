@@ -38,6 +38,7 @@ func (h *MapUpdateHandler) RunAll(c *core.RequestEvent) error {
 		"cron":   jobs.TriggerAdminManual,
 		"force":  true,
 	}
+
 	if c.Auth != nil {
 		logFields["user_id"] = c.Auth.Id
 	}

@@ -24,23 +24,18 @@ const statusLabel = (status?: string) => {
 
 type JobStatusBadgeProps = {
   status?: string;
-  error?: string;
+  message?: string;
   className?: string;
 };
 
 export default function JobStatusBadge({
   status,
-  error,
+  message,
   className,
 }: JobStatusBadgeProps) {
   if (!status) return null;
   const label = statusLabel(status);
-  const details =
-    status === "skipped" && error
-      ? `Skipped: ${error}`
-      : error
-        ? `${label}: ${error}`
-        : label;
+  const details = message ? `${label}: ${message}` : label;
 
   return (
     <HoverCard

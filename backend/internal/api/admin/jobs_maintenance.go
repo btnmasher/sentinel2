@@ -168,6 +168,120 @@ func (h *Handler) RunStructureNotificationsSyncJob(c *core.RequestEvent) error {
 	return c.JSON(http.StatusAccepted, map[string]any{"job_id": jobID})
 }
 
+func (h *Handler) RunUpdateJumpbridgesJob(c *core.RequestEvent) error {
+	if h.Jumpbridges == nil {
+		return router.NewInternalServerError("Jumpbridge service unavailable.", nil)
+	}
+	actorID := actorIDFromRequest(c)
+	runner := jobs.NewRunner(h.App, &jobs.RunOptions{
+		JobName: jobs.JobUpdateJumpbridges,
+		JobOptions: jobs.JobOptions{
+			Kind:    jobs.JobUpdateJumpbridges,
+			Trigger: jobs.TriggerAdminManual,
+			ActorID: actorID,
+		},
+		Timeout: jobs.NoTimeout,
+		Unique:  true,
+	})
+	jobID := runner.JobID()
+
+	h.runUpdateJumpbridgesAsync(runner)
+
+	h.logAction(
+		c,
+		&audit.Event{
+			Action:      audit.ActionJobJumpbridgeUpdateRun,
+			Summary:     fmt.Sprintf("Triggered jumpbridge update job %s", jobID),
+			TargetType:  audit.TargetTypeJob,
+			TargetID:    jobID,
+			TargetLabel: jobs.JobUpdateJumpbridges,
+			TargetMeta: map[string]any{
+				"job_id": jobID,
+				"kind":   jobs.JobUpdateJumpbridges,
+			},
+		},
+	)
+
+	return c.JSON(http.StatusAccepted, map[string]any{"job_id": jobID})
+}
+
+func (h *Handler) runUpdateJumpbridgesAsync(runner *jobs.Runner) {
+	go func() {
+		_ = runner.Run(func(ctx context.Context, stepper jobs.Stepper) error {
+			validationSummary, err := h.runUpdateJumpbridgesValidationStep(stepper, runner)
+			if err != nil {
+				return err
+			}
+			return h.runUpdateJumpbridgesImportStep(stepper, runner, validationSummary)
+		})
+	}()
+}
+
+func (h *Handler) runUpdateJumpbridgesValidationStep(stepper jobs.Stepper, runner *jobs.Runner) (string, error) {
+	validationSummary := ""
+	err := stepper.Run("validate_pairs", false, func(ctx context.Context) error {
+		summary, err := h.Jumpbridges.ValidateExistingPairsWithAllowedCharacters(ctx)
+		if err != nil {
+			return err
+		}
+		runner.WithFields(logging.Fields{
+			"validation_character_ids": summary.CharacterIDs,
+			"total_pairs":              summary.TotalPairs,
+			"valid_pairs":              summary.ValidPairs,
+			"invalid_pairs":            summary.InvalidPairs,
+			"skipped_pairs":            summary.SkippedPairs,
+			"skipped_organizations":    summary.SkippedOrganizations,
+			"removed_pairs":            summary.RemovedPairs,
+			"removed_keys":             summary.RemovedKeys,
+			"removed_names":            summary.RemovedNames,
+		})
+		validationSummary = fmt.Sprintf(
+			"validation: removed %d invalid (of %d total; skipped orgs %d)",
+			summary.RemovedPairs,
+			summary.TotalPairs,
+			summary.SkippedOrganizations,
+		)
+		runner.WithMessage(validationSummary)
+		if summary.InvalidPairs > 0 {
+			stepper.Partial(fmt.Errorf("jumpbridge validation found %d invalid pairs", summary.InvalidPairs))
+		}
+		return nil
+	})
+	return validationSummary, err
+}
+
+func (h *Handler) runUpdateJumpbridgesImportStep(stepper jobs.Stepper, runner *jobs.Runner, validationSummary string) error {
+	return stepper.Run("import_pairs", false, func(ctx context.Context) error {
+		summary, err := h.Jumpbridges.DiscoverAndImportAllowedSovPairs(ctx)
+		if err != nil {
+			return err
+		}
+		runner.WithFields(logging.Fields{
+			"discovery_character_ids":   summary.CharacterIDs,
+			"allowed_sov_systems":       summary.AllowedSovereigntySystems,
+			"discovery_candidate_pairs": summary.CandidatePairs,
+			"discovery_added_pairs":     summary.AddedPairs,
+			"discovery_upgraded_pairs":  summary.UpgradedPairs,
+			"discovery_skipped_orgs":    summary.SkippedOrganizations,
+			"discovery_added_keys":      summary.AddedKeys,
+			"discovery_added_names":     summary.AddedNames,
+			"discovery_upgraded_keys":   summary.UpgradedKeys,
+			"discovery_upgraded_names":  summary.UpgradedNames,
+			"discovery_skipped_pairs":   summary.SkippedPairs,
+		})
+		runner.WithMessage(fmt.Sprintf(
+			"%s; discovery: added %d, upgraded %d, skipped %d (candidates %d; skipped orgs %d)",
+			validationSummary,
+			summary.AddedPairs,
+			summary.UpgradedPairs,
+			summary.SkippedPairs,
+			summary.CandidatePairs,
+			summary.SkippedOrganizations,
+		))
+		return nil
+	})
+}
+
 func actorIDFromRequest(c *core.RequestEvent) string {
 	if c != nil && c.Auth != nil {
 		return c.Auth.Id
@@ -197,6 +311,7 @@ func (h *Handler) runCleanupAsync(runner *jobs.Runner) {
 
 func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	counts := cleanupCounts{}
+
 	if err := stepper.Run("cleanup_report_hashes", false, func(ctx context.Context) error {
 		count, err := h.Cleanup.RemoveExpired(store.CollectionIntelReportHash)
 		if err == nil {
@@ -206,6 +321,7 @@ func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	}); err != nil {
 		return counts, err
 	}
+
 	if err := stepper.Run("cleanup_intel_uploaders", false, func(ctx context.Context) error {
 		count, err := h.Cleanup.RemoveExpired(store.CollectionIntelUploaders)
 		counts.intelUploaderCount = count
@@ -213,6 +329,7 @@ func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	}); err != nil {
 		return counts, err
 	}
+
 	if err := stepper.Run("cleanup_uploader_tokens", false, func(ctx context.Context) error {
 		count, err := h.Cleanup.RemoveRevokedUploaderTokens()
 		counts.uploaderTokenCount = count
@@ -220,6 +337,7 @@ func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	}); err != nil {
 		return counts, err
 	}
+
 	if err := stepper.Run("cleanup_intel_reports", false, func(ctx context.Context) error {
 		count, err := h.Cleanup.RemoveOldIntelReports(cleanup.IntelReportRetention)
 		counts.intelReportCount = count
@@ -227,6 +345,7 @@ func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	}); err != nil {
 		return counts, err
 	}
+
 	if err := stepper.Run("cleanup_timers", false, func(ctx context.Context) error {
 		count, err := h.Cleanup.RemoveOldTimers(cleanup.TimerInactiveRetention)
 		counts.timerCount = count
@@ -234,6 +353,7 @@ func (h *Handler) runCleanupSteps(stepper jobs.Stepper) (cleanupCounts, error) {
 	}); err != nil {
 		return counts, err
 	}
+
 	if err := stepper.Run("cleanup_stale_job_runs", false, func(ctx context.Context) error {
 		count, err := jobs.NewJobTracker(h.App).MarkStaleRunningAsTimeout(staleJobRunTimeout)
 		counts.staleJobRunCount = count

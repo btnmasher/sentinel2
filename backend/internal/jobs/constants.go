@@ -22,11 +22,13 @@ const (
 	MessageCanceled                = "canceled"
 	MessageUpdateNotNeeded         = "update skipped (not needed)"
 
-	JobCleanup          = "cleanup"
-	JobCharacterRefresh = "character_refresh"
-	JobUploaderReleases = "uploader_releases"
-	JobSovCampaignSync  = "sov_campaign_sync"
-	JobSkyhookSync      = "skyhook_sync"
+	JobCleanup            = "cleanup"
+	JobCharacterRefresh   = "character_refresh"
+	JobUploaderReleases   = "uploader_releases"
+	JobSovCampaignSync    = "sov_campaign_sync"
+	JobSkyhookSync        = "skyhook_sync"
+	JobJumpbridgeValidate = "jumpbridge_validate"
+	JobUpdateJumpbridges  = "update_jumpbridges"
 
 	TriggerCronSchedule          = "cron.schedule"
 	TriggerServerStartup         = "server.startup"

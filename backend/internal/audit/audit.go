@@ -39,10 +39,12 @@ func (s *Service) LogRequest(c *core.RequestEvent, event *Event) {
 	if event == nil {
 		return
 	}
+
 	if c == nil {
 		s.LogEvent(event)
 		return
 	}
+
 	if event.ActorRecord == nil {
 		value := c.Get("admin_record")
 		if admin, ok := value.(*core.Record); ok {
@@ -58,6 +60,7 @@ func (s *Service) LogEvent(event *Event) {
 	if event == nil {
 		return
 	}
+
 	if s.App == nil {
 		return
 	}
@@ -101,12 +104,15 @@ func (s *Service) LogEvent(event *Event) {
 	if targetType != "" {
 		record.Set("target_type", targetType)
 	}
+
 	if targetID != "" {
 		record.Set("target_id", targetID)
 	}
+
 	if targetLabel != "" {
 		record.Set("target_label", targetLabel)
 	}
+
 	if targetMeta != nil {
 		record.Set("target_meta", targetMeta)
 	}
@@ -117,6 +123,7 @@ func (s *Service) LogEvent(event *Event) {
 	if actorID != "" {
 		record.Set("actor_id", actorID)
 	}
+
 	if actorDisplayName != "" {
 		record.Set("actor_display_name", actorDisplayName)
 	}
@@ -191,9 +198,11 @@ func normalizeTargetFields(
 	if targetType != "" {
 		return targetType, targetID, targetLabel, targetMeta
 	}
+
 	if targetCharacter != nil {
 		return normalizeCharacterTarget(targetCharacter, targetID, targetLabel, targetMeta)
 	}
+
 	if event != nil && event.TargetUserID != "" {
 		return normalizeUserTarget(event.TargetUserID, targetUserName, targetID, targetLabel, targetMeta)
 	}
@@ -208,9 +217,11 @@ func normalizeCharacterTarget(targetCharacter *core.Record, targetID, targetLabe
 	if targetID == "" {
 		normalizedID = targetCharacter.Id
 	}
+
 	if targetLabel == "" {
 		normalizedLabel = targetCharacter.GetString("eve_character_name")
 	}
+
 	if normalizedMeta == nil {
 		normalizedMeta = map[string]any{
 			"eve_character_id": targetCharacter.GetInt("eve_character_id"),
@@ -227,6 +238,7 @@ func normalizeUserTarget(targetUserID, targetUserName, targetID, targetLabel str
 	if targetID == "" {
 		normalizedID = targetUserID
 	}
+
 	if targetLabel == "" {
 		normalizedLabel = targetUserName
 	}
@@ -237,9 +249,11 @@ func normalizeActorFields(actorID, actorDisplayName string, actorRecord *core.Re
 	if actorRecord == nil {
 		return actorID, actorDisplayName
 	}
+
 	if actorID == "" {
 		actorID = actorRecord.Id
 	}
+
 	if actorDisplayName == "" {
 		actorDisplayName = actorRecord.GetString("eve_character_name")
 		if actorDisplayName == "" {

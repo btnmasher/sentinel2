@@ -19,6 +19,7 @@ func TestCleanRoot_PreservesPBDataAndEnv(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, ".env"), []byte("A=B\n"), 0o644); err != nil {
 		t.Fatalf("write bin/.env: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(binDir, "delete.me"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write bin/delete.me: %v", err)
 	}
@@ -39,6 +40,7 @@ func TestCleanRoot_PreservesPBDataAndEnv(t *testing.T) {
 			".task",
 		}, ","),
 	}
+
 	if err := CleanRoot(cfg); err != nil {
 		t.Fatalf("CleanRoot() error = %v", err)
 	}
@@ -64,6 +66,7 @@ func TestCleanRoot_IgnorePriority(t *testing.T) {
 			"!dist/keep/**",
 		}, ","),
 	}
+
 	if err := CleanRoot(cfg); err != nil {
 		t.Fatalf("CleanRoot() error = %v", err)
 	}
@@ -96,18 +99,23 @@ func TestParseCleanRules_CommentsAndEscapes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseCleanRules() error = %v", err)
 	}
+
 	if len(rules) != 4 {
 		t.Fatalf("rule count = %d, want 4", len(rules))
 	}
+
 	if !rules[0].include || rules[0].pattern != "dist/**" {
 		t.Fatalf("rules[0] = %#v", rules[0])
 	}
+
 	if rules[1].include || rules[1].pattern != "dist/keep/**" {
 		t.Fatalf("rules[1] = %#v", rules[1])
 	}
+
 	if !rules[2].include || rules[2].pattern != "!literal-bang.txt" {
 		t.Fatalf("rules[2] = %#v", rules[2])
 	}
+
 	if !rules[3].include || rules[3].pattern != "#literal-hash.txt" {
 		t.Fatalf("rules[3] = %#v", rules[3])
 	}
@@ -118,15 +126,19 @@ func TestParseCleanRules_SeparatorsAndWhitespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseCleanRules() error = %v", err)
 	}
+
 	if len(rules) != 3 {
 		t.Fatalf("rule count = %d, want 3", len(rules))
 	}
+
 	if !rules[0].include || rules[0].pattern != "dist/**" {
 		t.Fatalf("rules[0] = %#v", rules[0])
 	}
+
 	if rules[1].include || rules[1].pattern != "dist/keep/**" {
 		t.Fatalf("rules[1] = %#v", rules[1])
 	}
+
 	if !rules[2].include || rules[2].pattern != "logs/*.log" {
 		t.Fatalf("rules[2] = %#v", rules[2])
 	}
@@ -185,6 +197,7 @@ func TestCleanRoot_PatternVariations(t *testing.T) {
 			"!somedir/keep/**",
 		}, "\n"),
 	}
+
 	if err := CleanRoot(cfg); err != nil {
 		t.Fatalf("CleanRoot() error = %v", err)
 	}
@@ -204,6 +217,7 @@ func TestPromptYesNo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("promptYesNo(y) error = %v", err)
 	}
+
 	if !ok {
 		t.Fatalf("promptYesNo(y) = false, want true")
 	}
@@ -211,6 +225,7 @@ func TestPromptYesNo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("promptYesNo(no) error = %v", err)
 	}
+
 	if ok {
 		t.Fatalf("promptYesNo(no) = true, want false")
 	}
@@ -235,6 +250,7 @@ func TestSummarizePlan_MinimizesDirectoriesAndCountsSize(t *testing.T) {
 	if files != 3 || dirs != 2 || bytes <= 0 {
 		t.Fatalf("unexpected summary files=%d dirs=%d bytes=%d", files, dirs, bytes)
 	}
+
 	if len(display) != 2 || display[0] != "dist/*" || display[1] != "top.txt" {
 		t.Fatalf("display = %#v, want [dist/* top.txt]", display)
 	}
@@ -248,6 +264,7 @@ func TestRuleMatches_CaseInsensitiveMode(t *testing.T) {
 	if !ruleMatches("Dist/File.TXT", false, cleanRule{include: true, pattern: "dist/file.txt"}) {
 		t.Fatalf("expected case-insensitive file match")
 	}
+
 	if !ruleMatches("Backend/Internal", true, cleanRule{include: true, pattern: "backend/internal/"}) {
 		t.Fatalf("expected case-insensitive dir pattern match")
 	}
@@ -257,12 +274,15 @@ func TestRuleMatches_DirectoryPatternMatchesDescendants(t *testing.T) {
 	if !ruleMatches("somedir", true, cleanRule{include: true, pattern: "somedir/"}) {
 		t.Fatalf("dir should match itself")
 	}
+
 	if !ruleMatches("somedir/file.txt", false, cleanRule{include: true, pattern: "somedir/"}) {
 		t.Fatalf("dir pattern should match descendant file")
 	}
+
 	if !ruleMatches("adirectory/another/somedir/file.txt", false, cleanRule{include: true, pattern: "somedir/"}) {
 		t.Fatalf("dir pattern should match same-name directory at any depth")
 	}
+
 	if ruleMatches("other/file.txt", false, cleanRule{include: true, pattern: "somedir/"}) {
 		t.Fatalf("dir pattern should not match unrelated path")
 	}
@@ -270,9 +290,11 @@ func TestRuleMatches_DirectoryPatternMatchesDescendants(t *testing.T) {
 
 func TestRuleMatches_AnchoredDirectoryPattern(t *testing.T) {
 	r := cleanRule{include: true, anchored: true, pattern: "somedir/"}
+
 	if !ruleMatches("somedir/file.txt", false, r) {
 		t.Fatalf("anchored dir pattern should match root-level directory")
 	}
+
 	if ruleMatches("nested/somedir/file.txt", false, r) {
 		t.Fatalf("anchored dir pattern should not match nested directory")
 	}
@@ -290,6 +312,7 @@ func TestCleanRoot_LoadedRulesText_ParsedAndApplied(t *testing.T) {
 		"!dist/keep.txt",
 	}, "\n")
 	cfg := project.Config{RootDir: root, CleanYes: true, CleanRules: rulesText}
+
 	if err := CleanRoot(cfg); err != nil {
 		t.Fatalf("CleanRoot() error = %v", err)
 	}
@@ -299,12 +322,15 @@ func TestCleanRoot_LoadedRulesText_ParsedAndApplied(t *testing.T) {
 
 func TestRuleMatches_DoubleStarPrefixSuffixPattern(t *testing.T) {
 	r := cleanRule{include: true, pattern: "cache/**/tmp"}
+
 	if !ruleMatches("cache/a/tmp", true, r) {
 		t.Fatalf("pattern should match one-segment nested path")
 	}
+
 	if !ruleMatches("cache/a/b/c/tmp", true, r) {
 		t.Fatalf("pattern should match multi-segment nested path")
 	}
+
 	if ruleMatches("other/cache/a/tmp", true, r) {
 		t.Fatalf("pattern should not match non-prefixed path")
 	}
@@ -319,15 +345,19 @@ func TestParseCleanRules_AnchoredAndEscapedSpacePatterns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseCleanRules() error = %v", err)
 	}
+
 	if len(rules) != 3 {
 		t.Fatalf("rule count = %d, want 3", len(rules))
 	}
+
 	if !rules[0].anchored || rules[0].pattern != "dist/**" {
 		t.Fatalf("rules[0] = %#v", rules[0])
 	}
+
 	if !rules[1].anchored || rules[1].include {
 		t.Fatalf("rules[1] = %#v", rules[1])
 	}
+
 	if rules[2].pattern != `dir\ with\ space/**` {
 		t.Fatalf("rules[2].pattern = %q", rules[2].pattern)
 	}
@@ -351,6 +381,7 @@ func TestCleanRoot_SymlinkTargetOutsideRootNotDeleted(t *testing.T) {
 		CleanYes:   true,
 		CleanRules: "outside-link",
 	}
+
 	if err := CleanRoot(cfg); err != nil {
 		t.Fatalf("CleanRoot() error = %v", err)
 	}

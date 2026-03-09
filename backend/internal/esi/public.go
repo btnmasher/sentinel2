@@ -38,6 +38,12 @@ type CorporationProfile struct {
 	HomeStationID int
 }
 
+type SovereigntyMapSystem struct {
+	SystemID      int
+	AllianceID    int
+	CorporationID int
+}
+
 func NewESIPublicClient(userAgent string) *ESIPublicClient {
 	return &ESIPublicClient{
 		client:   goesi.NewPublicESIClient(userAgent),
@@ -218,6 +224,7 @@ func (c *ESIPublicClient) ResolveOrganizationNames(ctx context.Context, names []
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("esi public client not configured")
 	}
+
 	if len(names) == 0 {
 		return esi.NewUniverseIdsPost(), nil
 	}
@@ -243,6 +250,7 @@ func (c *ESIPublicClient) ResolveOrganizationNames(ctx context.Context, names []
 	if retryErr != nil {
 		return nil, retryErr
 	}
+
 	if result == nil {
 		return esi.NewUniverseIdsPost(), nil
 	}
@@ -277,6 +285,47 @@ func (c *ESIPublicClient) SovereigntyCampaigns(ctx context.Context) ([]esi.Sover
 	return campaigns, nil
 }
 
+func (c *ESIPublicClient) SovereigntyMap(ctx context.Context) ([]SovereigntyMapSystem, error) {
+	if err := c.ensureConfigured(); err != nil {
+		return nil, err
+	}
+	var entries []esi.SovereigntyMapGetInner
+	httpResp, fetchErr := executeWithPublicRetry(
+		c,
+		ctx,
+		publicRequestOptions{
+			operation: "esi sovereignty map fetch failed",
+		},
+		func(ctx context.Context) (*http.Response, error) {
+			response, httpResp, respErr := c.client.SovereigntyAPI.GetSovereigntyMap(ctx).Execute()
+			defer closeResponseBody(httpResp)
+			if respErr != nil {
+				return httpResp, respErr
+			}
+			entries = response
+			return httpResp, nil
+		},
+	)
+	defer closeResponseBody(httpResp)
+	if fetchErr != nil {
+		return nil, fetchErr
+	}
+	out := make([]SovereigntyMapSystem, 0, len(entries))
+	for _, entry := range entries {
+		row := SovereigntyMapSystem{
+			SystemID: int(entry.GetSystemId()),
+		}
+		if allianceID, ok := entry.GetAllianceIdOk(); ok {
+			row.AllianceID = int(*allianceID)
+		}
+		if corporationID, ok := entry.GetCorporationIdOk(); ok {
+			row.CorporationID = int(*corporationID)
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
 func (c *ESIPublicClient) ThrottleDelay() time.Duration {
 	if c == nil || c.throttle == nil {
 		return 0
@@ -294,6 +343,7 @@ func (c *ESIPublicClient) fetchName(
 	if c == nil || c.client == nil {
 		return "", fmt.Errorf("esi public client not configured")
 	}
+
 	if name, ok := c.getCached(key); ok {
 		return name, nil
 	}

@@ -87,6 +87,7 @@ func TestCharacterAffiliationNotModifiedUsesCachedAffiliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first CharacterAffiliation() error = %v", err)
 	}
+
 	if corpID != wantCorp || allianceID != wantAlli {
 		t.Fatalf("first CharacterAffiliation() = (%d, %d), want (%d, %d)", corpID, allianceID, wantCorp, wantAlli)
 	}
@@ -95,9 +96,11 @@ func TestCharacterAffiliationNotModifiedUsesCachedAffiliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second CharacterAffiliation() error = %v", err)
 	}
+
 	if corpID != wantCorp || allianceID != wantAlli {
 		t.Fatalf("second CharacterAffiliation() = (%d, %d), want (%d, %d)", corpID, allianceID, wantCorp, wantAlli)
 	}
+
 	if got := requests.Load(); got != 2 {
 		t.Fatalf("request count = %d, want 2", got)
 	}

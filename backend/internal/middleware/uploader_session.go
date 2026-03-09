@@ -28,6 +28,7 @@ func validatedUploaderSession(c *core.RequestEvent, service *intel.IntelService)
 	if authRecord == nil || authRecord.Collection() == nil || authRecord.Collection().Name != store.CollectionUploaderSessions {
 		return "", "", ErrUnauthorized
 	}
+
 	if authRecord.GetString("scope") != intel.UploaderSessionScopeConfig {
 		return "", "", ErrForbidden
 	}
@@ -43,6 +44,7 @@ func validatedUploaderSession(c *core.RequestEvent, service *intel.IntelService)
 	if uploaderTokenID == "" || service == nil {
 		return "", "", ErrUnauthorized
 	}
+
 	if _, tokenErr := service.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
 		return "", "", ErrUnauthorized
 	}

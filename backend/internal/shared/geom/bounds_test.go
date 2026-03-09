@@ -13,9 +13,11 @@ func TestBoundsAdd(t *testing.T) {
 	if !b.Seen {
 		t.Fatal("expected Seen=true")
 	}
+
 	if b.Count != 3 {
 		t.Fatalf("expected Count=3, got %d", b.Count)
 	}
+
 	if b.MinX != -3 || b.MinY != 7 || b.MaxX != 8 || b.MaxY != 20 {
 		t.Fatalf("unexpected bounds: %+v", b)
 	}

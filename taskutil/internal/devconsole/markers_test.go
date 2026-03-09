@@ -13,9 +13,11 @@ func TestMarkerToken_RoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("parseMarkerToken() ok = false")
 	}
+
 	if ts != "12:34:56" || color != "10" {
 		t.Fatalf("unexpected marker fields ts=%q color=%q", ts, color)
 	}
+
 	if msg != "backend started / pid=42" {
 		t.Fatalf("message = %q, want %q", msg, "backend started / pid=42")
 	}
@@ -32,12 +34,15 @@ func TestRenderDisplayLineForWidth_Reflows(t *testing.T) {
 	if wideWidth < 60 || wideWidth > 61 {
 		t.Fatalf("wide marker width = %d, want ~60", wideWidth)
 	}
+
 	if narrowWidth < 30 || narrowWidth > 31 {
 		t.Fatalf("narrow marker width = %d, want ~30", narrowWidth)
 	}
+
 	if wide == narrow {
 		t.Fatalf("expected marker rendering to differ by width")
 	}
+
 	if !strings.Contains(ansi.Strip(wide), "12:34:56  backend started") {
 		t.Fatalf("wide marker missing expected body: %q", ansi.Strip(wide))
 	}

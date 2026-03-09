@@ -53,9 +53,11 @@ func renderHelpRows(items []helpItem, width int) []string {
 		cur = seg
 		curW = segW
 	}
+
 	if cur != "" {
 		rows = append(rows, cur)
 	}
+
 	if len(rows) == 0 {
 		return []string{""}
 	}
@@ -75,6 +77,7 @@ func (m viewState) headerLines(width int) []string {
 	}
 	status := colorizeStatusLine(statusValue)
 	lines := []string{title}
+
 	if m.showHelp {
 		lines = append(lines, renderHelpRows([]helpItem{
 			{keys: "q", desc: "quit"},

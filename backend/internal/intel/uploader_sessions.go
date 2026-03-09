@@ -62,6 +62,7 @@ func (s *IntelService) RefreshUploaderRealtimeSession(session *core.Record) (Upl
 	if session == nil || session.Collection() == nil || session.Collection().Name != store.CollectionUploaderSessions {
 		return UploaderRealtimeSession{}, ErrExpiredOrRevoked
 	}
+
 	if session.GetString("scope") != UploaderSessionScopeConfig {
 		return UploaderRealtimeSession{}, ErrExpiredOrRevoked
 	}
@@ -70,6 +71,7 @@ func (s *IntelService) RefreshUploaderRealtimeSession(session *core.Record) (Upl
 	if uploaderTokenID == "" {
 		return UploaderRealtimeSession{}, ErrExpiredOrRevoked
 	}
+
 	if _, tokenErr := s.ValidateUploaderTokenID(uploaderTokenID); tokenErr != nil {
 		return UploaderRealtimeSession{}, tokenErr
 	}

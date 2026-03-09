@@ -72,11 +72,13 @@ func (e *ESIDirectClient) CharacterLocation(ctx context.Context, characterID, to
 	if httpResp != nil && httpResp.Body != nil {
 		defer func() { _ = httpResp.Body.Close() }()
 	}
+
 	if respErr != nil {
 		status := httpStatus(httpResp)
 		e.logRequest("characters.location", "GET", characterID, status, start, respErr)
 		return CharacterLocation{}, respErr
 	}
+
 	if httpResp != nil {
 		e.throttle.update(httpResp)
 	}
@@ -139,10 +141,12 @@ func (e *ESIDirectClient) CharacterNotifications(ctx context.Context, characterI
 	if httpResp != nil {
 		etag = strings.TrimSpace(httpResp.Header.Get("ETag"))
 	}
+
 	if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
 		e.logRequest("characters.notifications", "GET", strconv.Itoa(characterID), http.StatusNotModified, start, nil)
 		return []CharacterNotification{}, etag, true, nil
 	}
+
 	if respErr != nil {
 		if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
 			e.logRequest("characters.notifications", "GET", strconv.Itoa(characterID), httpStatus(httpResp), start, ErrRateLimited)
@@ -172,6 +176,7 @@ func (e *ESIDirectClient) SearchOrganizations(ctx context.Context, characterID i
 	if !ok {
 		return []int{}, []int{}, nil
 	}
+
 	if len(categories) == 0 {
 		categories = []string{"corporation", "alliance"}
 	}
@@ -210,6 +215,71 @@ func (e *ESIDirectClient) SearchOrganizations(ctx context.Context, characterID i
 	return sharedcollections.ToIntSlice(payload.GetCorporation()), sharedcollections.ToIntSlice(payload.GetAlliance()), nil
 }
 
+func (e *ESIDirectClient) SearchStructures(ctx context.Context, characterID int, accessToken, query string, strict bool) ([]int64, error) {
+	if e == nil {
+		return []int64{}, fmt.Errorf("esi direct client not configured")
+	}
+	q, token, ok := normalizeCharacterStructureSearchInput(characterID, accessToken, query)
+	if !ok {
+		return []int64{}, nil
+	}
+	client := e.authenticatedClient(token)
+	e.limiter.wait(ctx)
+	e.throttle.wait(ctx)
+	response, httpResp, respErr := client.SearchAPI.
+		GetCharactersCharacterIdSearch(ctx, int64(characterID)).
+		Categories([]string{"structure"}).
+		Search(q).
+		Strict(strict).
+		Execute()
+	defer closeResponseBody(httpResp)
+	if httpResp != nil {
+		e.throttle.update(httpResp)
+	}
+
+	if respErr != nil {
+		return []int64{}, fmt.Errorf("esi structure search failed (character_id=%d): %w", characterID, respErr)
+	}
+
+	if response == nil {
+		return []int64{}, nil
+	}
+	return response.GetStructure(), nil
+}
+
+func (e *ESIDirectClient) UniverseStructure(ctx context.Context, characterID int, accessToken string, structureID int64) (UniverseStructure, error) {
+	if e == nil {
+		return UniverseStructure{}, fmt.Errorf("esi direct client not configured")
+	}
+	token := strings.TrimSpace(accessToken)
+	if token == "" {
+		return UniverseStructure{}, fmt.Errorf("missing access token")
+	}
+	client := e.authenticatedClient(token)
+	e.limiter.wait(ctx)
+	e.throttle.wait(ctx)
+	response, httpResp, respErr := client.UniverseAPI.GetUniverseStructuresStructureId(ctx, structureID).Execute()
+	defer closeResponseBody(httpResp)
+	if httpResp != nil {
+		e.throttle.update(httpResp)
+	}
+
+	if respErr != nil {
+		return UniverseStructure{}, fmt.Errorf("esi universe structure failed (character_id=%d structure_id=%d): %w", characterID, structureID, respErr)
+	}
+
+	if response == nil {
+		return UniverseStructure{}, fmt.Errorf("esi universe structure response empty (structure_id=%d)", structureID)
+	}
+	return UniverseStructure{
+		ID:       structureID,
+		Name:     response.GetName(),
+		OwnerID:  int(response.GetOwnerId()),
+		SystemID: int(response.GetSolarSystemId()),
+		TypeID:   int(response.GetTypeId()),
+	}, nil
+}
+
 func (e *ESIDirectClient) SetAutopilotWaypoint(ctx context.Context, req AutopilotRequest, token string) error {
 	start := time.Now()
 	client := e.authenticatedClient(token)
@@ -225,6 +295,7 @@ func (e *ESIDirectClient) SetAutopilotWaypoint(ctx context.Context, req Autopilo
 	if httpResp != nil && httpResp.Body != nil {
 		defer func() { _ = httpResp.Body.Close() }()
 	}
+
 	if httpResp != nil {
 		e.throttle.update(httpResp)
 	}
@@ -283,12 +354,14 @@ func (e *ESIDirectClient) characterAffiliationAttempt(
 		e.logRequest(operation, "GET", charID, 0, start, err)
 		return 0, 0, true, err
 	}
+
 	if httpResp.StatusCode >= http.StatusBadRequest {
 		err = fmt.Errorf("character fetch failed: %s", httpResp.Status)
 		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
 		retryable = httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= http.StatusInternalServerError
 		return 0, 0, retryable, err
 	}
+
 	if resp == nil {
 		err = fmt.Errorf("character fetch failed: empty response")
 		e.logRequest(operation, "GET", charID, httpResp.StatusCode, start, err)
@@ -327,6 +400,7 @@ func (e *ESIDirectClient) logRequest(endpoint, method, characterID string, statu
 		"status":      status,
 		"duration_ms": time.Since(start).Milliseconds(),
 	}
+
 	if characterID != "" {
 		fields["character_id"] = characterID
 	}

@@ -72,6 +72,7 @@ func NewHandler(service *timerssvc.Service) *Handler {
 
 func (h *Handler) Create(c *core.RequestEvent) error {
 	payload := createPayload{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -85,6 +86,7 @@ func (h *Handler) Create(c *core.RequestEvent) error {
 	if err != nil && !errors.Is(err, timerssvc.ErrTimerNotFound) {
 		return router.NewInternalServerError("Failed to load timer.", logging.Fields{"error": err.Error()})
 	}
+
 	if existing != nil {
 		return router.NewApiError(http.StatusConflict, "Timer already exists.", logging.Fields{"id": webhookID})
 	}
@@ -106,6 +108,7 @@ func (h *Handler) Patch(c *core.RequestEvent) error {
 	}
 
 	payload := patchPayload{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -137,6 +140,7 @@ func (h *Handler) Delete(c *core.RequestEvent) error {
 	if webhookID == "" {
 		return router.NewBadRequestError("Missing id.", nil)
 	}
+
 	if err := h.Service.DeleteByWebhookID(webhookID); err != nil {
 		return router.NewInternalServerError("Failed to delete timer.", logging.Fields{"error": err.Error()})
 	}
@@ -147,6 +151,7 @@ func (h *Handler) create(webhookID string, payload *createPayload) (*core.Record
 	if payload == nil {
 		return nil, router.NewBadRequestError("Invalid payload.", nil)
 	}
+
 	if payload.SystemID == nil || *payload.SystemID <= 0 {
 		return nil, router.NewBadRequestError("Missing system_id.", nil)
 	}

@@ -25,6 +25,7 @@ func absoluteURL(c *core.RequestEvent) string {
 			scheme = proto
 		}
 	}
+
 	if req.TLS != nil {
 		scheme = "https"
 	}

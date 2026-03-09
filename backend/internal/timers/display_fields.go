@@ -37,9 +37,11 @@ func (s *Service) hydrateSystemFields(record *core.Record) {
 	if systemRecord == nil {
 		return
 	}
+
 	if strings.TrimSpace(record.GetString("system_name")) == "" {
 		record.Set("system_name", strings.TrimSpace(systemRecord.GetString("name")))
 	}
+
 	if record.GetInt("region_id") <= 0 {
 		record.Set("region_id", systemRecord.GetInt("region_id"))
 	}
@@ -102,9 +104,11 @@ func (s *Service) hydrateCorporationDisplay(record *core.Record) {
 	if !ok {
 		return
 	}
+
 	if needsName {
 		record.Set("owner_corporation_name", name)
 	}
+
 	if needsTicker && ticker != "" {
 		record.Set("owner_corporation_ticker", ticker)
 	}
@@ -121,9 +125,11 @@ func (s *Service) hydrateAllianceDisplay(record *core.Record) {
 	if !ok {
 		return
 	}
+
 	if needsName {
 		record.Set("owner_alliance_name", name)
 	}
+
 	if needsTicker && ticker != "" {
 		record.Set("owner_alliance_ticker", ticker)
 	}

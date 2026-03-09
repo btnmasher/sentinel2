@@ -32,6 +32,7 @@ func ResolveRootDir(cfg Config) (string, error) {
 		}
 		dir = parent
 	}
+
 	if exe, exeErr := executableFn(); exeErr == nil {
 		exeDir := filepath.Dir(exe)
 		candidate := filepath.Clean(filepath.Join(exeDir, "..", ".."))

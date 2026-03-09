@@ -16,9 +16,11 @@ func PrepareEmbed(cfg project.Config) error {
 	if statErr != nil || !info.IsDir() {
 		return fmt.Errorf("frontend/dist is missing. run 'task build:frontend' first")
 	}
+
 	if remErr := os.RemoveAll(destDir); remErr != nil {
 		return remErr
 	}
+
 	if mkErr := os.MkdirAll(destDir, 0o755); mkErr != nil {
 		return mkErr
 	}

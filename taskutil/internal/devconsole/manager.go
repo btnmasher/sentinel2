@@ -171,9 +171,11 @@ func (pm *processManager) startAll() error {
 			return err
 		}
 	}
+
 	if err := pm.start("frontend"); err != nil {
 		return err
 	}
+
 	if err := pm.start("backend"); err != nil {
 		pm.stop("frontend")
 		return err
@@ -237,6 +239,7 @@ func (pm *processManager) start(name string) error {
 		_ = logFile.Close()
 		return err
 	}
+
 	if procCmd.ProcessID() == 0 {
 		proc.cmd = nil
 		proc.cancel = nil
@@ -267,6 +270,7 @@ func (pm *processManager) startWithPipes(name string, cmd *exec.Cmd, logFile *os
 	if err != nil {
 		return err
 	}
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -320,12 +324,15 @@ func (pm *processManager) stop(name string) {
 		time.Sleep(250 * time.Millisecond)
 		_ = cmd.Kill()
 	}
+
 	if cancel != nil {
 		cancel()
 	}
+
 	if ptyFile != nil {
 		_ = ptyFile.Close()
 	}
+
 	if logFile != nil {
 		_ = logFile.Close()
 	}
@@ -368,6 +375,7 @@ func (pm *processManager) runAuxCommand(proc string, cmd *exec.Cmd) error {
 	if err != nil {
 		return err
 	}
+
 	if err := cmd.Start(); err != nil {
 		return err
 	}

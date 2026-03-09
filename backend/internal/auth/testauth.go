@@ -122,6 +122,7 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 	}
 
 	claims := idTokenClaims{}
+
 	if claimsErr := idToken.Claims(&claims); claimsErr != nil {
 		logging.WithRequest(p.App, c).
 			WithErr(claimsErr).
@@ -169,6 +170,7 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 		refreshExpiresAt, _ := types.ParseDateTime(time.Unix(refreshExpiry, 0))
 		user.Set("oauth_refresh_expires_at", refreshExpiresAt)
 	}
+
 	if saveErr := p.App.Save(user); saveErr != nil {
 		logging.WithRequest(p.App, c).
 			WithErr(saveErr).
@@ -235,6 +237,7 @@ func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (Auth
 		refreshExpiresAt, _ := types.ParseDateTime(time.Unix(refreshExpiry, 0))
 		user.Set("oauth_refresh_expires_at", refreshExpiresAt)
 	}
+
 	if saveErr := p.App.Save(user); saveErr != nil {
 		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
@@ -278,6 +281,7 @@ func (p *TestAuthProvider) resolveAccessLevel(c *core.RequestEvent, currentLevel
 		}
 		return currentLevel
 	}
+
 	if staffOK {
 		return "staff"
 	}
@@ -338,6 +342,7 @@ func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
 			Warn("oidc user create failed")
 		return nil, saveErr
 	}
+
 	if p.Intel != nil {
 		if _, tokenErr := p.Intel.GetOrCreateUploaderToken(record.Id); tokenErr != nil {
 			p.logger.

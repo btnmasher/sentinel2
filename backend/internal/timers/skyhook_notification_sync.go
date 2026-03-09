@@ -65,6 +65,7 @@ type notificationSelection struct {
 
 func (s *Service) SyncSkyhookNotifications(ctx context.Context, sinceWindow time.Duration) (SkyhookNotificationSyncResult, error) {
 	result := SkyhookNotificationSyncResult{}
+
 	if s == nil || s.App == nil || s.ESI == nil {
 		return result, ErrESIClientNotConfigured
 	}
@@ -185,9 +186,11 @@ func (s *Service) fetchCharacterNotifications(
 	if err != nil {
 		return nil, errors.Is(err, esipkg.ErrRateLimited), err
 	}
+
 	if nextETag != "" && nextETag != priorETag {
 		_ = s.saveSyncMeta(etagKey, nextETag)
 	}
+
 	if notModified {
 		return []esipkg.CharacterNotification{}, false, nil
 	}
@@ -202,6 +205,7 @@ func (s *Service) processNotification(
 	cutoff time.Time,
 ) (skyhookSyncDelta, error) {
 	delta := skyhookSyncDelta{seen: 1}
+
 	if notification.Timestamp.UTC().Before(cutoff) {
 		return delta, nil
 	}
@@ -225,6 +229,7 @@ func (s *Service) applySkyhookUnderAttackNotification(delta *skyhookSyncDelta, n
 	if err != nil {
 		return err
 	}
+
 	if created {
 		delta.intelCreated++
 	}
@@ -236,6 +241,7 @@ func (s *Service) applySkyhookLostShieldsNotification(delta *skyhookSyncDelta, n
 	if err != nil {
 		return err
 	}
+
 	if created {
 		delta.intelCreated++
 	}
@@ -252,9 +258,11 @@ func (s *Service) applyOrbitalReinforcedNotification(
 	if err != nil {
 		return err
 	}
+
 	if created {
 		delta.timersCreated++
 	}
+
 	if updated {
 		delta.timersUpdated++
 	}
@@ -274,6 +282,7 @@ func (s *Service) eligibleNotificationSources() ([]notificationSource, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(allowedAllianceIDs) == 0 {
 		return []notificationSource{}, nil
 	}
@@ -335,6 +344,7 @@ func roundRobinSelection(items []notificationSource, cursor, count int) (selecte
 	if len(items) == 0 || count <= 0 {
 		return []notificationSource{}, 0
 	}
+
 	if cursor < 0 {
 		cursor = 0
 	}
@@ -441,11 +451,13 @@ func (s *Service) createSkyhookIntelReport(notification esipkg.CharacterNotifica
 	if err != nil {
 		return false, err
 	}
+
 	if len(existing) > 0 {
 		return false, nil
 	}
 
 	payload := goesi.SkyhookUnderAttack{}
+
 	if parseErr := yaml.Unmarshal([]byte(notification.Text), &payload); parseErr != nil {
 		return false, parseErr
 	}
@@ -480,6 +492,7 @@ func (s *Service) createSkyhookIntelReport(notification esipkg.CharacterNotifica
 		},
 		Regions: []int{system.GetInt("region_id")},
 	}
+
 	if createErr := intel.NewIntelService(s.App).CreateReport(&intelReport); createErr != nil {
 		return false, createErr
 	}
@@ -504,11 +517,13 @@ func (s *Service) createSkyhookLostShieldsIntelReport(notification esipkg.Charac
 	if err != nil {
 		return false, err
 	}
+
 	if len(existing) > 0 {
 		return false, nil
 	}
 
 	payload := goesi.SkyhookLostShields{}
+
 	if parseErr := yaml.Unmarshal([]byte(notification.Text), &payload); parseErr != nil {
 		return false, parseErr
 	}
@@ -540,6 +555,7 @@ func (s *Service) createSkyhookLostShieldsIntelReport(notification esipkg.Charac
 		},
 		Regions: []int{system.GetInt("region_id")},
 	}
+
 	if createErr := intel.NewIntelService(s.App).CreateReport(&intelReport); createErr != nil {
 		return false, createErr
 	}
@@ -548,6 +564,7 @@ func (s *Service) createSkyhookLostShieldsIntelReport(notification esipkg.Charac
 
 func (s *Service) upsertOrbitalReinforcementTimer(ctx context.Context, timersCollection *core.Collection, notification esipkg.CharacterNotification) (created, updated bool, err error) {
 	payload := goesi.OrbitalReinforced{}
+
 	if parseErr := yaml.Unmarshal([]byte(notification.Text), &payload); parseErr != nil {
 		return false, false, parseErr
 	}
@@ -611,6 +628,7 @@ func (s *Service) upsertSkyhookNotificationTimer(
 		RawText:                strings.TrimSpace(notification.Text),
 		ReplacementAction:      "alliance_replacement",
 	}
+
 	if typeID > 0 {
 		input.Notes = fmt.Sprintf("%s | structure_type_id=%d", input.Notes, typeID)
 	}
@@ -634,15 +652,18 @@ func (s *Service) upsertSkyhookNotificationTimer(
 	if err != nil {
 		return false, false, err
 	}
+
 	if len(existing) == 0 {
 		if saveErr := s.App.Save(desired); saveErr != nil {
 			return false, false, saveErr
 		}
 		return true, false, nil
 	}
+
 	if !applyTimerRecordFromSource(existing[0], desired) {
 		return false, false, nil
 	}
+
 	if saveErr := s.App.Save(existing[0]); saveErr != nil {
 		return false, false, saveErr
 	}
@@ -667,12 +688,15 @@ func (s *Service) resolveSkyhookOwnerFromNotification(
 		CorporationID: fallbackCorpID,
 		AllianceID:    fallbackAllianceID,
 	}
+
 	if s == nil || s.App == nil {
 		return out
 	}
+
 	if out.CorporationID > 0 {
 		out.CorporationName, out.CorporationTicker = s.resolveCorporationNameTicker(ctx, out.CorporationID)
 	}
+
 	if out.AllianceID > 0 {
 		out.AllianceName, out.AllianceTicker = s.resolveAllianceNameTicker(ctx, out.AllianceID, sovWatchlist{})
 	}
@@ -698,6 +722,7 @@ func (s *Service) resolveCorporationNameTicker(ctx context.Context, corporationI
 	if err != nil || !ok {
 		return "", ""
 	}
+
 	if allianceID > 0 {
 		allianceName, allianceTicker := s.resolveAllianceNameTicker(ctx, allianceID, sovWatchlist{})
 		if allianceName != "" {

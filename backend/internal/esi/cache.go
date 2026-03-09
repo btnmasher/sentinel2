@@ -21,6 +21,7 @@ func (c *ESIPublicClient) getCached(key string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+
 	if time.Now().After(entry.expires) {
 		c.mu.Lock()
 		delete(c.cache, key)
@@ -58,6 +59,7 @@ func (c *ESIPublicClient) setCached(key, value string, resp *http.Response) {
 		etag:    "",
 		expires: time.Now().Add(c.cacheTTL),
 	}
+
 	if resp != nil {
 		entry.etag = resp.Header.Get("ETag")
 		entry.expires = coalesceExpiry(parseESIExpires(resp), c.cacheTTL)

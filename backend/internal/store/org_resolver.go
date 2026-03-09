@@ -13,6 +13,7 @@ func GetOrFetchAlliance(ctx context.Context, app *pocketbase.PocketBase, publicE
 	if allianceID <= 0 {
 		return "", "", false, nil
 	}
+
 	if app != nil {
 		if IsOrgClosed(app, CollectionAlliances, allianceID) {
 			return "", "", false, esi.ErrOrganizationInactive
@@ -21,6 +22,7 @@ func GetOrFetchAlliance(ctx context.Context, app *pocketbase.PocketBase, publicE
 			return name, ticker, true, nil
 		}
 	}
+
 	if publicESI == nil {
 		return "", "", false, nil
 	}
@@ -28,6 +30,7 @@ func GetOrFetchAlliance(ctx context.Context, app *pocketbase.PocketBase, publicE
 	if err != nil || strings.TrimSpace(name) == "" {
 		return "", "", false, err
 	}
+
 	if app != nil {
 		_ = UpsertOrg(app, CollectionAlliances, allianceID, name, ticker)
 	}
@@ -38,30 +41,41 @@ func GetOrFetchCorporation(ctx context.Context, app *pocketbase.PocketBase, publ
 	if corporationID <= 0 {
 		return "", "", 0, false, nil
 	}
-	if app != nil {
-		entry, exists := GetOrgCacheEntries(app, CollectionCorporations, []int{corporationID})[corporationID]
-		if exists {
-			if entry.Closed {
-				return "", "", 0, false, esi.ErrOrganizationInactive
-			}
-			if strings.TrimSpace(entry.Name) != "" {
-				return entry.Name, entry.Ticker, entry.AllianceID, true, nil
-			}
-		}
+
+	if app == nil {
+		return fetchCorporationFromESI(ctx, nil, publicESI, corporationID)
 	}
+
+	entry, exists := GetOrgCacheEntries(app, CollectionCorporations, []int{corporationID})[corporationID]
+	if exists && entry.Closed {
+		return "", "", 0, false, esi.ErrOrganizationInactive
+	}
+
+	if exists && strings.TrimSpace(entry.Name) != "" {
+		return entry.Name, entry.Ticker, entry.AllianceID, true, nil
+	}
+
+	return fetchCorporationFromESI(ctx, app, publicESI, corporationID)
+}
+
+func fetchCorporationFromESI(ctx context.Context, app *pocketbase.PocketBase, publicESI *esi.ESIPublicClient, corporationID int) (name, ticker string, allianceID int, ok bool, err error) {
 	if publicESI == nil {
 		return "", "", 0, false, nil
 	}
+
 	profile, profileErr := publicESI.CorporationProfile(ctx, corporationID)
 	if profileErr != nil {
 		return "", "", 0, false, profileErr
 	}
+
 	name = profile.Name
 	ticker = profile.Ticker
 	allianceID = profile.AllianceID
+
 	if strings.TrimSpace(name) == "" {
 		return "", "", 0, false, nil
 	}
+
 	if app != nil {
 		_ = UpsertCorporationProfile(
 			app,
@@ -72,6 +86,7 @@ func GetOrFetchCorporation(ctx context.Context, app *pocketbase.PocketBase, publ
 			profile.MemberCount,
 		)
 	}
+
 	return name, ticker, allianceID, true, nil
 }
 

@@ -83,6 +83,7 @@ func buildJobRunsScanFilter(startAt, endAt *time.Time, excludeKinds []string, in
 	if startAt != nil {
 		dateFilter = queryhelpers.AppendAnd(dateFilter, fmt.Sprintf("started_at >= %q", startAt.UTC().Format(time.RFC3339)))
 	}
+
 	if endAt != nil {
 		dateFilter = queryhelpers.AppendAnd(dateFilter, fmt.Sprintf("started_at <= %q", endAt.UTC().Format(time.RFC3339)))
 	}
@@ -107,9 +108,11 @@ func buildJobRunsScanFilter(startAt, endAt *time.Time, excludeKinds []string, in
 	if dateFilter != "" {
 		scanFilter = queryhelpers.AppendAnd(scanFilter, dateFilter)
 	}
+
 	if kindFilter != "" {
 		scanFilter = queryhelpers.AppendAnd(scanFilter, kindFilter)
 	}
+
 	if !includeHidden {
 		scanFilter = queryhelpers.AppendAnd(scanFilter, `(hidden = false || hidden = null)`)
 	}
@@ -154,12 +157,18 @@ func paginateJobIDs(jobIDOrder []string, offset, limit int) ([]string, bool) {
 	return pagination.SliceByOffsetLimit(jobIDOrder, offset, limit)
 }
 
-func buildJobIDFilter(jobIDs []string, includeHidden bool) (string, dbx.Params) {
-	filter, params := queryhelpers.BuildOrEqualsFilter("job_id", jobIDs)
-	if !includeHidden {
-		filter = queryhelpers.AppendAnd(filter, `(hidden = false || hidden = null)`)
+func buildJobIDExprs(jobIDs []string, includeHidden bool) []dbx.Expression {
+	exprs := []dbx.Expression{
+		queryhelpers.InExp("job_id", jobIDs),
 	}
-	return filter, params
+
+	if !includeHidden {
+		exprs = append(exprs, dbx.Or(
+			dbx.HashExp{"hidden": false},
+			dbx.HashExp{"hidden": nil},
+		))
+	}
+	return exprs
 }
 
 func groupJobRunRecords(records []*core.Record, jobIDs []string) (map[string]*jobRunGroup, []jobRunGroup, time.Time) {
@@ -188,12 +197,60 @@ func mapRecordToJobRunEntry(record *core.Record, groups map[string]*jobRunGroup)
 		return jobRunEntry{}, false
 	}
 	entry := toJobRunEntry(record)
-	if entry.Step == "" {
-		group.Parent = entry
+	if isParentEntry(&entry) {
+		if shouldReplaceParent(&group.Parent, &entry) {
+			group.Parent = entry
+		}
 	} else {
 		group.Steps = append(group.Steps, entry)
 	}
 	return entry, true
+}
+
+func isParentEntry(entry *jobRunEntry) bool {
+	if entry == nil {
+		return false
+	}
+	step := strings.TrimSpace(entry.Step)
+	if step == "" {
+		return true
+	}
+
+	if entry.Kind == "map_data_step" {
+		return true
+	}
+	return entry.Kind == "character_refresh" && strings.HasPrefix(step, "user:")
+}
+
+func shouldReplaceParent(current, candidate *jobRunEntry) bool {
+	if candidate == nil {
+		return false
+	}
+
+	if current == nil || current.JobID == "" {
+		return true
+	}
+	// Prefer rows carrying completion message text.
+	currentHasMessage := strings.TrimSpace(current.Message) != ""
+	candidateHasMessage := strings.TrimSpace(candidate.Message) != ""
+	if candidateHasMessage != currentHasMessage {
+		return candidateHasMessage
+	}
+	// Otherwise keep the most recently started entry.
+	currentStarted := parseRFC3339OrZero(current.StartedAt)
+	candidateStarted := parseRFC3339OrZero(candidate.StartedAt)
+	return candidateStarted.After(currentStarted)
+}
+
+func parseRFC3339OrZero(raw string) time.Time {
+	if strings.TrimSpace(raw) == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 func updateLatestFromEntryTimes(latest *time.Time, startedAt, completedAt string) {
@@ -263,7 +320,7 @@ func computeJobRunsETag(excludeKinds, jobIDs []string, groups map[string]*jobRun
 		_, _ = etagHasher.Write([]byte{0})
 		_, _ = etagHasher.Write([]byte(parent.CompletedAt))
 		_, _ = etagHasher.Write([]byte{0})
-		_, _ = etagHasher.Write([]byte(parent.Error))
+		_, _ = etagHasher.Write([]byte(parent.Message))
 		_, _ = etagHasher.Write([]byte{0})
 		for stepIndex := range group.Steps {
 			step := &group.Steps[stepIndex]
@@ -279,7 +336,7 @@ func computeJobRunsETag(excludeKinds, jobIDs []string, groups map[string]*jobRun
 			_, _ = etagHasher.Write([]byte{0})
 			_, _ = etagHasher.Write([]byte(step.CompletedAt))
 			_, _ = etagHasher.Write([]byte{0})
-			_, _ = etagHasher.Write([]byte(step.Error))
+			_, _ = etagHasher.Write([]byte(step.Message))
 			_, _ = etagHasher.Write([]byte{0})
 		}
 	}
@@ -323,6 +380,7 @@ func toJobRunEntry(record *core.Record) jobRunEntry {
 	if !started.IsZero() {
 		startedAt = started.Time().Format(time.RFC3339)
 	}
+
 	if !completed.IsZero() {
 		completedAt = completed.Time().Format(time.RFC3339)
 	}
@@ -332,6 +390,7 @@ func toJobRunEntry(record *core.Record) jobRunEntry {
 		JobID:            record.GetString("job_id"),
 		Kind:             record.GetString("kind"),
 		Step:             record.GetString("step"),
+		Message:          record.GetString("message"),
 		Trigger:          record.GetString("trigger"),
 		Status:           record.GetString("status"),
 		ActorID:          record.GetString("actor_id"),
@@ -339,7 +398,6 @@ func toJobRunEntry(record *core.Record) jobRunEntry {
 		StartedAt:        startedAt,
 		CompletedAt:      completedAt,
 		DurationMs:       durationMs,
-		Error:            record.GetString("error"),
 	}
 }
 
@@ -348,6 +406,7 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 	if optionsErr != nil {
 		return optionsErr
 	}
+
 	if rangeErr := validateJobRunsRange(opts.startAt, opts.endAt); rangeErr != nil {
 		return rangeErr
 	}
@@ -367,8 +426,8 @@ func (h *Handler) JobRuns(c *core.RequestEvent) error {
 			"hasMore": hasMore,
 		})
 	}
-	filter, params := buildJobIDFilter(jobIDs, opts.includeHidden)
-	records, recordsErr := h.App.FindRecordsByFilter("job_runs", filter, "", 0, 0, params)
+	exprs := buildJobIDExprs(jobIDs, opts.includeHidden)
+	records, recordsErr := h.App.FindAllRecords("job_runs", exprs...)
 	if recordsErr != nil {
 		return router.NewInternalServerError("Failed to load jobs.", logging.Fields{
 			"error": recordsErr,

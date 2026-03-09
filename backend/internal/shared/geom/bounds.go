@@ -15,6 +15,7 @@ func (b *Bounds[T]) Add(x, y T) {
 	if b == nil {
 		return
 	}
+
 	if !b.Seen {
 		b.MinX = x
 		b.MinY = y

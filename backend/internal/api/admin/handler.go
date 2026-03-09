@@ -19,21 +19,23 @@ import (
 	"sentinel2/internal/cleanup"
 	"sentinel2/internal/intel"
 	"sentinel2/internal/jobs"
+	"sentinel2/internal/jumpbridges"
 	"sentinel2/internal/logging"
 	"sentinel2/internal/middleware"
 	"sentinel2/internal/store"
 	"sentinel2/internal/timers"
 )
 
-func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, timerSvc *timers.Service, auditSvc *audit.Service) *Handler {
+func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, timerSvc *timers.Service, jumpbridgeSvc *jumpbridges.JumpbridgeService, auditSvc *audit.Service) *Handler {
 	return &Handler{
-		App:       app,
-		Refresher: refresher,
-		Provider:  provider,
-		Cleanup:   cleanupSvc,
-		Intel:     intelSvc,
-		Timers:    timerSvc,
-		Audit:     auditSvc,
+		App:         app,
+		Refresher:   refresher,
+		Provider:    provider,
+		Cleanup:     cleanupSvc,
+		Intel:       intelSvc,
+		Timers:      timerSvc,
+		Jumpbridges: jumpbridgeSvc,
+		Audit:       auditSvc,
 	}
 }
 
@@ -87,6 +89,7 @@ func (h *Handler) CancelJob(c *core.RequestEvent) error {
 
 func (h *Handler) CreateSiteAnnouncement(c *core.RequestEvent) error {
 	payload := siteAnnouncementPayload{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"error": bindErr.Error(),
@@ -99,9 +102,11 @@ func (h *Handler) CreateSiteAnnouncement(c *core.RequestEvent) error {
 			"variant": payload.Variant,
 		})
 	}
+
 	if errors.Is(payloadErr, errAnnouncementMessageRequired) {
 		return router.NewBadRequestError("Announcement message is required.", nil)
 	}
+
 	if payloadErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": payloadErr.Error()})
 	}
@@ -157,6 +162,7 @@ func (h *Handler) ArchiveLatestSiteAnnouncement(c *core.RequestEvent) error {
 			"error": err.Error(),
 		})
 	}
+
 	if latest == nil {
 		return c.JSON(http.StatusOK, map[string]any{"archived": false})
 	}
@@ -218,6 +224,7 @@ func (h *Handler) findLatestActiveAnnouncement() (*core.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -252,11 +259,13 @@ func (h *Handler) applyAccountTarget(event *audit.Event, userID, fallbackMainNam
 			mainName = strings.TrimSpace(main.GetString("eve_character_name"))
 		}
 	}
+
 	if mainName == "" {
 		if user, err := h.App.FindRecordById(store.CollectionUsers, userID); err == nil {
 			mainName = strings.TrimSpace(user.GetString("eve_character_name"))
 		}
 	}
+
 	if mainName == "" {
 		mainName = "Unknown"
 	}
@@ -291,11 +300,13 @@ func (h *Handler) UserDetails(c *core.RequestEvent) error {
 		AccessLevel: record.GetString("access_level"),
 		Characters:  []characterResponse{},
 	}
+
 	if h.Intel != nil {
 		if tokenValid, tokenErr := h.Intel.HasValidUploaderToken(record.Id); tokenErr == nil {
 			response.UploaderTokenValid = tokenValid
 		}
 	}
+
 	if revokedAt := record.GetDateTime("session_revoked_at").Time(); !revokedAt.IsZero() {
 		response.SessionRevokedAt = revokedAt.Format(time.RFC3339)
 	}
@@ -324,6 +335,7 @@ func (h *Handler) SetMainCharacter(c *core.RequestEvent) error {
 	payload := struct {
 		CharacterRecordID string `json:"character_record_id"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil || payload.CharacterRecordID == "" {
 		return router.NewBadRequestError("Missing character record id.", logging.Fields{
 			"user_id": userID,
@@ -378,17 +390,20 @@ func (h *Handler) SetAccessLevel(c *core.RequestEvent) error {
 	payload := struct {
 		AccessLevel string `json:"access_level"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"user_id": userID,
 		})
 	}
+
 	if payload.AccessLevel != "" && payload.AccessLevel != "staff" && payload.AccessLevel != "admin" {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"user_id":      userID,
 			"access_level": payload.AccessLevel,
 		})
 	}
+
 	if payload.AccessLevel == "admin" {
 		return middleware.ErrForbidden
 	}
@@ -399,6 +414,7 @@ func (h *Handler) SetAccessLevel(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
+
 	if user.GetString("access_level") == "admin" {
 		return middleware.ErrForbidden
 	}
@@ -442,6 +458,7 @@ func (h *Handler) RevokeSessions(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
+
 	if h.Intel != nil {
 		if revokeErr := h.Intel.RevokeUploaderSessionsForUser(userID); revokeErr != nil {
 			return router.NewInternalServerError("Failed to revoke uploader sessions.", logging.Fields{
@@ -487,6 +504,7 @@ func (h *Handler) RegenerateUploaderToken(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
+
 	if h.Intel == nil {
 		return router.NewInternalServerError("Intel service unavailable.", logging.Fields{
 			"user_id": userID,
@@ -572,6 +590,7 @@ func (h *Handler) RemoveCharacter(c *core.RequestEvent) error {
 			"character_id": record.GetInt("eve_character_id"),
 		})
 	}
+
 	if userID != "" && isMain {
 		_ = h.deleteUserIfNoCharacters(userID)
 	}
@@ -593,6 +612,7 @@ func (h *Handler) MoveCharacter(c *core.RequestEvent) error {
 	payload := struct {
 		TargetUserID string `json:"target_user_id"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil || payload.TargetUserID == "" {
 		return router.NewBadRequestError("Missing target user.", logging.Fields{
 			"character_record_id": id,
@@ -634,6 +654,7 @@ func (h *Handler) MoveCharacter(c *core.RequestEvent) error {
 		// Post-move cleanup: delete the source account only if it's now empty.
 		_ = h.deleteUserIfNoCharacters(sourceUserID)
 	}
+
 	if sourceUserID != "" {
 		h.logAction(
 			c,
@@ -664,6 +685,7 @@ func (h *Handler) MergeUsers(c *core.RequestEvent) error {
 	payload := struct {
 		TargetUserID string `json:"target_user_id"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil || payload.TargetUserID == "" {
 		return router.NewBadRequestError("Missing target user.", logging.Fields{
 			"source_user_id": sourceUserID,
@@ -776,6 +798,7 @@ func (h *Handler) deleteUserIfNoCharacters(userID string) error {
 	if recordsErr != nil {
 		return recordsErr
 	}
+
 	if len(records) == 0 {
 		return h.App.Delete(user)
 	}
@@ -850,6 +873,7 @@ func newCharacter(record *core.Record, corpName, allianceName map[int]string) ch
 	if corpName != nil {
 		corp = corpName[corpID]
 	}
+
 	if allianceName != nil {
 		alliance = allianceName[allianceID]
 	}

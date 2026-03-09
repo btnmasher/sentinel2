@@ -110,6 +110,7 @@ func (s *Service) Refresh(ctx context.Context) (bool, error) {
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
+
 	if lastModified != "" {
 		req.Header.Set("If-Modified-Since", lastModified)
 	}
@@ -142,6 +143,7 @@ func (s *Service) extractLinks(payload githubLatestRelease) DownloadLinks {
 		ReleasePageURL: strings.TrimSpace(payload.HTMLURL),
 		UpdatedAt:      time.Now().Unix(),
 	}
+
 	if links.ReleasePageURL == "" {
 		links.ReleasePageURL = s.latestReleasePageURL()
 	}
@@ -178,9 +180,11 @@ func (s *Service) applyCacheHeaders(resp *http.Response, touchUpdatedAt bool) {
 	if etag := strings.TrimSpace(resp.Header.Get("ETag")); etag != "" {
 		s.state.etag = etag
 	}
+
 	if lastModified := strings.TrimSpace(resp.Header.Get("Last-Modified")); lastModified != "" {
 		s.state.lastModified = lastModified
 	}
+
 	if touchUpdatedAt {
 		s.state.links.UpdatedAt = time.Now().Unix()
 	}

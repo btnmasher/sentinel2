@@ -39,6 +39,7 @@ func newESIRateLimiter(rps, burst int) *esiRateLimiter {
 	if rps <= 0 {
 		return &esiRateLimiter{limiter: nil}
 	}
+
 	if burst <= 0 {
 		burst = rps
 	}
@@ -174,6 +175,7 @@ func parseRemainingThrottle(resp *http.Response, now time.Time) (throttle time.T
 	case value <= remainingLowThreshold:
 		delay = remainingLowDelay
 	}
+
 	if delay <= 0 {
 		return time.Time{}, ""
 	}
@@ -184,9 +186,11 @@ func mergeThrottle(current time.Time, reasons []string, candidate time.Time, rea
 	if candidate.IsZero() {
 		return current, reasons
 	}
+
 	if candidate.After(current) {
 		current = candidate
 	}
+
 	if reason != "" {
 		reasons = append(reasons, reason)
 	}
@@ -202,6 +206,7 @@ func logThrottleUpdate(logger *logging.Logger, throttle time.Time, reasons []str
 		"throttle_until": throttle.UTC().Format(time.RFC3339),
 		"delay_ms":       delayMs,
 	}
+
 	if len(reasons) > 0 {
 		fields["reason"] = reasons
 	}

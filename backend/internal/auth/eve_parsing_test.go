@@ -15,12 +15,15 @@ func TestParseEVEToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseEVEToken() error = %v", err)
 	}
+
 	if claims.Sub != "CHARACTER:EVE:123" {
 		t.Fatalf("claims.Sub = %q", claims.Sub)
 	}
+
 	if claims.Name != "Tester" {
 		t.Fatalf("claims.Name = %q", claims.Name)
 	}
+
 	if len(claims.Scp) != 2 || claims.Scp[0] != "a" || claims.Scp[1] != "b" {
 		t.Fatalf("claims.Scp = %#v", claims.Scp)
 	}
@@ -50,6 +53,7 @@ func TestParseCharacterID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseCharacterID() error = %v", err)
 	}
+
 	if id != 987654 {
 		t.Fatalf("parseCharacterID() = %d, want %d", id, 987654)
 	}

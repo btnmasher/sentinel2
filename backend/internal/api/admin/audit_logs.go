@@ -74,6 +74,7 @@ func (h *Handler) buildAuditLogFilter(opts *auditLogOptions) (string, dbx.Params
 	}
 	filter := ""
 	params := dbx.Params{}
+
 	if opts.userID != "" {
 		clauses := []string{
 			"target_user_id = {:user}",
@@ -111,14 +112,17 @@ func (h *Handler) buildAuditLogFilter(opts *auditLogOptions) (string, dbx.Params
 		}
 		filter = "(" + strings.Join(clauses, " || ") + ")"
 	}
+
 	if opts.action != "" {
 		filter = queryhelpers.AppendAnd(filter, "action ~ {:action}")
 		params["action"] = "%" + opts.action + "%"
 	}
+
 	if opts.actor != "" {
 		filter = queryhelpers.AppendAnd(filter, "actor_display_name ~ {:actor}")
 		params["actor"] = "%" + opts.actor + "%"
 	}
+
 	if opts.summary != "" {
 		filter = queryhelpers.AppendAnd(filter, "summary ~ {:summary}")
 		params["summary"] = "%" + opts.summary + "%"

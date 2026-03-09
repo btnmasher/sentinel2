@@ -5,15 +5,23 @@ type ShadowedScrollAreaProps = {
   children: ReactNode;
   className?: string;
   scrollClassName?: string;
+  onStateChange?: (state: ScrollShadowState) => void;
+};
+
+export type ScrollShadowState = {
+  hasOverflow: boolean;
+  scrolled: boolean;
+  atBottom: boolean;
 };
 
 export default function ShadowedScrollArea({
   children,
   className,
   scrollClassName,
+  onStateChange,
 }: ShadowedScrollAreaProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollState, setScrollState] = useState({
+  const [scrollState, setScrollState] = useState<ScrollShadowState>({
     hasOverflow: false,
     scrolled: false,
     atBottom: true,
@@ -26,7 +34,15 @@ export default function ShadowedScrollArea({
     const hasOverflow = scrollHeight > clientHeight + 1;
     const scrolled = scrollTop > 1;
     const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
-    setScrollState({ hasOverflow, scrolled, atBottom });
+    const nextState = { hasOverflow, scrolled, atBottom };
+    setScrollState((previousState) =>
+      previousState.hasOverflow === nextState.hasOverflow &&
+      previousState.scrolled === nextState.scrolled &&
+      previousState.atBottom === nextState.atBottom
+        ? previousState
+        : nextState,
+    );
+    onStateChange?.(nextState);
   };
 
   useEffect(() => {
@@ -37,7 +53,7 @@ export default function ShadowedScrollArea({
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", onResize);
     };
-  }, [children]);
+  }, [children, onStateChange]);
 
   return (
     <div

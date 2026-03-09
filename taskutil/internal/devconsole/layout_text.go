@@ -63,6 +63,7 @@ func (m *viewState) restoreViewportAnchor(prevFrontendBottom, prevBackendBottom 
 	} else {
 		m.frontend.SetYOffset(max(prevFrontendBottom-m.frontend.Height+1, 0))
 	}
+
 	if m.followBackend {
 		m.backend.GotoBottom()
 	} else {
@@ -133,6 +134,7 @@ func withScrollbar(content string, width int, height int, percent float64) strin
 	if len(lines) < height {
 		lines = append(lines, make([]string, height-len(lines))...)
 	}
+
 	if len(lines) > height {
 		lines = lines[:height]
 	}
@@ -175,6 +177,7 @@ func fitHeight(s string, height int) string {
 	if len(lines) < height {
 		lines = append(lines, make([]string, height-len(lines))...)
 	}
+
 	if len(lines) > height {
 		lines = lines[:height]
 	}
@@ -192,9 +195,11 @@ func exitSummary(err error, code int) string {
 	if err == nil {
 		return "exit=0"
 	}
+
 	if errors.Is(err, context.Canceled) {
 		return "canceled"
 	}
+
 	if code >= 0 {
 		return fmt.Sprintf("exit=%d", code)
 	}

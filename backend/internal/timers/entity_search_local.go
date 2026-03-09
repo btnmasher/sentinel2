@@ -10,6 +10,7 @@ func (s *Service) SearchEntities(ctx context.Context, query string, limit int, r
 	if q == "" {
 		return []EntitySearchItem{}, nil
 	}
+
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}
@@ -27,6 +28,7 @@ func (s *Service) SearchEntitiesWithScope(
 	if q == "" {
 		return []EntitySearchItem{}, nil
 	}
+
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}

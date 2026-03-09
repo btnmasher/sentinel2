@@ -33,22 +33,22 @@ type Config struct {
 
 	AuthBackend string `long:"auth-backend" env:"AUTH_BACKEND" default:"eve"`
 
-	OIDCIssuer        string `long:"oidc-issuer" env:"OIDC_ISSUER" default:"https://sso.pleaseignore.com/auth/realms/auth-ng"`
-	OIDCAuthURL       string `long:"oidc-auth-url" env:"OIDC_AUTH_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/auth"`
-	OIDCTokenURL      string `long:"oidc-token-url" env:"OIDC_TOKEN_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/token"`
-	OIDCUserInfoURL   string `long:"oidc-userinfo-url" env:"OIDC_USERINFO_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/userinfo"`
-	OIDCClientID      string `long:"oidc-client-id" env:"OIDC_CLIENT_ID"`
-	OIDCClientSecret  string `long:"oidc-client-secret" env:"OIDC_CLIENT_SECRET"`
-	OIDCScopes        string `long:"oidc-scopes" env:"OIDC_SCOPES" default:"openid"`
-	OIDCRequiredRoles string `long:"oidc-required-roles" env:"OIDC_REQUIRED_ROLES" default:"urn:sso:alliance:test-alliance,urn:sso:allies"`
-	OIDCStaffRoles    string `long:"oidc-staff-roles" env:"OIDC_STAFF_ROLES" default:"urn:sso:staff_user"`
-	OIDCPortalURL     string `long:"oidc-portal-url" env:"OIDC_PORTAL_URL" default:"https://auth.pleaseignore.com"`
+	OIDCIssuer        string   `long:"oidc-issuer" env:"OIDC_ISSUER" default:"https://sso.pleaseignore.com/auth/realms/auth-ng"`
+	OIDCAuthURL       string   `long:"oidc-auth-url" env:"OIDC_AUTH_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/auth"`
+	OIDCTokenURL      string   `long:"oidc-token-url" env:"OIDC_TOKEN_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/token"`
+	OIDCUserInfoURL   string   `long:"oidc-userinfo-url" env:"OIDC_USERINFO_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/userinfo"`
+	OIDCClientID      string   `long:"oidc-client-id" env:"OIDC_CLIENT_ID"`
+	OIDCClientSecret  string   `long:"oidc-client-secret" env:"OIDC_CLIENT_SECRET"`
+	OIDCScopes        []string `long:"oidc-scopes" env:"OIDC_SCOPES" env-delim:"," default:"openid"`
+	OIDCRequiredRoles []string `long:"oidc-required-roles" env:"OIDC_REQUIRED_ROLES" env-delim:"," default:"urn:sso:alliance:test-alliance" default:"urn:sso:allies"`
+	OIDCStaffRoles    []string `long:"oidc-staff-roles" env:"OIDC_STAFF_ROLES" env-delim:"," default:"urn:sso:staff_user"`
+	OIDCPortalURL     string   `long:"oidc-portal-url" env:"OIDC_PORTAL_URL" default:"https://auth.pleaseignore.com"`
 
-	EVEClientID     string `long:"eve-client-id" env:"EVE_CLIENT_ID"`
-	EVEClientSecret string `long:"eve-client-secret" env:"EVE_CLIENT_SECRET"`
-	EVEAuthURL      string `long:"eve-auth-url" env:"EVE_AUTH_URL" default:"https://login.eveonline.com/v2/oauth/authorize"`
-	EVETokenURL     string `long:"eve-token-url" env:"EVE_TOKEN_URL" default:"https://login.eveonline.com/v2/oauth/token"`
-	EVEScopes       string `long:"eve-scopes" env:"EVE_SCOPES" default:"esi-search.search_structures.v1 esi-location.read_online.v1 esi-location.read_location.v1 esi-ui.write_waypoint.v1 esi-characters.read_notifications.v1"`
+	EVEClientID     string   `long:"eve-client-id" env:"EVE_CLIENT_ID"`
+	EVEClientSecret string   `long:"eve-client-secret" env:"EVE_CLIENT_SECRET"`
+	EVEAuthURL      string   `long:"eve-auth-url" env:"EVE_AUTH_URL" default:"https://login.eveonline.com/v2/oauth/authorize"`
+	EVETokenURL     string   `long:"eve-token-url" env:"EVE_TOKEN_URL" default:"https://login.eveonline.com/v2/oauth/token"`
+	EVEScopes       []string `long:"eve-scopes" env:"EVE_SCOPES" env-delim:"," default:"esi-search.search_structures.v1" default:"esi-universe.read_structures.v1" default:"esi-location.read_online.v1" default:"esi-location.read_location.v1" default:"esi-ui.write_waypoint.v1" default:"esi-characters.read_notifications.v1"`
 
 	ESIDirectBaseURL string `long:"esi-direct-base-url" env:"ESI_DIRECT_BASE_URL" default:"https://esi.evetech.net/latest/"`
 	ESIProxyBaseURL  string `long:"esi-proxy-base-url" env:"ESI_PROXY_BASE_URL" default:"https://auth.pleaseignore.com/esi/"`
@@ -123,15 +123,15 @@ func normalizeTimerSource(value string) string {
 }
 
 func (c *Config) RequiredRoles() []string {
-	return splitCSV(c.OIDCRequiredRoles)
+	return normalizeScopes(c.OIDCRequiredRoles)
 }
 
 func (c *Config) StaffRoles() []string {
-	return splitCSV(c.OIDCStaffRoles)
+	return normalizeScopes(c.OIDCStaffRoles)
 }
 
 func (c *Config) EVEScopeList() []string {
-	return splitScopes(c.EVEScopes)
+	return normalizeScopes(c.EVEScopes)
 }
 
 func (c *Config) DefaultRegions() []string {
@@ -145,28 +145,16 @@ func (c *Config) TimersReadOnly() bool {
 	return c.TimerSource == TimerSourceWebhook
 }
 
-func splitCSV(value string) []string {
-	if value == "" {
+func normalizeScopes(value []string) []string {
+	if len(value) == 0 {
 		return nil
 	}
-	out := []string{}
-	current := ""
-	for _, r := range value {
-		if r == ',' {
-			if current != "" {
-				out = append(out, current)
-				current = ""
-				continue
-			}
-			current = ""
-			continue
+	out := make([]string, 0, len(value))
+	for _, entry := range value {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed != "" {
+			out = append(out, trimmed)
 		}
-		if r != ' ' {
-			current += string(r)
-		}
-	}
-	if current != "" {
-		out = append(out, current)
 	}
 	return out
 }
@@ -188,6 +176,7 @@ func splitScopes(value string) []string {
 		}
 		current += string(r)
 	}
+
 	if current != "" {
 		out = append(out, current)
 	}

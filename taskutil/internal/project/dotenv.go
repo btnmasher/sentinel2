@@ -17,6 +17,7 @@ func LoadDotEnv(rootDir string) error {
 			existing = append(existing, p)
 		}
 	}
+
 	if len(existing) == 0 {
 		return nil
 	}

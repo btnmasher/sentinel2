@@ -52,6 +52,7 @@ export type JobRun = {
   job_id: string;
   kind: string;
   step?: string;
+  message?: string;
   trigger?: string;
   actor_id?: string;
   actor_display_name?: string;
@@ -59,7 +60,6 @@ export type JobRun = {
   started_at?: string;
   completed_at?: string;
   duration_ms?: number;
-  error?: string;
 };
 
 export type JobRunGroup = {

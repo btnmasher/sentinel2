@@ -56,6 +56,7 @@ func (s *Service) RemoveExpired(collection string) (int, error) {
 				Debug("cleanup delete failed")
 		}
 	}
+
 	if failed > 0 {
 		s.logger.
 			WithFields(logging.Fields{
@@ -96,6 +97,7 @@ func (s *Service) RemoveRevokedUploaderTokens() (int, error) {
 				Debug("cleanup delete failed")
 		}
 	}
+
 	if failed > 0 {
 		s.logger.
 			WithFields(logging.Fields{
@@ -139,6 +141,7 @@ func (s *Service) RemoveOldIntelReports(maxAge time.Duration) (int, error) {
 				Debug("cleanup delete failed")
 		}
 	}
+
 	if failed > 0 {
 		s.logger.
 			WithFields(logging.Fields{
@@ -185,6 +188,7 @@ func (s *Service) RemoveOldTimers(maxAge time.Duration) (int, error) {
 				Debug("cleanup delete failed")
 		}
 	}
+
 	if failed > 0 {
 		s.logger.
 			WithFields(logging.Fields{

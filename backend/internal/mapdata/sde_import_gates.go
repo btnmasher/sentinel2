@@ -80,6 +80,7 @@ func (s *SDEImporter) importGateRow(row map[string]any) (gateImportResult, error
 		s.logger.WithFields(logging.Fields{"from_system": gate.fromID, "to_system": gate.toID}).Warn("gate missing system id")
 		return gateImportMissingID, nil
 	}
+
 	if s.gateExists(gate.fromID, gate.toID) {
 		return gateImportSkippedExisting, nil
 	}

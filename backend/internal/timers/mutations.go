@@ -14,6 +14,7 @@ func (s *Service) Create(input *CreateInput, auth *core.Record) (*core.Record, e
 	if input == nil {
 		return nil, ErrMissingCreateInput
 	}
+
 	if err := validateCreateInput(input); err != nil {
 		return nil, err
 	}
@@ -44,6 +45,7 @@ func (s *Service) Update(id string, input *UpdateInput) (*core.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err := validateUpdateInput(record, input); err != nil {
 		return nil, err
 	}
@@ -90,6 +92,7 @@ func (s *Service) Delete(id string) (*core.Record, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if err := s.App.Delete(record); err != nil {
 		return nil, err
 	}
@@ -152,9 +155,11 @@ func (s *Service) applyCreateInput(record, system *core.Record, input *CreateInp
 	if input.SkyhookFullnessPct != nil {
 		record.Set("skyhook_fullness_pct", *input.SkyhookFullnessPct)
 	}
+
 	if input.AttackersScorePct != nil {
 		record.Set("attackers_score_pct", *input.AttackersScorePct)
 	}
+
 	if input.DefenderScorePct != nil {
 		record.Set("defender_score_pct", *input.DefenderScorePct)
 	}

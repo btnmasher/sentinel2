@@ -50,12 +50,14 @@ func parseText(raw string) (ParseResult, error) {
 		eventToken = strings.ToLower(strings.TrimSpace(groups[namedGroupEvent]))
 		dateToken = strings.TrimSpace(groups[namedGroupDate])
 	}
+
 	if dateToken == "" {
 		matches := dateRe.FindStringSubmatch(text)
 		if len(matches) > 1 {
 			dateToken = strings.TrimSpace(matches[1])
 		}
 	}
+
 	if dateToken == "" {
 		return ParseResult{}, ErrNoTimerDateFound
 	}
@@ -82,9 +84,11 @@ func extractTitleAndSystem(text string) (title, system string) {
 	if groups := matchNamed(structureWithParenSystemRe, text); groups != nil {
 		return normalizeToken(groups[namedGroupTitle]), normalizeToken(groups[namedGroupSystem])
 	}
+
 	if groups := matchNamed(systemDashStructureRe, text); groups != nil {
 		return normalizeToken(groups[namedGroupTitle]), normalizeToken(groups[namedGroupSystem])
 	}
+
 	if match := systemTokenRe.FindStringSubmatch(text); len(match) > 1 {
 		system = normalizeToken(match[1])
 	}

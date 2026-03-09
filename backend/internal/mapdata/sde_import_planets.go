@@ -47,6 +47,7 @@ func (s *SDEImporter) processPlanetRow(ctx context.Context, i int, row map[strin
 		stats.skippedMissingID++
 		return nil
 	}
+
 	if planet.systemID == 0 {
 		stats.skippedMissingSystem++
 		return nil

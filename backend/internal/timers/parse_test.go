@@ -9,12 +9,15 @@ func TestParseText_Reinforced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got.System != "3T7-M" {
 		t.Fatalf("expected system 3T7-M, got %q", got.System)
 	}
+
 	if got.TimerKind != "reinforcement" {
 		t.Fatalf("expected reinforcement, got %q", got.TimerKind)
 	}
+
 	if got.ExpiresAt.Format("2006-01-02T15:04:05Z") != "2069-04-20T13:37:00Z" {
 		t.Fatalf("unexpected parsed time %s", got.ExpiresAt.Format("2006-01-02T15:04:05Z"))
 	}
@@ -27,12 +30,15 @@ func TestParseText_Anchoring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got.System != "3T7-M" {
 		t.Fatalf("expected system 3T7-M, got %q", got.System)
 	}
+
 	if got.TimerKind != "anchoring" {
 		t.Fatalf("expected anchoring, got %q", got.TimerKind)
 	}
+
 	if got.Title == "" {
 		t.Fatal("expected title to be extracted")
 	}
@@ -45,6 +51,7 @@ func TestParseText_CustomDateOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got.TimerKind != "skyhook" {
 		t.Fatalf("expected skyhook kind, got %q", got.TimerKind)
 	}

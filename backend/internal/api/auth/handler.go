@@ -44,6 +44,7 @@ func (h *AuthHandler) Callback(c *core.RequestEvent) error {
 			Debug("auth callback failed")
 		return callbackErr
 	}
+
 	if result.IsLink {
 		linkedCharacter := findCharacterByUserAndEVEID(h.Auth.App, result.UserID, result.CharacterID)
 		linkSummary := "Linked character"

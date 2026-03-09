@@ -91,6 +91,11 @@ export default function JobActionsSection() {
       default:
         return [
           {
+            label: "Update jumpbridges",
+            path: "/admin/jobs/jumpbridges/update",
+            confirm: "Run jumpbridge validation and discovery update now?",
+          },
+          {
             label: "Run full update",
             path: "/admin/map-data/run",
             confirm: "Start the full map data update?",

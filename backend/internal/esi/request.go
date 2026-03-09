@@ -112,6 +112,15 @@ func normalizeCharacterSearchInput(characterID int, accessToken, query string) (
 	return queryOut, tokenOut, true
 }
 
+func normalizeCharacterStructureSearchInput(characterID int, accessToken, query string) (queryOut, tokenOut string, ok bool) {
+	queryOut = query
+	tokenOut = strings.TrimSpace(accessToken)
+	if characterID <= 0 || strings.TrimSpace(queryOut) == "" || tokenOut == "" {
+		return "", "", false
+	}
+	return queryOut, tokenOut, true
+}
+
 func shouldRetryPublicESI(resp *http.Response, err error) bool {
 	if err == nil {
 		return false
@@ -120,9 +129,11 @@ func shouldRetryPublicESI(resp *http.Response, err error) bool {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
 	}
+
 	if resp == nil {
 		return true
 	}
+
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return true
 	}

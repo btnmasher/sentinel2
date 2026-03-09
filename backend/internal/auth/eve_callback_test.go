@@ -53,6 +53,23 @@ func (s stubESIClient) SearchOrganizations(ctx context.Context, characterID int,
 	return nil, nil, nil
 }
 
+func (s stubESIClient) SearchStructures(ctx context.Context, characterID int, accessToken, query string, strict bool) ([]int64, error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = query
+	_ = strict
+	return nil, nil
+}
+
+func (s stubESIClient) UniverseStructure(ctx context.Context, characterID int, accessToken string, structureID int64) (esi.UniverseStructure, error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = structureID
+	return esi.UniverseStructure{}, nil
+}
+
 func (s stubESIClient) SetAutopilotWaypoint(ctx context.Context, req esi.AutopilotRequest, accessToken string) error {
 	_ = ctx
 	_ = req
@@ -80,6 +97,7 @@ func TestResolveCharacterAffiliationForCallbackFallsBackToExistingCharacter(t *t
 	if err != nil {
 		t.Fatalf("resolveCharacterAffiliationForCallback() error = %v", err)
 	}
+
 	if corpID != 9001 || allianceID != 8002 {
 		t.Fatalf("resolveCharacterAffiliationForCallback() = (%d,%d), want (9001,8002)", corpID, allianceID)
 	}

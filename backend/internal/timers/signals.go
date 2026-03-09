@@ -3,7 +3,6 @@ package timers
 import (
 	"database/sql"
 	"errors"
-	stdmaps "maps"
 	"math"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ func (s *Service) ActiveSignalsByRegions(regionIDs []int, now time.Time) (map[in
 	if err != nil {
 		return nil, err
 	}
+
 	if !exists {
 		return map[int]Signal{}, nil
 	}
@@ -70,9 +70,11 @@ func updateSignalFromRecord(current *Signal, record *core.Record, systemID int, 
 		current.MoonName = record.GetString("moon_name")
 		current.SkyhookFullnessPct = parseSkyhookFullness(record)
 	}
+
 	if severityRank(record.GetString("severity")) > severityRank(current.Severity) {
 		current.Severity = record.GetString("severity")
 	}
+
 	if len(current.Timers) < signalPreviewLimit {
 		current.Timers = append(current.Timers, SignalTimerPreview{
 			Title:              record.GetString("title"),
@@ -118,20 +120,21 @@ func (s *Service) ActiveSystemsByStructureTypes(structureTypes []string, now tim
 	if err != nil {
 		return nil, err
 	}
+
 	if !exists || len(structureTypes) == 0 {
 		return map[int]struct{}{}, nil
 	}
 
-	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilterWithPrefix("structure_type", "st", structureTypes)
-	filter := "status = {:status}"
-	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
-	params := dbx.Params{
-		"status": timerStatusActive,
+	exprs := []dbx.Expression{
+		dbx.HashExp{"status": timerStatusActive},
+		queryhelpers.InExp("structure_type", structureTypes),
 	}
-	stdmaps.Copy(params, structureParams)
-	filter = appendRegionFilter(filter, params, regionIDs)
 
-	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionTimers, filter, "", 0, 0, params)
+	if len(regionIDs) > 0 {
+		exprs = append(exprs, queryhelpers.InExp("region_id", regionIDs))
+	}
+
+	records, recordsErr := s.App.FindAllRecords(store.CollectionTimers, exprs...)
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
@@ -152,22 +155,18 @@ func (s *Service) ActiveSystemsByStructureTypesInSystems(structureTypes []string
 	if err != nil {
 		return nil, err
 	}
+
 	if !exists || len(structureTypes) == 0 || len(systemIDs) == 0 {
 		return map[int]struct{}{}, nil
 	}
 
-	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilterWithPrefix("structure_type", "st", structureTypes)
-	systemFilter, systemParams := queryhelpers.BuildOrEqualsFilterWithPrefix("system_id", "sys", systemIDs)
-	filter := "status = {:status}"
-	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
-	filter = queryhelpers.AppendAnd(filter, "("+systemFilter+")")
-	params := dbx.Params{
-		"status": timerStatusActive,
+	exprs := []dbx.Expression{
+		dbx.HashExp{"status": timerStatusActive},
+		queryhelpers.InExp("structure_type", structureTypes),
+		queryhelpers.InExp("system_id", systemIDs),
 	}
-	stdmaps.Copy(params, structureParams)
-	stdmaps.Copy(params, systemParams)
 
-	records, recordsErr := s.App.FindRecordsByFilter(store.CollectionTimers, filter, "", 0, 0, params)
+	records, recordsErr := s.App.FindAllRecords(store.CollectionTimers, exprs...)
 	if recordsErr != nil {
 		return nil, recordsErr
 	}

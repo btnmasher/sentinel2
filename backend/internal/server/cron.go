@@ -19,6 +19,7 @@ func registerCrons(app *pocketbase.PocketBase, cfg *config.Config, deps *depende
 	registerCleanupCron(app, deps)
 	if cfg.AuthBackend == "eve" {
 		registerCharacterRefreshCron(app, deps)
+		registerJumpbridgeUpdateCron(app, deps)
 		if cfg.TimersEnabled && cfg.TimerSource == config.TimerSourceStandalone {
 			registerSkyhookSyncCron(app, deps)
 		}
@@ -40,7 +41,7 @@ func registerCleanupCron(app *pocketbase.PocketBase, deps *dependencies) {
 }
 
 func registerCharacterRefreshCron(app *pocketbase.PocketBase, deps *dependencies) {
-	app.Cron().MustAdd("character_refresh", "0 * * * *", func() {
+	app.Cron().MustAdd("character_refresh", "*/15 * * * *", func() {
 		runCharacterRefreshJob(app, deps)
 	})
 }

@@ -100,6 +100,7 @@ func (a sovWatchlist) standingForAttackers(participants []esi.SovereigntyCampaig
 		bestStanding = standing
 		bestAllianceID = allianceID
 	}
+
 	if bestPriority < 0 {
 		return "", 0, false
 	}
@@ -125,6 +126,7 @@ func attackerStandingPriority(standing string) int {
 
 func (s *Service) SyncSovereigntyCampaignTimers(ctx context.Context) (SovCampaignSyncResult, error) {
 	result := SovCampaignSyncResult{}
+
 	if s == nil || s.App == nil || s.PublicESI == nil {
 		return result, ErrESIPublicClientNotConfigured
 	}
@@ -155,6 +157,7 @@ func (s *Service) SyncSovereigntyCampaignTimers(ctx context.Context) (SovCampaig
 	if err := s.applyDesiredSovRecords(desired.records, existingByRef, &result); err != nil {
 		return result, err
 	}
+
 	if err := s.cancelStaleSovRecords(existingByRef, desired.refs, &result); err != nil {
 		return result, err
 	}
@@ -194,6 +197,7 @@ func (s *Service) desiredSovRecordForCampaign(
 	if campaign == nil {
 		return "", nil, false
 	}
+
 	if strings.TrimSpace(strings.ToLower(campaign.GetEventType())) != sovCampaignEventIHUBDefense {
 		return "", nil, false
 	}
@@ -337,6 +341,7 @@ func campaignWatchMatch(campaign *esi.SovereigntyCampaignsGetInner, watchlist so
 	if campaign == nil {
 		return "", 0, false
 	}
+
 	if defenderStanding, ok := watchlist.standingForAlliance(defenderAllianceID); ok {
 		return defenderStanding, defenderAllianceID, true
 	}
@@ -388,6 +393,7 @@ func (s *Service) resolveAllianceNameTicker(ctx context.Context, allianceID int,
 	if allianceID <= 0 {
 		return "", ""
 	}
+
 	if name, ticker, ok := watchlist.labelForAlliance(allianceID); ok {
 		return name, ticker
 	}
@@ -436,6 +442,7 @@ func applyTimerRecordFromSource(existing, desired *core.Record) bool {
 		existing.Set(field, desiredValue)
 		changed = true
 	}
+
 	if existing.GetString("status") != timerStatusActive {
 		existing.Set("status", timerStatusActive)
 		existing.Set("canceled_at", nil)
@@ -515,6 +522,7 @@ func formatAttackerSummary(names []string, unknownCount int) string {
 	if len(names) == 0 && unknownCount == 0 {
 		return "Attackers: Unknown"
 	}
+
 	if len(names) > maxAttackerNameSamples {
 		extra := len(names) - maxAttackerNameSamples
 		return fmt.Sprintf(
@@ -523,9 +531,11 @@ func formatAttackerSummary(names []string, unknownCount int) string {
 			extra,
 		)
 	}
+
 	if len(names) == 0 {
 		return "Attackers: Unknown"
 	}
+
 	if unknownCount > 0 {
 		return fmt.Sprintf("Attackers: %s (+%d unknown)", strings.Join(names, ", "), unknownCount)
 	}

@@ -44,6 +44,7 @@ func Configure(opts Options) {
 		installPocketBasePrettyPrinter()
 		prettyViaPB = true
 	}
+
 	if opts.JSONEnabled && opts.UsePocketBaseJSON {
 		installPocketBaseJSONWriter()
 		jsonViaPB = true
@@ -141,6 +142,7 @@ func renderAttrs(attrs []slog.Attr) string {
 		}
 		values[key] = value
 	}
+
 	if len(values) == 0 {
 		return ""
 	}

@@ -105,6 +105,7 @@ func entitySearchCategories(scope EntitySearchScope) []string {
 	}
 }
 
+//nolint:gocognit,nestif // ranking and cache-refresh flow is intentionally linear for traceability
 func (s *Service) resolveCorporationMatches(ctx context.Context, source string, corporationIDs []int, results []EntitySearchItem, limit int) []EntitySearchItem {
 	capIDs := limitEntitySearchCandidates(corporationIDs, limit)
 	cacheByID := store.GetOrgCacheEntries(s.App, store.CollectionCorporations, capIDs)
@@ -225,6 +226,7 @@ func (s *Service) resolveCorporationMatches(ctx context.Context, source string, 
 	return results
 }
 
+//nolint:gocognit,nestif // ranking and enrichment are kept in one flow for deterministic ordering
 func (s *Service) resolveAllianceMatches(ctx context.Context, source string, allianceIDs []int, results []EntitySearchItem, limit int) []EntitySearchItem {
 	capIDs := limitEntitySearchCandidates(allianceIDs, limit)
 	cacheByID := store.GetOrgCacheEntries(s.App, store.CollectionAlliances, capIDs)
@@ -333,12 +335,8 @@ func limitEntitySearchCandidates(ids []int, limit int) []int {
 		return ids
 	}
 	candidateLimit := limit * entitySearchCandidateFactor
-	if candidateLimit < entitySearchCandidateFloor {
-		candidateLimit = entitySearchCandidateFloor
-	}
-	if candidateLimit > len(ids) {
-		candidateLimit = len(ids)
-	}
+	candidateLimit = max(candidateLimit, entitySearchCandidateFloor)
+	candidateLimit = min(candidateLimit, len(ids))
 	return ids[:candidateLimit]
 }
 
@@ -353,6 +351,7 @@ func (s *Service) logOrganizationResolveError(kind, source string, eveID int, re
 	if s == nil || s.App == nil || resolveErr == nil {
 		return
 	}
+
 	if errors.Is(resolveErr, esipkg.ErrOrganizationInactive) {
 		s.App.Logger().Info(
 			"timer entity search filtered inactive "+kind,
@@ -369,6 +368,7 @@ func (s *Service) logOrganizationResolveError(kind, source string, eveID int, re
 	)
 }
 
+//nolint:gocognit,nestif // combines cache/ESI/inactive checks in one place for correctness
 func (s *Service) resolveCorporation(
 	ctx context.Context,
 	corporationID int,
@@ -384,7 +384,6 @@ func (s *Service) resolveCorporation(
 	memberCount := 0
 	homeStationID := 0
 	profileVerified := false
-
 	if profile != nil {
 		name = strings.TrimSpace(profile.Name)
 		ticker = strings.TrimSpace(profile.Ticker)
@@ -465,6 +464,7 @@ func (s *Service) resolveAlliance(ctx context.Context, allianceID int) (EntitySe
 		}
 		return EntitySearchItem{}, err
 	}
+
 	if !ok {
 		return EntitySearchItem{}, ErrESIPublicClientNotConfigured
 	}

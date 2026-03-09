@@ -80,6 +80,7 @@ func validateRegionRow(row regionRowData) string {
 	if row.regionID == 0 {
 		return "missing_id"
 	}
+
 	if row.name == "" {
 		return "missing_name"
 	}
@@ -91,6 +92,7 @@ func (row regionRowData) payload() map[string]any {
 		"eve_id": row.regionID,
 		"name":   row.name,
 	}
+
 	if row.rawX == 0 && row.rawY == 0 {
 		return payload
 	}

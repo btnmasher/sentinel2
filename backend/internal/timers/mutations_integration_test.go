@@ -40,30 +40,39 @@ func TestServiceCreate(t *testing.T) {
 	if got := record.GetString("title"); got != "Alpha timer" {
 		t.Fatalf("title = %q, want %q", got, "Alpha timer")
 	}
+
 	if got := record.GetInt("system_id"); got != testSystemID {
 		t.Fatalf("system_id = %d, want %d", got, testSystemID)
 	}
+
 	if got := record.GetString("system_name"); got != "Alpha" {
 		t.Fatalf("system_name = %q, want %q", got, "Alpha")
 	}
+
 	if got := record.GetInt("region_id"); got != testRegionID {
 		t.Fatalf("region_id = %d, want %d", got, testRegionID)
 	}
+
 	if got := record.GetString("region_name"); got != "Test Region" {
 		t.Fatalf("region_name = %q, want %q", got, "Test Region")
 	}
+
 	if got := record.GetString("source"); got != "manual" {
 		t.Fatalf("source = %q, want %q", got, "manual")
 	}
+
 	if got := record.GetString("status"); got != timerStatusActive {
 		t.Fatalf("status = %q, want %q", got, timerStatusActive)
 	}
+
 	if got := record.GetString("created_by"); got != user.Id {
 		t.Fatalf("created_by = %q, want %q", got, user.Id)
 	}
+
 	if got := record.GetString("created_by_name"); got != "Test Pilot" {
 		t.Fatalf("created_by_name = %q, want %q", got, "Test Pilot")
 	}
+
 	if got := record.GetDateTime("expires_at").Time().UTC(); !got.Equal(expiresAt) {
 		t.Fatalf("expires_at = %s, want %s", got.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
 	}
@@ -72,6 +81,7 @@ func TestServiceCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindRecordById() error = %v", err)
 	}
+
 	if saved.Id != record.Id {
 		t.Fatalf("saved id = %q, want %q", saved.Id, record.Id)
 	}
@@ -103,24 +113,31 @@ func TestServiceUpdatePartial(t *testing.T) {
 	if got := updated.GetString("title"); got != title {
 		t.Fatalf("title = %q, want %q", got, title)
 	}
+
 	if got := updated.GetString("notes"); got != notes {
 		t.Fatalf("notes = %q, want %q", got, notes)
 	}
+
 	if got := updated.GetString("source_ref"); got != sourceRef {
 		t.Fatalf("source_ref = %q, want %q", got, sourceRef)
 	}
+
 	if got := updated.GetInt("attackers_score_pct"); got != attackers {
 		t.Fatalf("attackers_score_pct = %d, want %d", got, attackers)
 	}
+
 	if got := updated.GetInt("defender_score_pct"); got != defenders {
 		t.Fatalf("defender_score_pct = %d, want %d", got, defenders)
 	}
+
 	if got := updated.GetDateTime("expires_at").Time().UTC(); !got.Equal(expiresAt) {
 		t.Fatalf("expires_at = %s, want %s", got.Format(time.RFC3339), expiresAt.Format(time.RFC3339))
 	}
+
 	if got := updated.GetString("source"); got != "manual" {
 		t.Fatalf("source = %q, want %q", got, "manual")
 	}
+
 	if got := updated.GetString("system_name"); got != "Alpha" {
 		t.Fatalf("system_name = %q, want %q", got, "Alpha")
 	}
@@ -138,9 +155,11 @@ func TestServiceCancelAndUncancel(t *testing.T) {
 	if got := canceled.GetString("status"); got != timerStatusCanceled {
 		t.Fatalf("status after cancel = %q, want %q", got, timerStatusCanceled)
 	}
+
 	if got := canceled.GetString("canceled_by"); got != user.Id {
 		t.Fatalf("canceled_by = %q, want %q", got, user.Id)
 	}
+
 	if canceled.GetDateTime("canceled_at").IsZero() {
 		t.Fatal("canceled_at is zero, want populated timestamp")
 	}
@@ -153,9 +172,11 @@ func TestServiceCancelAndUncancel(t *testing.T) {
 	if got := uncanceled.GetString("status"); got != timerStatusActive {
 		t.Fatalf("status after uncancel = %q, want %q", got, timerStatusActive)
 	}
+
 	if got := uncanceled.GetString("canceled_by"); got != "" {
 		t.Fatalf("canceled_by after uncancel = %q, want empty", got)
 	}
+
 	if !uncanceled.GetDateTime("canceled_at").IsZero() {
 		t.Fatal("canceled_at after uncancel is set, want zero value")
 	}
@@ -169,6 +190,7 @@ func TestServiceDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
+
 	if deleted.Id != record.Id {
 		t.Fatalf("deleted id = %q, want %q", deleted.Id, record.Id)
 	}
@@ -191,6 +213,7 @@ func TestServiceListRespectsStatusAndRecentCanceledCutoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(active only) error = %v", err)
 	}
+
 	if len(activeOnly) != 1 || activeOnly[0].Id != active.Id {
 		t.Fatalf("active-only list ids = %v, want only %q", recordIDs(activeOnly), active.Id)
 	}
@@ -207,12 +230,15 @@ func TestServiceListRespectsStatusAndRecentCanceledCutoff(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("visible timer count = %d, want 2 (%v)", len(got), got)
 	}
+
 	if _, ok := got["Active timer"]; !ok {
 		t.Fatalf("visible timers missing active timer: %v", got)
 	}
+
 	if _, ok := got["Recent canceled timer"]; !ok {
 		t.Fatalf("visible timers missing recent canceled timer: %v", got)
 	}
+
 	if _, ok := got["Old canceled timer"]; ok {
 		t.Fatalf("visible timers unexpectedly include old canceled timer: %v", got)
 	}
@@ -300,9 +326,11 @@ func TestServiceWebhookLifecycle(t *testing.T) {
 	if got := record.GetString("source"); got != config.TimerSourceWebhook {
 		t.Fatalf("source = %q, want %q", got, config.TimerSourceWebhook)
 	}
+
 	if got := record.GetString("webhook_id"); got != "webhook-123" {
 		t.Fatalf("webhook_id = %q, want %q", got, "webhook-123")
 	}
+
 	if got := record.GetString("created_by_name"); got != systemCreatorName {
 		t.Fatalf("created_by_name = %q, want %q", got, systemCreatorName)
 	}
@@ -311,6 +339,7 @@ func TestServiceWebhookLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindByWebhookID() error = %v", err)
 	}
+
 	if found.Id != record.Id {
 		t.Fatalf("FindByWebhookID() id = %q, want %q", found.Id, record.Id)
 	}
@@ -318,9 +347,11 @@ func TestServiceWebhookLifecycle(t *testing.T) {
 	if err := svc.DeleteByWebhookID("webhook-123"); err != nil {
 		t.Fatalf("DeleteByWebhookID() error = %v", err)
 	}
+
 	if err := svc.DeleteByWebhookID("webhook-123"); err != nil {
 		t.Fatalf("DeleteByWebhookID() second call error = %v", err)
 	}
+
 	if _, err := svc.FindByWebhookID("webhook-123"); !errors.Is(err, ErrTimerNotFound) {
 		t.Fatalf("FindByWebhookID() after delete error = %v, want %v", err, ErrTimerNotFound)
 	}
@@ -349,18 +380,23 @@ func TestServiceCreateHydratesDisplayFieldsFromIDs(t *testing.T) {
 	if got := record.GetString("planet_name"); got != "Alpha I" {
 		t.Fatalf("planet_name = %q, want %q", got, "Alpha I")
 	}
+
 	if got := record.GetString("moon_name"); got != "Alpha I - Moon 1" {
 		t.Fatalf("moon_name = %q, want %q", got, "Alpha I - Moon 1")
 	}
+
 	if got := record.GetString("owner_corporation_name"); got != "Acme Corp" {
 		t.Fatalf("owner_corporation_name = %q, want %q", got, "Acme Corp")
 	}
+
 	if got := record.GetString("owner_corporation_ticker"); got != "ACME" {
 		t.Fatalf("owner_corporation_ticker = %q, want %q", got, "ACME")
 	}
+
 	if got := record.GetString("owner_alliance_name"); got != "Test Alliance" {
 		t.Fatalf("owner_alliance_name = %q, want %q", got, "Test Alliance")
 	}
+
 	if got := record.GetString("owner_alliance_ticker"); got != "TST" {
 		t.Fatalf("owner_alliance_ticker = %q, want %q", got, "TST")
 	}
@@ -392,18 +428,23 @@ func TestServiceUpdateHydratesMissingDisplayFieldsFromIDs(t *testing.T) {
 	if got := updated.GetString("planet_name"); got != "Alpha I" {
 		t.Fatalf("planet_name = %q, want %q", got, "Alpha I")
 	}
+
 	if got := updated.GetString("moon_name"); got != "Alpha I - Moon 1" {
 		t.Fatalf("moon_name = %q, want %q", got, "Alpha I - Moon 1")
 	}
+
 	if got := updated.GetString("owner_corporation_name"); got != "Acme Corp" {
 		t.Fatalf("owner_corporation_name = %q, want %q", got, "Acme Corp")
 	}
+
 	if got := updated.GetString("owner_corporation_ticker"); got != "ACME" {
 		t.Fatalf("owner_corporation_ticker = %q, want %q", got, "ACME")
 	}
+
 	if got := updated.GetString("owner_alliance_name"); got != "Test Alliance" {
 		t.Fatalf("owner_alliance_name = %q, want %q", got, "Test Alliance")
 	}
+
 	if got := updated.GetString("owner_alliance_ticker"); got != "TST" {
 		t.Fatalf("owner_alliance_ticker = %q, want %q", got, "TST")
 	}
@@ -420,6 +461,7 @@ func newTimerTestService(t *testing.T) (svc *Service, app *pocketbase.PocketBase
 	if err := app.Bootstrap(); err != nil {
 		t.Fatalf("Bootstrap() error = %v", err)
 	}
+
 	if err := app.RunAllMigrations(); err != nil {
 		t.Fatalf("RunAllMigrations() error = %v", err)
 	}

@@ -14,6 +14,7 @@ func registerZKillFeedWorker(app *pocketbase.PocketBase, cfg *config.Config, dep
 	if cfg == nil || deps == nil {
 		return
 	}
+
 	if !cfg.ZKillFeedEnabled {
 		return
 	}

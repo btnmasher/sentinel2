@@ -91,9 +91,11 @@ func (s *IntelService) GetOrCreateUploaderToken(userID string) (*core.Record, er
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) == 0 {
 		return s.regenerateUploaderToken(userID)
 	}
+
 	if records[0].GetBool("revoked") {
 		return nil, ErrExpiredOrRevoked
 	}
@@ -121,6 +123,7 @@ func (s *IntelService) GetValidUploaderToken(userID string) (*core.Record, error
 	if len(records) == 0 {
 		return nil, ErrExpiredOrRevoked
 	}
+
 	if records[0].GetBool("revoked") {
 		return nil, ErrExpiredOrRevoked
 	}
@@ -143,6 +146,7 @@ func (s *IntelService) HasValidUploaderToken(userID string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
+
 	if errors.Is(err, ErrExpiredOrRevoked) {
 		return false, nil
 	}
@@ -162,6 +166,7 @@ func (s *IntelService) ValidateUploaderToken(token string) (*core.Record, error)
 		}
 		return nil, recordErr
 	}
+
 	if record.GetBool("revoked") {
 		return nil, ErrExpiredOrRevoked
 	}
@@ -181,6 +186,7 @@ func (s *IntelService) ValidateUploaderTokenID(tokenID string) (*core.Record, er
 		}
 		return nil, recordErr
 	}
+
 	if record.GetBool("revoked") {
 		return nil, ErrExpiredOrRevoked
 	}
@@ -212,12 +218,14 @@ func (s *IntelService) RevokeUploaderTokensForUser(userID string) error {
 				Debug("uploader token revoke save failed")
 		}
 	}
+
 	if failed > 0 {
 		log.WithFields(logging.Fields{
 			"failed": failed,
 		}).
 			Warn("uploader token revoke failures")
 	}
+
 	if err := s.RevokeUploaderSessionsForUser(userID); err != nil {
 		return err
 	}
@@ -304,9 +312,11 @@ func (s *IntelService) CreateReport(report *IntelReport) error {
 	if report.Meta != nil {
 		record.Set("meta", report.Meta)
 	}
+
 	if report.Uploader != "" {
 		record.Set("uploader_user", report.Uploader)
 	}
+
 	if report.ChannelID != "" {
 		record.Set("channel", report.ChannelID)
 	}
@@ -442,6 +452,7 @@ func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, err
 				Debug("uploader sessions revoke failed")
 		}
 	}
+
 	if failed > 0 {
 		log.WithFields(logging.Fields{
 			"failed": failed,
@@ -480,17 +491,21 @@ func decodeSystems(value any) []IntelSystem {
 
 func decodeSystemMap(m map[string]any) IntelSystem {
 	sys := IntelSystem{}
+
 	if value, ok := m["system"]; ok {
 		sys.System = toInt(value)
 	}
+
 	if value, ok := m["name"]; ok {
 		if name, ok := value.(string); ok {
 			sys.Name = name
 		}
 	}
+
 	if value, ok := m["constellation"]; ok {
 		sys.Constellation = toInt(value)
 	}
+
 	if value, ok := m["region"]; ok {
 		sys.Region = toInt(value)
 	}
@@ -545,6 +560,7 @@ func decodeMeta(value any) map[string]any {
 	if value == nil {
 		return nil
 	}
+
 	if data, ok := value.(map[string]any); ok {
 		return data
 	}

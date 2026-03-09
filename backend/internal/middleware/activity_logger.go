@@ -74,11 +74,13 @@ func shouldSkipActivityLog(event *core.RequestEvent, err error) bool {
 
 func buildRequestMeta(event *core.RequestEvent) map[string]any {
 	meta := map[string]any{}
+
 	if existing := event.Get(apis.RequestEventKeyLogMeta); existing != nil {
 		if data, ok := existing.(map[string]any); ok {
 			maps.Copy(meta, data)
 		}
 	}
+
 	if event.Auth != nil {
 		meta["auth_provider"] = event.Auth.GetString("auth_provider")
 		meta["character_id"] = event.Auth.GetInt("eve_character_id")
@@ -93,6 +95,7 @@ func appendExecAndMetaAttrs(attrs []any, event *core.RequestEvent) []any {
 	if !started.IsZero() {
 		attrs = append(attrs, slog.Float64("execTime", float64(time.Since(started))/float64(time.Millisecond)))
 	}
+
 	if metaValue := event.Get(apis.RequestEventKeyLogMeta); metaValue != nil {
 		attrs = append(attrs, slog.Any("meta", metaValue))
 	}
@@ -107,6 +110,7 @@ func appendRequestErrorAttrs(status int, attrs []any, err error) (nextStatus int
 	if !errors.As(err, &apiErr) {
 		return status, append(attrs, slog.String("error", err.Error()))
 	}
+
 	if status == 0 {
 		status = apiErr.Status
 	}
@@ -138,6 +142,7 @@ func appendAuthAndIPAttrs(attrs []any, event *core.RequestEvent) []any {
 	} else {
 		attrs = append(attrs, slog.String("auth", ""))
 	}
+
 	if event.App.Settings().Logs.LogIP {
 		attrs = append(
 			attrs,

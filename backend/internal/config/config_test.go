@@ -15,6 +15,7 @@ func TestTrustedProxyHeaders_DefaultCloudflare(t *testing.T) {
 	}
 	got := cfg.TrustedProxyHeaders
 	want := []string{"CF-Connecting-IP", "True-Client-IP"}
+
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("headers = %v, want %v", got, want)
 	}
@@ -29,6 +30,7 @@ func TestTrustedProxyHeaders_ParsesEnvDelim(t *testing.T) {
 	}
 	got := cfg.TrustedProxyHeaders
 	want := []string{"CF-Connecting-IP", "True-Client-IP"}
+
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("headers = %v, want %v", got, want)
 	}
@@ -40,6 +42,7 @@ func TestTimersEnabled_DefaultTrue(t *testing.T) {
 	if _, err := parser.ParseArgs(nil); err != nil {
 		t.Fatalf("ParseArgs() error = %v", err)
 	}
+
 	if !cfg.TimersEnabled {
 		t.Fatal("TimersEnabled = false, want true")
 	}
@@ -52,6 +55,7 @@ func TestTimersEnabled_ParsesEnvFalse(t *testing.T) {
 	if _, err := parser.ParseArgs(nil); err != nil {
 		t.Fatalf("ParseArgs() error = %v", err)
 	}
+
 	if cfg.TimersEnabled {
 		t.Fatal("TimersEnabled = true, want false")
 	}
@@ -63,6 +67,7 @@ func TestTimerSource_DefaultStandalone(t *testing.T) {
 	if _, err := parser.ParseArgs(nil); err != nil {
 		t.Fatalf("ParseArgs() error = %v", err)
 	}
+
 	if cfg.TimerSource != TimerSourceStandalone {
 		t.Fatalf("TimerSource = %q, want %q", cfg.TimerSource, TimerSourceStandalone)
 	}
@@ -75,6 +80,7 @@ func TestTimerSource_ParsesEnvWebhook(t *testing.T) {
 	if _, err := parser.ParseArgs(nil); err != nil {
 		t.Fatalf("ParseArgs() error = %v", err)
 	}
+
 	if cfg.TimerSource != TimerSourceWebhook {
 		t.Fatalf("TimerSource = %q, want %q", cfg.TimerSource, TimerSourceWebhook)
 	}

@@ -12,10 +12,12 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 
 	"sentinel2/internal/shared/collections"
+	"sentinel2/internal/shared/queryhelpers"
 )
 
 const orgCacheChunk = 50
 const orgUpsertChunk = 80
+const orgRecordIDLength = 15
 
 type OrgCacheEntry struct {
 	EveID                  int
@@ -83,27 +85,14 @@ func IsOrgClosed(app *pocketbase.PocketBase, collection string, eveID int) bool 
 
 func GetOrgNames(app *pocketbase.PocketBase, collection string, ids []int) map[int]string {
 	names := map[int]string{}
+
 	if app == nil || len(ids) == 0 {
 		return names
 	}
-	unique := make([]int, 0, len(ids))
-	seen := map[int]struct{}{}
-	for _, id := range ids {
-		if id == 0 {
-			continue
-		}
-		_ = collections.AppendUnique(&unique, seen, id)
-	}
+	unique := uniquePositiveIDs(ids)
 	for start := 0; start < len(unique); start += orgCacheChunk {
 		end := min(start+orgCacheChunk, len(unique))
-		clauses := make([]string, 0, end-start)
-		params := dbx.Params{}
-		for i, id := range unique[start:end] {
-			key := fmt.Sprintf("id_%d", i)
-			clauses = append(clauses, fmt.Sprintf("eve_id = {:%s}", key))
-			params[key] = id
-		}
-		filter := strings.Join(clauses, " || ")
+		filter, params := buildEveIDFilter(unique[start:end])
 		records, err := app.FindRecordsByFilter(collection, filter, "", 0, 0, params)
 		if err != nil {
 			continue
@@ -117,54 +106,22 @@ func GetOrgNames(app *pocketbase.PocketBase, collection string, ids []int) map[i
 
 func GetOrgCacheEntries(app *pocketbase.PocketBase, collection string, ids []int) map[int]OrgCacheEntry {
 	entries := map[int]OrgCacheEntry{}
+
 	if app == nil || len(ids) == 0 {
 		return entries
 	}
-	unique := make([]int, 0, len(ids))
-	seen := map[int]struct{}{}
-	for _, id := range ids {
-		if id == 0 {
-			continue
-		}
-		_ = collections.AppendUnique(&unique, seen, id)
-	}
+	unique := uniquePositiveIDs(ids)
 	for start := 0; start < len(unique); start += orgCacheChunk {
 		end := min(start+orgCacheChunk, len(unique))
-		clauses := make([]string, 0, end-start)
-		params := dbx.Params{}
-		for i, id := range unique[start:end] {
-			key := fmt.Sprintf("id_%d", i)
-			clauses = append(clauses, fmt.Sprintf("eve_id = {:%s}", key))
-			params[key] = id
-		}
-		filter := strings.Join(clauses, " || ")
+		filter, params := buildEveIDFilter(unique[start:end])
 		records, err := app.FindRecordsByFilter(collection, filter, "", 0, 0, params)
 		if err != nil {
 			continue
 		}
 		for _, record := range records {
-			eveID := record.GetInt("eve_id")
-			if eveID <= 0 {
-				continue
+			if entry, ok := orgCacheEntryFromRecord(record); ok {
+				entries[entry.EveID] = entry
 			}
-			entry := OrgCacheEntry{
-				EveID:  eveID,
-				Name:   strings.TrimSpace(record.GetString("name")),
-				Ticker: strings.TrimSpace(record.GetString("ticker")),
-			}
-			if record.Collection().Fields.GetByName("closed") != nil {
-				entry.Closed = record.GetBool("closed")
-			}
-			if record.Collection().Fields.GetByName("alliance_id") != nil {
-				entry.AllianceID = record.GetInt("alliance_id")
-			}
-			if record.Collection().Fields.GetByName("member_count") != nil {
-				entry.MemberCount = record.GetInt("member_count")
-			}
-			if record.Collection().Fields.GetByName("member_corporation_count") != nil {
-				entry.MemberCorporationCount = record.GetInt("member_corporation_count")
-			}
-			entries[eveID] = entry
 		}
 	}
 	return entries
@@ -186,10 +143,10 @@ func UpsertOrg(app *pocketbase.PocketBase, collection string, eveID int, name, t
 	if len(records) > 0 {
 		record := records[0]
 		record.Set("name", name)
-		if record.Collection().Fields.GetByName("ticker") != nil {
+		if queryhelpers.HasField(record, "ticker") {
 			record.Set("ticker", ticker)
 		}
-		if record.Collection().Fields.GetByName("closed") != nil {
+		if queryhelpers.HasField(record, "closed") {
 			record.Set("closed", false)
 		}
 		record.Set("updated_at", updatedAt)
@@ -198,10 +155,11 @@ func UpsertOrg(app *pocketbase.PocketBase, collection string, eveID int, name, t
 	record := core.NewRecord(collectionRecord)
 	record.Set("eve_id", eveID)
 	record.Set("name", name)
-	if record.Collection().Fields.GetByName("ticker") != nil {
+	if queryhelpers.HasField(record, "ticker") {
 		record.Set("ticker", ticker)
 	}
-	if record.Collection().Fields.GetByName("closed") != nil {
+
+	if queryhelpers.HasField(record, "closed") {
 		record.Set("closed", false)
 	}
 	record.Set("updated_at", updatedAt)
@@ -230,41 +188,96 @@ func UpsertCorporationProfile(
 		return findErr
 	}
 	updatedAt, _ := types.ParseDateTime(time.Now())
-	if len(records) > 0 {
-		record := records[0]
-		record.Set("name", strings.TrimSpace(name))
-		if record.Collection().Fields.GetByName("ticker") != nil {
-			record.Set("ticker", strings.TrimSpace(ticker))
-		}
-		if record.Collection().Fields.GetByName("closed") != nil {
-			record.Set("closed", false)
-		}
-		if record.Collection().Fields.GetByName("alliance_id") != nil {
-			record.Set("alliance_id", allianceID)
-		}
-		if record.Collection().Fields.GetByName("member_count") != nil {
-			record.Set("member_count", memberCount)
-		}
-		record.Set("updated_at", updatedAt)
+	name = strings.TrimSpace(name)
+	ticker = strings.TrimSpace(ticker)
+	if len(records) == 0 {
+		record := core.NewRecord(collectionRecord)
+		record.Set("eve_id", eveID)
+		applyCorporationProfileFields(record, name, ticker, allianceID, memberCount, updatedAt)
 		return app.Save(record)
 	}
-	record := core.NewRecord(collectionRecord)
-	record.Set("eve_id", eveID)
-	record.Set("name", strings.TrimSpace(name))
-	if record.Collection().Fields.GetByName("ticker") != nil {
-		record.Set("ticker", strings.TrimSpace(ticker))
+	record := records[0]
+	applyCorporationProfileFields(record, name, ticker, allianceID, memberCount, updatedAt)
+	return app.Save(record)
+}
+
+func uniquePositiveIDs(ids []int) []int {
+	unique := make([]int, 0, len(ids))
+	seen := map[int]struct{}{}
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		_ = collections.AppendUnique(&unique, seen, id)
 	}
-	if record.Collection().Fields.GetByName("closed") != nil {
+	return unique
+}
+
+func buildEveIDFilter(ids []int) (string, dbx.Params) {
+	clauses := make([]string, 0, len(ids))
+	params := dbx.Params{}
+	for i, id := range ids {
+		key := fmt.Sprintf("id_%d", i)
+		clauses = append(clauses, fmt.Sprintf("eve_id = {:%s}", key))
+		params[key] = id
+	}
+	return strings.Join(clauses, " || "), params
+}
+
+func orgCacheEntryFromRecord(record *core.Record) (OrgCacheEntry, bool) {
+	eveID := record.GetInt("eve_id")
+	if eveID <= 0 {
+		return OrgCacheEntry{}, false
+	}
+	entry := OrgCacheEntry{
+		EveID:  eveID,
+		Name:   strings.TrimSpace(record.GetString("name")),
+		Ticker: strings.TrimSpace(record.GetString("ticker")),
+	}
+
+	if queryhelpers.HasField(record, "closed") {
+		entry.Closed = record.GetBool("closed")
+	}
+
+	if queryhelpers.HasField(record, "alliance_id") {
+		entry.AllianceID = record.GetInt("alliance_id")
+	}
+
+	if queryhelpers.HasField(record, "member_count") {
+		entry.MemberCount = record.GetInt("member_count")
+	}
+
+	if queryhelpers.HasField(record, "member_corporation_count") {
+		entry.MemberCorporationCount = record.GetInt("member_corporation_count")
+	}
+	return entry, true
+}
+
+func applyCorporationProfileFields(
+	record *core.Record,
+	name string,
+	ticker string,
+	allianceID int,
+	memberCount int,
+	updatedAt types.DateTime,
+) {
+	record.Set("name", name)
+	if queryhelpers.HasField(record, "ticker") {
+		record.Set("ticker", ticker)
+	}
+
+	if queryhelpers.HasField(record, "closed") {
 		record.Set("closed", false)
 	}
-	if record.Collection().Fields.GetByName("alliance_id") != nil {
+
+	if queryhelpers.HasField(record, "alliance_id") {
 		record.Set("alliance_id", allianceID)
 	}
-	if record.Collection().Fields.GetByName("member_count") != nil {
+
+	if queryhelpers.HasField(record, "member_count") {
 		record.Set("member_count", memberCount)
 	}
 	record.Set("updated_at", updatedAt)
-	return app.Save(record)
 }
 
 func UpsertAllianceProfile(
@@ -288,13 +301,13 @@ func UpsertAllianceProfile(
 	if len(records) > 0 {
 		record := records[0]
 		record.Set("name", strings.TrimSpace(name))
-		if record.Collection().Fields.GetByName("ticker") != nil {
+		if queryhelpers.HasField(record, "ticker") {
 			record.Set("ticker", strings.TrimSpace(ticker))
 		}
-		if record.Collection().Fields.GetByName("closed") != nil {
+		if queryhelpers.HasField(record, "closed") {
 			record.Set("closed", false)
 		}
-		if record.Collection().Fields.GetByName("member_corporation_count") != nil {
+		if queryhelpers.HasField(record, "member_corporation_count") {
 			record.Set("member_corporation_count", memberCorporationCount)
 		}
 		record.Set("updated_at", updatedAt)
@@ -303,13 +316,15 @@ func UpsertAllianceProfile(
 	record := core.NewRecord(collectionRecord)
 	record.Set("eve_id", eveID)
 	record.Set("name", strings.TrimSpace(name))
-	if record.Collection().Fields.GetByName("ticker") != nil {
+	if queryhelpers.HasField(record, "ticker") {
 		record.Set("ticker", strings.TrimSpace(ticker))
 	}
-	if record.Collection().Fields.GetByName("closed") != nil {
+
+	if queryhelpers.HasField(record, "closed") {
 		record.Set("closed", false)
 	}
-	if record.Collection().Fields.GetByName("member_corporation_count") != nil {
+
+	if queryhelpers.HasField(record, "member_corporation_count") {
 		record.Set("member_corporation_count", memberCorporationCount)
 	}
 	record.Set("updated_at", updatedAt)
@@ -334,6 +349,7 @@ func UpsertCorporationProfiles(app *pocketbase.PocketBase, profiles []Corporatio
 		profile.Ticker = strings.TrimSpace(profile.Ticker)
 		uniqueProfiles[profile.EveID] = profile
 	}
+
 	if len(ordered) == 0 {
 		return nil
 	}
@@ -349,7 +365,7 @@ func UpsertCorporationProfiles(app *pocketbase.PocketBase, profiles []Corporatio
 		params := dbx.Params{}
 		for index, profile := range rows {
 			valueClauses = append(valueClauses, fmt.Sprintf("({:id_%d}, {:eve_id_%d}, {:name_%d}, {:ticker_%d}, {:closed_%d}, {:alliance_id_%d}, {:member_count_%d}, {:updated_at_%d})", index, index, index, index, index, index, index, index))
-			params[fmt.Sprintf("id_%d", index)] = security.RandomString(15)
+			params[fmt.Sprintf("id_%d", index)] = security.RandomString(orgRecordIDLength)
 			params[fmt.Sprintf("eve_id_%d", index)] = profile.EveID
 			params[fmt.Sprintf("name_%d", index)] = profile.Name
 			params[fmt.Sprintf("ticker_%d", index)] = profile.Ticker
@@ -386,6 +402,7 @@ func UpsertAllianceProfiles(app *pocketbase.PocketBase, profiles []AllianceProfi
 		profile.Ticker = strings.TrimSpace(profile.Ticker)
 		uniqueProfiles[profile.EveID] = profile
 	}
+
 	if len(ordered) == 0 {
 		return nil
 	}
@@ -401,7 +418,7 @@ func UpsertAllianceProfiles(app *pocketbase.PocketBase, profiles []AllianceProfi
 		params := dbx.Params{}
 		for index, profile := range rows {
 			valueClauses = append(valueClauses, fmt.Sprintf("({:id_%d}, {:eve_id_%d}, {:name_%d}, {:ticker_%d}, {:closed_%d}, {:member_corporation_count_%d}, {:updated_at_%d})", index, index, index, index, index, index, index))
-			params[fmt.Sprintf("id_%d", index)] = security.RandomString(15)
+			params[fmt.Sprintf("id_%d", index)] = security.RandomString(orgRecordIDLength)
 			params[fmt.Sprintf("eve_id_%d", index)] = profile.EveID
 			params[fmt.Sprintf("name_%d", index)] = profile.Name
 			params[fmt.Sprintf("ticker_%d", index)] = profile.Ticker
@@ -434,7 +451,7 @@ func SetOrgClosed(app *pocketbase.PocketBase, collection string, eveID int, clos
 	updatedAt, _ := types.ParseDateTime(time.Now())
 	if len(records) > 0 {
 		record := records[0]
-		if record.Collection().Fields.GetByName("closed") != nil {
+		if queryhelpers.HasField(record, "closed") {
 			record.Set("closed", closed)
 		}
 		record.Set("updated_at", updatedAt)
@@ -442,7 +459,7 @@ func SetOrgClosed(app *pocketbase.PocketBase, collection string, eveID int, clos
 	}
 	record := core.NewRecord(collectionRecord)
 	record.Set("eve_id", eveID)
-	if record.Collection().Fields.GetByName("closed") != nil {
+	if queryhelpers.HasField(record, "closed") {
 		record.Set("closed", closed)
 	}
 	record.Set("updated_at", updatedAt)

@@ -29,6 +29,7 @@ func (c *affiliationCache) get(id int) (affiliationCacheEntry, bool) {
 	if !ok {
 		return affiliationCacheEntry{}, false
 	}
+
 	if entry.ExpiresAt.IsZero() || time.Now().After(entry.ExpiresAt) {
 		return affiliationCacheEntry{}, false
 	}
@@ -59,6 +60,7 @@ func (c *affiliationCache) set(id, corpID, allianceID int, resp *http.Response) 
 		ETag:          "",
 		ExpiresAt:     time.Time{},
 	}
+
 	if resp != nil {
 		entry.ETag = resp.Header.Get("ETag")
 		entry.ExpiresAt = parseESIExpires(resp)

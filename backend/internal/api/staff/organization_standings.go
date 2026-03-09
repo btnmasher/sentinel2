@@ -56,6 +56,7 @@ func (h *OrganizationStandingsHandler) List(c *core.RequestEvent) error {
 
 func (h *OrganizationStandingsHandler) Create(c *core.RequestEvent) error {
 	payload := organizationStandingCreatePayload{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -70,6 +71,7 @@ func (h *OrganizationStandingsHandler) Create(c *core.RequestEvent) error {
 		"corporation_id": input.CorporationID,
 		"alliance_id":    input.AllianceID,
 	}
+
 	if input.OwnerType == standingOwnerAlliance {
 		filter = "owner_type = {:owner_type} && alliance_id = {:alliance_id}"
 	}
@@ -77,6 +79,7 @@ func (h *OrganizationStandingsHandler) Create(c *core.RequestEvent) error {
 	if err != nil {
 		return router.NewInternalServerError("Failed to validate organization standing.", logging.Fields{"error": err.Error()})
 	}
+
 	if len(existing) > 0 {
 		return router.NewBadRequestError("Organization standing already exists.", logging.Fields{
 			"owner_type":     input.OwnerType,
@@ -127,6 +130,7 @@ func (h *OrganizationStandingsHandler) Update(c *core.RequestEvent) error {
 	}
 
 	payload := organizationStandingUpdatePayload{}
+
 	if err := c.BindBody(&payload); err != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": err.Error()})
 	}
@@ -134,6 +138,7 @@ func (h *OrganizationStandingsHandler) Update(c *core.RequestEvent) error {
 	if validationErr != nil {
 		return validationErr
 	}
+
 	if input.IncludeInSovSync && record.GetInt("alliance_id") <= 0 {
 		return router.NewBadRequestError("include_in_sov_sync requires an alliance to be set.", nil)
 	}
@@ -173,9 +178,11 @@ func (h *OrganizationStandingsHandler) Delete(c *core.RequestEvent) error {
 	if err != nil {
 		return router.NewNotFoundError("Organization standing not found.", logging.Fields{"id": id, "error": err.Error()})
 	}
+
 	if err := h.App.Delete(record); err != nil {
 		return router.NewInternalServerError("Failed to delete organization standing.", logging.Fields{"id": id, "error": err.Error()})
 	}
+
 	if h.Audit != nil {
 		h.Audit.LogRequest(c, &audit.Event{
 			Action:      audit.ActionStaffSovWatchlistDelete,
@@ -211,6 +218,7 @@ func standingInputDisplayName(input *validatedOrganizationStandingInput) string 
 	if input == nil {
 		return ""
 	}
+
 	if input.OwnerType == standingOwnerAlliance {
 		return input.AllianceName
 	}
@@ -232,9 +240,11 @@ func validateOrganizationStandingPayload(payload *organizationStandingCreatePayl
 		AllianceName:      strings.TrimSpace(payload.AllianceName),
 		AllianceTicker:    strings.TrimSpace(payload.AllianceTicker),
 	}
+
 	if input.Hostility == "" {
 		input.Hostility = timercore.TimerStandingHostile
 	}
+
 	if !timercore.IsStandingType(input.Hostility) {
 		return validatedOrganizationStandingInput{}, router.NewBadRequestError("hostility must be one of ours/friendly/neutral/complicated/hostile.", logging.Fields{"hostility": payload.Hostility})
 	}
@@ -259,6 +269,7 @@ func validateOrganizationStandingPayload(payload *organizationStandingCreatePayl
 	default:
 		return validatedOrganizationStandingInput{}, router.NewBadRequestError("owner_type must be 'alliance' or 'corporation'.", logging.Fields{"owner_type": payload.OwnerType})
 	}
+
 	if input.IncludeInSovSync && input.AllianceID <= 0 {
 		return validatedOrganizationStandingInput{}, router.NewBadRequestError("include_in_sov_sync requires an alliance to be set.", nil)
 	}
@@ -273,9 +284,11 @@ func validateOrganizationStandingUpdatePayload(payload *organizationStandingUpda
 		Hostility:        strings.TrimSpace(strings.ToLower(payload.Hostility)),
 		IncludeInSovSync: payload.IncludeInSovSync,
 	}
+
 	if input.Hostility == "" {
 		input.Hostility = timercore.TimerStandingHostile
 	}
+
 	if !timercore.IsStandingType(input.Hostility) {
 		return validatedOrganizationStandingInput{}, router.NewBadRequestError("hostility must be one of ours/friendly/neutral/complicated/hostile.", logging.Fields{"hostility": payload.Hostility})
 	}
@@ -301,6 +314,7 @@ func standingRecordDisplayName(record *core.Record) string {
 	if record == nil {
 		return ""
 	}
+
 	if strings.TrimSpace(record.GetString("owner_type")) == standingOwnerAlliance {
 		return strings.TrimSpace(record.GetString("alliance_name"))
 	}

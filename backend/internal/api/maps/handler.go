@@ -185,6 +185,7 @@ func (h *MapHandler) CharacterLocations(c *core.RequestEvent) error {
 			"error": err,
 		})
 	}
+
 	if len(payload.Characters) == 0 {
 		return router.NewBadRequestError("Missing characters.", logging.Fields{
 			"user_id": user.Id,
@@ -295,6 +296,7 @@ func (h *MapHandler) ClearRoute(c *core.RequestEvent) error {
 			"character_id": character,
 		})
 	}
+
 	if setErr != nil {
 		return router.NewInternalServerError("Failed to clear route.", logging.Fields{
 			"character_id": character,
@@ -312,6 +314,7 @@ func (h *MapHandler) resolveCharacterToken(c *core.RequestEvent, user *core.Reco
 			"reason": "missing user context",
 		})
 	}
+
 	if h.Config == nil || h.Config.AuthBackend != "eve" || h.EVE == nil {
 		return h.userAccessToken(c.Request.Context(), user)
 	}
@@ -393,6 +396,7 @@ func (h *MapHandler) userAccessToken(ctx context.Context, user *core.Record) (st
 			"reason":  "missing oauth_access_token",
 		})
 	}
+
 	if exp.IsZero() || exp.Time().Before(time.Now().Add(tokenRefreshLeeway)) {
 		if h.Provider == nil {
 			return "", router.NewUnauthorizedError("Unauthorized", logging.Fields{
@@ -415,6 +419,7 @@ func (h *MapHandler) userAccessToken(ctx context.Context, user *core.Record) (st
 
 		accessToken = user.GetString("oauth_access_token")
 	}
+
 	if accessToken == "" {
 		return "", router.NewUnauthorizedError("Unauthorized", logging.Fields{
 			"user_id": user.Id,
@@ -432,17 +437,20 @@ func parseRoutePayload(c *core.RequestEvent, character string) (struct {
 		Waypoints []int `json:"waypoints"`
 		Avoid     []int `json:"avoid"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return payload, router.NewBadRequestError("Missing required data.", logging.Fields{
 			"character_id": character,
 			"error":        bindErr.Error(),
 		})
 	}
+
 	if len(payload.Waypoints) == 0 {
 		return payload, router.NewBadRequestError("Missing required data.", logging.Fields{
 			"waypoints": payload.Waypoints,
 		})
 	}
+
 	if overlap(payload.Waypoints, payload.Avoid) {
 		return payload, router.NewBadRequestError("Route contains avoided system.", logging.Fields{
 			"waypoints": payload.Waypoints,
@@ -454,6 +462,7 @@ func parseRoutePayload(c *core.RequestEvent, character string) (struct {
 
 func (h *MapHandler) buildWaypointRoute(source int, waypoints, avoid []int) (fullRoute, fullJBRoute []int, err error) {
 	blockedBridgeSystems := []int{}
+
 	if h.Timers != nil {
 		disabledSystems, disabledErr := h.Timers.ActiveSystemsByStructureTypes(
 			[]string{ansiblexJumpBridgeStructureType},
@@ -511,6 +520,7 @@ func (h *MapHandler) setRouteWaypoints(c *core.RequestEvent, character, accessTo
 			"character_id": character,
 		})
 	}
+
 	if setErr != nil {
 		return router.NewInternalServerError("Failed to set route.", logging.Fields{
 			"character_id": character,
@@ -518,6 +528,7 @@ func (h *MapHandler) setRouteWaypoints(c *core.RequestEvent, character, accessTo
 			"error":        setErr.Error(),
 		})
 	}
+
 	if len(route) <= 1 {
 		return nil
 	}
@@ -570,6 +581,7 @@ func (h *MapHandler) Search(c *core.RequestEvent) error {
 	} else {
 		records, recordsErr = h.App.FindRecordsByFilter(store.CollectionSolarSystems, "name ~ {:q}", "name", searchSystemsLimit, 0, dbx.Params{"q": "%" + query + "%"})
 	}
+
 	if recordsErr != nil {
 		return router.NewInternalServerError("Failed to search systems.", logging.Fields{
 			"query":   query,

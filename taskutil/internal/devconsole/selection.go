@@ -61,12 +61,15 @@ func (m viewState) selectedText() string {
 	if len(segments) == 0 {
 		return ""
 	}
+
 	if start < 0 {
 		start = 0
 	}
+
 	if end >= len(segments) {
 		end = len(segments) - 1
 	}
+
 	if start > end {
 		return ""
 	}
@@ -80,9 +83,11 @@ func (m viewState) selectedText() string {
 		startSeg, endSeg = endSeg, startSeg
 		startCol, endCol = endCol, startCol
 	}
+
 	if sourceStart < 0 {
 		sourceStart = 0
 	}
+
 	if sourceEnd >= len(rawLines) {
 		sourceEnd = len(rawLines) - 1
 	}
@@ -215,6 +220,7 @@ func (m viewState) hitTestMouse(x, y int) (slot int, proc string, line int, col 
 	if y < rowTop {
 		return 0, "", -1, -1, false
 	}
+
 	if m.verticalSplit {
 		leftW, rightW := splitPaneWidths(m.width)
 		rowHeight := max(m.height-headerRows, minBodyHeight)
@@ -249,12 +255,15 @@ func (m viewState) hitTestMouse(x, y int) (slot int, proc string, line int, col 
 	if bottomShowTop {
 		bottomContentTop++
 	}
+
 	if x < 0 || x >= m.width {
 		return 0, "", -1, -1, false
 	}
+
 	if y >= topContentTop && y < topContentTop+topInnerHeight {
 		return 0, first, m.lineIndexForProc(first, y-topContentTop), max(x-1, 0), true
 	}
+
 	if y >= bottomContentTop && y < bottomContentTop+bottomInnerHeight {
 		return 1, second, m.lineIndexForProc(second, y-bottomContentTop), max(x-1, 0), true
 	}
@@ -272,6 +281,7 @@ func (m viewState) lineIndexForProc(proc string, localY int) int {
 	if localY < 0 {
 		localY = 0
 	}
+
 	if proc == "frontend" {
 		return m.frontend.YOffset + localY
 	}
@@ -342,9 +352,11 @@ func (m *viewState) ensureLineModeVisible() {
 		}
 		last = i
 	}
+
 	if first == -1 {
 		return
 	}
+
 	if m.lineModeProc == "frontend" {
 		if m.frontend.YOffset > first {
 			m.frontend.SetYOffset(first)
@@ -356,6 +368,7 @@ func (m *viewState) ensureLineModeVisible() {
 		}
 		return
 	}
+
 	if m.backend.YOffset > first {
 		m.backend.SetYOffset(first)
 		return

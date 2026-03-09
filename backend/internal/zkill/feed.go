@@ -195,6 +195,7 @@ func (i *FeedIngestor) Run(ctx context.Context) {
 	if i == nil || i.App == nil || i.Config == nil {
 		return
 	}
+
 	if !i.Config.ZKillFeedEnabled {
 		return
 	}
@@ -203,9 +204,11 @@ func (i *FeedIngestor) Run(ctx context.Context) {
 		i.logger.WithErr(err).Error("zkill worker failed to load systems")
 		return
 	}
+
 	if err := i.loadItemTypes(); err != nil {
 		i.logger.WithErr(err).Warn("zkill worker failed to load item types; ship names will fall back to ESI")
 	}
+
 	if err := i.loadRegionNames(); err != nil {
 		i.logger.WithErr(err).Warn("zkill worker failed to load regions")
 	}
@@ -345,6 +348,7 @@ func (i *FeedIngestor) bootstrapSequence(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	if current <= 0 {
 		return 0, fmt.Errorf("invalid sequence response")
 	}
@@ -369,12 +373,15 @@ func (i *FeedIngestor) fetchCurrentSequence(ctx context.Context) (int64, error) 
 		return 0, fmt.Errorf("sequence request returned status %d", resp.StatusCode)
 	}
 	payload := sequenceResponse{}
+
 	if decodeErr := json.NewDecoder(resp.Body).Decode(&payload); decodeErr != nil {
 		return 0, decodeErr
 	}
+
 	if payload.Sequence > 0 {
 		return payload.Sequence, nil
 	}
+
 	if payload.SequenceID > 0 {
 		return payload.SequenceID, nil
 	}
@@ -401,6 +408,7 @@ func (i *FeedIngestor) fetchSequenceEvent(ctx context.Context, sequenceID int64)
 	case http.StatusTooManyRequests:
 		return nil, "rate_limited", nil
 	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyPreviewBytes))
 		return nil, "", fmt.Errorf("sequence request %d returned status %d: %s", sequenceID, resp.StatusCode, strings.TrimSpace(string(body)))
@@ -410,6 +418,7 @@ func (i *FeedIngestor) fetchSequenceEvent(ctx context.Context, sequenceID int64)
 		return nil, "", readErr
 	}
 	payload := rawKillmailEnvelope{}
+
 	if decodeErr := json.Unmarshal(rawBody, &payload); decodeErr != nil {
 		return nil, "", decodeErr
 	}
@@ -418,6 +427,7 @@ func (i *FeedIngestor) fetchSequenceEvent(ctx context.Context, sequenceID int64)
 		i.logger.WithFields(logging.Fields{"sequence_id": sequenceID}).WithErr(eventErr).Warn("zkill event decode skipped")
 		return nil, "ok", nil
 	}
+
 	if event.SequenceID == 0 {
 		event.SequenceID = sequenceID
 	}
@@ -433,6 +443,7 @@ func decodeKillmailEnvelope(payload *rawKillmailEnvelope) (*killmailEvent, error
 	if container == nil {
 		container = payload.Killmail
 	}
+
 	if container != nil {
 		if err := applyContainerToEvent(&resolved, container, payload.KillmailTime); err != nil {
 			return nil, err
@@ -448,17 +459,21 @@ func decodeKillmailEnvelope(payload *rawKillmailEnvelope) (*killmailEvent, error
 		}
 		resolved.KillmailTime = t
 	}
+
 	if payload.ZKB != nil {
 		resolved.Solo = payload.ZKB.Solo
 		resolved.AttackerCount = payload.ZKB.AttackerCount
 		resolved.TotalValue = payload.ZKB.TotalValue
 	}
+
 	if resolved.KillmailID <= 0 {
 		return nil, fmt.Errorf("missing killmail_id")
 	}
+
 	if resolved.SolarSystemID <= 0 {
 		return nil, fmt.Errorf("missing solar_system_id")
 	}
+
 	if resolved.KillmailTime.IsZero() {
 		return nil, fmt.Errorf("missing killmail_time")
 	}
@@ -504,6 +519,7 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 	if event == nil {
 		return false, nil
 	}
+
 	if i.recentKills != nil && i.recentKills.Seen(event.KillmailID) {
 		i.logger.WithFields(logging.Fields{
 			"killmail_id": event.KillmailID,
@@ -512,6 +528,7 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 		}).Debug("zkill event skipped")
 		return false, nil
 	}
+
 	if i.recentKills != nil {
 		i.recentKills.Add(event.KillmailID)
 	}
@@ -527,6 +544,7 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 		}).Debug("zkill event skipped")
 		return false, nil
 	}
+
 	if age > i.maxEventAge() {
 		i.logger.WithFields(logging.Fields{
 			"killmail_id":     event.KillmailID,
@@ -549,9 +567,11 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 		}).Debug("zkill event skipped")
 		return false, nil
 	}
+
 	if isJSpaceSystemName(system.Name) {
 		return false, nil
 	}
+
 	if isLowValueCapsuleKill(event) {
 		return false, nil
 	}
@@ -559,6 +579,7 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 	if i.Topics == nil {
 		return false, fmt.Errorf("missing realtime publisher")
 	}
+
 	if !i.Topics.HasSubscribers(regionTopic) {
 		return false, nil
 	}
@@ -575,21 +596,27 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 	)
 
 	idsToResolve := []int64{}
+
 	if finalBlow.CharacterID > 0 {
 		idsToResolve = append(idsToResolve, int64(finalBlow.CharacterID))
 	}
+
 	if event.Victim.CharacterID > 0 {
 		idsToResolve = append(idsToResolve, int64(event.Victim.CharacterID))
 	}
+
 	if finalBlow.CorporationID > 0 {
 		idsToResolve = append(idsToResolve, int64(finalBlow.CorporationID))
 	}
+
 	if finalBlow.AllianceID > 0 {
 		idsToResolve = append(idsToResolve, int64(finalBlow.AllianceID))
 	}
+
 	if event.Victim.CorporationID > 0 {
 		idsToResolve = append(idsToResolve, int64(event.Victim.CorporationID))
 	}
+
 	if event.Victim.AllianceID > 0 {
 		idsToResolve = append(idsToResolve, int64(event.Victim.AllianceID))
 	}
@@ -611,9 +638,11 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 			victimName = value
 		}
 	}
+
 	if shipName == "" {
 		shipName = "Unknown Ship"
 	}
+
 	if event.Victim.ShipTypeID > 0 && (shipName == "" || shipName == "Unknown Ship") {
 		if value := strings.TrimSpace(resolvedNames[int64(event.Victim.ShipTypeID)]); value != "" {
 			shipName = value
@@ -693,6 +722,7 @@ func (i *FeedIngestor) handleEvent(ctx context.Context, event *killmailEvent) (b
 			},
 		},
 	}
+
 	if _, publishErr := i.Topics.PublishJSON(regionTopic, report); publishErr != nil {
 		return false, publishErr
 	}
@@ -705,6 +735,7 @@ func selectFinalBlowAttacker(attackers []rawAttacker) rawAttacker {
 			return attacker
 		}
 	}
+
 	if len(attackers) > 0 {
 		return attackers[0]
 	}
@@ -726,6 +757,7 @@ func otherAttackerCount(event *killmailEvent) int {
 	if event == nil || event.Solo {
 		return 0
 	}
+
 	if event.AttackerCount > 1 {
 		return event.AttackerCount - 1
 	}
@@ -740,9 +772,11 @@ func isLowValueCapsuleKill(event *killmailEvent) bool {
 	if event == nil {
 		return false
 	}
+
 	if event.Victim.ShipTypeID != capsuleShipTypeID {
 		return false
 	}
+
 	if event.TotalValue == nil {
 		return false
 	}
@@ -754,6 +788,7 @@ func isJSpaceSystemName(name string) bool {
 	if len(clean) != jSpaceSystemNameLength {
 		return false
 	}
+
 	if clean[0] != 'J' && clean[0] != 'j' {
 		return false
 	}
@@ -833,6 +868,7 @@ func (i *FeedIngestor) shipTypeName(shipTypeID int) string {
 	if shipTypeID <= 0 {
 		return ""
 	}
+
 	if i == nil || i.itemTypes == nil {
 		return ""
 	}
@@ -922,6 +958,7 @@ func (i *FeedIngestor) resolveStanding(corporationID, allianceID int) string {
 			return standing
 		}
 	}
+
 	if allianceID > 0 {
 		if standing, ok := i.standings.alliances[allianceID]; ok {
 			return standing
@@ -942,6 +979,7 @@ func (i *FeedIngestor) loadCheckpoint() (sequenceID int64, found bool, err error
 	if err != nil {
 		return 0, false, err
 	}
+
 	if len(records) == 0 {
 		return 0, false, nil
 	}
@@ -1000,6 +1038,7 @@ func (l *killmailLRU) Add(killmailID int64) {
 	if l == nil || killmailID <= 0 {
 		return
 	}
+
 	if existing, ok := l.seen[killmailID]; ok {
 		l.order.MoveToBack(existing)
 		return
@@ -1061,6 +1100,7 @@ func (r *nameResolver) ResolveNames(ctx context.Context, ids []int64) (map[int64
 	if httpResp != nil {
 		_ = httpResp.Body.Close()
 	}
+
 	if err != nil {
 		return result, err
 	}

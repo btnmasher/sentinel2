@@ -69,6 +69,7 @@ func loadAuthFlow(app *pocketbase.PocketBase, state string) (AuthFlow, bool) {
 		app.Store().Remove(flowKey(state))
 		return AuthFlow{}, false
 	}
+
 	if time.Since(flow.CreatedAt) > authFlowTTL {
 		app.Store().Remove(flowKey(state))
 		return AuthFlow{}, false
@@ -108,6 +109,7 @@ func loadAuthExchange(app *pocketbase.PocketBase, code string) (authExchange, bo
 		app.Store().Remove(exchangeKey(code))
 		return authExchange{}, false
 	}
+
 	if time.Since(ex.CreatedAt) > exchangeCodeTTL {
 		app.Store().Remove(exchangeKey(code))
 		return authExchange{}, false

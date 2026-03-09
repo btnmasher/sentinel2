@@ -106,9 +106,11 @@ func TestRoundRobinSelection(t *testing.T) {
 	if len(selected) != 2 {
 		t.Fatalf("selected len = %d, want 2", len(selected))
 	}
+
 	if selected[0].CharacterID != 11 || selected[1].CharacterID != 12 {
 		t.Fatalf("unexpected selection order: %#v", selected)
 	}
+
 	if next != 0 {
 		t.Fatalf("next cursor = %d, want 0", next)
 	}
@@ -117,9 +119,11 @@ func TestRoundRobinSelection(t *testing.T) {
 	if len(selected) != 2 {
 		t.Fatalf("selected len with negative cursor = %d, want 2", len(selected))
 	}
+
 	if selected[0].CharacterID != 10 || selected[1].CharacterID != 11 {
 		t.Fatalf("unexpected selection order with negative cursor: %#v", selected)
 	}
+
 	if next != 2 {
 		t.Fatalf("next cursor with negative cursor = %d, want 2", next)
 	}
@@ -158,6 +162,7 @@ func TestNotificationKeyBuilders(t *testing.T) {
 	if got := notificationRRCursorKey(); got != notificationRRCursorKeyPrefix {
 		t.Fatalf("notificationRRCursorKey() = %q, want %q", got, notificationRRCursorKeyPrefix)
 	}
+
 	if got := notificationETagKey(90000001); got != "skyhook_notification_etag:90000001" {
 		t.Fatalf("notificationETagKey() = %q, want %q", got, "skyhook_notification_etag:90000001")
 	}

@@ -17,6 +17,7 @@ func normalizeScale(minX, minY, maxX, maxY, target float64) float64 {
 	if dx <= 0 && dy <= 0 {
 		return scale
 	}
+
 	if dx > dy {
 		return target / dx
 	}

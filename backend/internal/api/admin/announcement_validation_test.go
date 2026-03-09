@@ -13,9 +13,11 @@ func TestNormalizeAnnouncementPayload_Valid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeAnnouncementPayload() err = %v, want nil", err)
 	}
+
 	if variant != "modal" {
 		t.Fatalf("variant = %q, want %q", variant, "modal")
 	}
+
 	if message != "## Release notes" {
 		t.Fatalf("message = %q, want %q", message, "## Release notes")
 	}
@@ -49,9 +51,11 @@ func TestNormalizeAnnouncementPayload_BannerVariantAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeAnnouncementPayload() err = %v, want nil", err)
 	}
+
 	if variant != "banner" {
 		t.Fatalf("variant = %q, want %q", variant, "banner")
 	}
+
 	if message != "uptime tonight" {
 		t.Fatalf("message = %q, want %q", message, "uptime tonight")
 	}

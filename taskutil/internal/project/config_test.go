@@ -13,15 +13,19 @@ func TestParseConfig_ResolvesPathsAndDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
+
 	if cmd != "dev" {
 		t.Fatalf("command = %q, want dev", cmd)
 	}
+
 	if cfg.FrontendDir() != filepath.Join(root, "frontend") {
 		t.Fatalf("FrontendDir() = %q", cfg.FrontendDir())
 	}
+
 	if cfg.BackendDir() != filepath.Join(root, "backend") {
 		t.Fatalf("BackendDir() = %q", cfg.BackendDir())
 	}
+
 	if cfg.BinDir() != filepath.Join(root, "bin") {
 		t.Fatalf("BinDir() = %q", cfg.BinDir())
 	}
@@ -29,6 +33,7 @@ func TestParseConfig_ResolvesPathsAndDefaults(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		expectedBin += ".exe"
 	}
+
 	if cfg.BackendBinary() != expectedBin {
 		t.Fatalf("BackendBinary() = %q, want %q", cfg.BackendBinary(), expectedBin)
 	}
@@ -58,6 +63,7 @@ func TestParseConfig_DefaultBackendBinUsesAppName(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		want += ".exe"
 	}
+
 	if cfg.BackendBinary() != want {
 		t.Fatalf("BackendBinary() = %q, want %q", cfg.BackendBinary(), want)
 	}
@@ -72,9 +78,11 @@ func TestParseConfig_EnvOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
+
 	if cfg.BackendBinary() != filepath.Join(root, "bin", "my-server") {
 		t.Fatalf("BackendBinary() = %q", cfg.BackendBinary())
 	}
+
 	if cfg.LogDir != "var/log/dev" {
 		t.Fatalf("LogDir = %q", cfg.LogDir)
 	}
@@ -96,6 +104,7 @@ func TestParseConfig_ExperimentalPTYFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
+
 	if !cfg.ExperimentalPTY {
 		t.Fatalf("ExperimentalPTY = false, want true")
 	}
@@ -117,9 +126,11 @@ func TestParseBootstrap_ReadsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseBootstrap() error = %v", err)
 	}
+
 	if cfg.RootOverride != "/tmp/example-root" {
 		t.Fatalf("RootOverride = %q", cfg.RootOverride)
 	}
+
 	if cfg.RootMarkers != "Taskfile.yml,app" {
 		t.Fatalf("RootMarkers = %q", cfg.RootMarkers)
 	}
@@ -135,6 +146,7 @@ func TestParseConfig_LoadsDefaultCleanRulesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
+
 	if cfg.CleanRules != content {
 		t.Fatalf("CleanRules = %q, want %q", cfg.CleanRules, content)
 	}
@@ -152,6 +164,7 @@ func TestParseConfig_CleanRulesFileOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseConfig() error = %v", err)
 	}
+
 	if cfg.CleanRules != content {
 		t.Fatalf("CleanRules = %q, want %q", cfg.CleanRules, content)
 	}

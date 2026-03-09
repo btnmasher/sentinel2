@@ -14,6 +14,7 @@ func MountFrontendProxy(r *router.Router[*core.RequestEvent], target string) err
 	if target == "" {
 		return nil
 	}
+
 	if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") {
 		target = "http://" + target
 	}

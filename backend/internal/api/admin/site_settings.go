@@ -46,6 +46,7 @@ func (h *Handler) UpsertAllowedOrganization(c *core.RequestEvent) error {
 		EVEID int    `json:"eve_id"`
 		Name  string `json:"name"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{"error": bindErr.Error()})
 	}
@@ -53,6 +54,7 @@ func (h *Handler) UpsertAllowedOrganization(c *core.RequestEvent) error {
 	if resolveErr != nil {
 		return router.NewBadRequestError(resolveErr.Error(), logging.Fields{"type": payload.Type})
 	}
+
 	if payload.EVEID <= 0 {
 		return router.NewBadRequestError("eve_id must be positive.", logging.Fields{"eve_id": payload.EVEID})
 	}
@@ -86,6 +88,7 @@ func (h *Handler) UpsertAllowedOrganization(c *core.RequestEvent) error {
 		record.Set("eve_id", payload.EVEID)
 		record.Set("name", name)
 	}
+
 	if saveErr := h.App.Save(record); saveErr != nil {
 		return router.NewInternalServerError("Failed to save allowed organization.", logging.Fields{"error": saveErr.Error()})
 	}
@@ -129,6 +132,7 @@ func (h *Handler) DeleteAllowedOrganization(c *core.RequestEvent) error {
 	if findErr != nil {
 		return router.NewInternalServerError("Failed to load allowed organization.", logging.Fields{"error": findErr.Error()})
 	}
+
 	if len(records) == 0 {
 		return router.NewNotFoundError("Allowed organization not found.", logging.Fields{"type": rawType, "eve_id": eveID})
 	}

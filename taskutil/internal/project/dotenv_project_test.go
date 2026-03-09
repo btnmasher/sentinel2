@@ -15,6 +15,7 @@ func TestLoadDotEnv_LoadsExistingFiles(t *testing.T) {
 	if err := LoadDotEnv(root); err != nil {
 		t.Fatalf("LoadDotEnv() error = %v", err)
 	}
+
 	if got := os.Getenv("FOO"); got != "one" {
 		t.Fatalf("FOO = %q, want one", got)
 	}
@@ -28,6 +29,7 @@ func TestLooksLikeRepoRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "Taskfile.yml"), []byte("version: '3'\n"), 0o644); err != nil {
 		t.Fatalf("write Taskfile.yml: %v", err)
 	}
+
 	if !looksLikeRepoRoot(root, []string{"Taskfile.yml", "backend", "frontend", "taskutil"}) {
 		t.Fatalf("looksLikeRepoRoot(%q) = false, want true", root)
 	}
@@ -53,6 +55,7 @@ func TestResolveRootDir_UsesEnvOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveRootDir() error = %v", err)
 	}
+
 	if got != root {
 		t.Fatalf("ResolveRootDir() = %q, want %q", got, root)
 	}
@@ -81,6 +84,7 @@ func TestResolveRootDir_WalksUpUsingMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveRootDir() error = %v", err)
 	}
+
 	if got != root {
 		t.Fatalf("ResolveRootDir() = %q, want %q", got, root)
 	}
@@ -109,6 +113,7 @@ func TestResolveRootDir_UsesExecutableFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveRootDir() error = %v", err)
 	}
+
 	if got != root {
 		t.Fatalf("ResolveRootDir() = %q, want %q", got, root)
 	}

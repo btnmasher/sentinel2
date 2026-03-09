@@ -4,6 +4,7 @@ func MarkSeen[T comparable](seen map[T]struct{}, value T) bool {
 	if seen == nil {
 		return false
 	}
+
 	if _, ok := seen[value]; ok {
 		return false
 	}
@@ -16,6 +17,7 @@ func AppendUnique[T comparable](dst *[]T, seen map[T]struct{}, value T) bool {
 	if dst == nil || seen == nil {
 		return false
 	}
+
 	if !MarkSeen(seen, value) {
 		return false
 	}

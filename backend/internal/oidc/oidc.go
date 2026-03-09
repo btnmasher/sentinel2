@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -44,7 +45,7 @@ func New(ctx context.Context, cfg *config.Config) (*Client, error) {
 			TokenURL: cfg.OIDCTokenURL,
 		},
 		RedirectURL: "",
-		Scopes:      splitScopes(cfg.OIDCScopes),
+		Scopes:      normalizeScopes(cfg.OIDCScopes),
 	}
 
 	return &Client{
@@ -55,24 +56,20 @@ func New(ctx context.Context, cfg *config.Config) (*Client, error) {
 	}, nil
 }
 
-func splitScopes(value string) []string {
-	if value == "" {
+func normalizeScopes(scopes []string) []string {
+	if len(scopes) == 0 {
 		return []string{"openid"}
 	}
-	out := []string{}
-	current := ""
-	for _, r := range value {
-		if r == ' ' {
-			if current != "" {
-				out = append(out, current)
-				current = ""
-			}
-			continue
+	out := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		trimmed := strings.TrimSpace(scope)
+		if trimmed != "" {
+			out = append(out, trimmed)
 		}
-		current += string(r)
 	}
-	if current != "" {
-		out = append(out, current)
+
+	if len(out) == 0 {
+		return []string{"openid"}
 	}
 	return out
 }
@@ -149,6 +146,7 @@ func parseUnverifiedJWT(token string) (map[string]any, error) {
 
 func decodeJSON(payload []byte) (map[string]any, error) {
 	out := map[string]any{}
+
 	if decodeErr := json.Unmarshal(payload, &out); decodeErr != nil {
 		return nil, decodeErr
 	}

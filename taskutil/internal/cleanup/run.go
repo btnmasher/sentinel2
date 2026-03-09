@@ -14,6 +14,7 @@ func CleanRoot(cfg project.Config) error {
 	if err != nil {
 		return err
 	}
+
 	if len(plan.entries) == 0 {
 		fmt.Println("No clean targets matched.")
 		return nil
@@ -45,6 +46,7 @@ func buildCleanPlan(cfg project.Config) (cleanPlan, error) {
 	if err != nil {
 		return cleanPlan{}, err
 	}
+
 	if len(rules) == 0 {
 		return cleanPlan{}, nil
 	}

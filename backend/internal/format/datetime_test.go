@@ -7,9 +7,11 @@ func TestParseDateTimeFlexibleUTC_PocketBaseLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected parse success, got error: %v", err)
 	}
+
 	if got.Year() != 2026 || got.Month() != 2 || got.Day() != 20 {
 		t.Fatalf("unexpected date parsed: %s", got)
 	}
+
 	if got.Hour() != 0 || got.Minute() != 0 || got.Second() != 0 {
 		t.Fatalf("unexpected time parsed: %s", got)
 	}

@@ -139,6 +139,7 @@ func handleDotlanStartElement(app *pocketbase.PocketBase, region *core.Record, s
 		state.sysUseDepth = 1
 		return nil
 	}
+
 	if !state.inSysUse {
 		return nil
 	}
@@ -172,6 +173,7 @@ func updateDotlanSystemCoords(app *pocketbase.PocketBase, region *core.Record, s
 	if systemErr != nil || skipDotlanRegion(system.GetInt("region_id")) {
 		return nil
 	}
+
 	if system.GetInt("region_id") == region.GetInt("eve_id") {
 		return saveDotlanSystemCoords(app, system, region, x, y, log)
 	}
@@ -248,6 +250,7 @@ func gateCoordDirection(gate, system, region *core.Record) string {
 	if gate.GetInt("to_solarsystem") == system.GetInt("eve_id") && gate.GetInt("from_region") == region.GetInt("eve_id") {
 		return "to"
 	}
+
 	if gate.GetInt("from_solarsystem") == system.GetInt("eve_id") && gate.GetInt("to_region") == region.GetInt("eve_id") {
 		return "from"
 	}
@@ -278,6 +281,7 @@ func findSystemByID(app *pocketbase.PocketBase, id int) (*core.Record, error) {
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) == 0 {
 		return nil, ErrSystemNotFound
 	}

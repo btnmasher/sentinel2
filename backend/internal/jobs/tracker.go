@@ -37,6 +37,7 @@ func (t *JobTracker) IsRunning(kind, step string) (bool, error) {
 		"kind":   kind,
 		"status": StatusRunning,
 	}
+
 	if step == "" {
 		filter += " && (step = \"\" || step = null)"
 	} else {
@@ -97,12 +98,12 @@ func (t *JobTracker) Finish(record *core.Record, err error) {
 	if ok {
 		record.Set("duration_ms", now.Sub(started).Milliseconds())
 	}
+
 	if err != nil {
 		record.Set("status", StatusFailed)
-		record.Set("error", err.Error())
+		record.Set("message", err.Error())
 	} else {
 		record.Set("status", StatusSuccess)
-		record.Set("error", "")
 	}
 	_ = t.app.Save(record)
 }
@@ -119,9 +120,7 @@ func (t *JobTracker) FinishPartial(record *core.Record, err error) {
 	}
 	record.Set("status", StatusPartial)
 	if err != nil {
-		record.Set("error", err.Error())
-	} else {
-		record.Set("error", "")
+		record.Set("message", err.Error())
 	}
 	_ = t.app.Save(record)
 }
@@ -137,7 +136,7 @@ func (t *JobTracker) FinishSkipped(record *core.Record, reason string) {
 		record.Set("duration_ms", now.Sub(started).Milliseconds())
 	}
 	record.Set("status", StatusSkipped)
-	record.Set("error", reason)
+	record.Set("message", reason)
 	_ = t.app.Save(record)
 }
 
@@ -152,7 +151,7 @@ func (t *JobTracker) FinishCanceled(record *core.Record, reason string) {
 		record.Set("duration_ms", now.Sub(started).Milliseconds())
 	}
 	record.Set("status", StatusCanceled)
-	record.Set("error", reason)
+	record.Set("message", reason)
 	_ = t.app.Save(record)
 }
 
@@ -160,6 +159,7 @@ func (t *JobTracker) MarkStaleRunningAsTimeout(maxAge time.Duration) (int, error
 	if t == nil || t.app == nil {
 		return 0, nil
 	}
+
 	if maxAge <= 0 {
 		return 0, nil
 	}
@@ -198,7 +198,7 @@ func (t *JobTracker) MarkStaleRunningAsTimeout(maxAge time.Duration) (int, error
 		record.Set("completed_at", now)
 		record.Set("duration_ms", now.Sub(started).Milliseconds())
 		record.Set("status", StatusTimeout)
-		record.Set("error", fmt.Sprintf("timed out by cleanup after running longer than %s", maxAge))
+		record.Set("message", fmt.Sprintf("timed out by cleanup after running longer than %s", maxAge))
 		if saveErr := t.app.Save(record); saveErr != nil {
 			return updated, saveErr
 		}

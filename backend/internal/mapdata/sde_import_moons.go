@@ -68,9 +68,11 @@ func parseValidMoonRow(row map[string]any) (moon moonRowData, reason string) {
 	if moon.groupID != 0 && moon.groupID != moonGroupID {
 		return moon, "not_moon"
 	}
+
 	if moon.id == 0 {
 		return moon, "missing_id"
 	}
+
 	if moon.systemID == 0 {
 		return moon, "missing_system"
 	}
@@ -122,6 +124,7 @@ func deriveMoonName(systemName, planetName string, orbitIndex, moonID int) strin
 		}
 		return base + " - Moon"
 	}
+
 	if systemName != "" {
 		return systemName + " Moon " + strconv.Itoa(max(orbitIndex, 1))
 	}

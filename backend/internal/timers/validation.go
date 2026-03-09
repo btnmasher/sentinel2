@@ -10,21 +10,27 @@ func validateCreateInput(input *CreateInput) error {
 	if input == nil {
 		return ErrMissingInput
 	}
+
 	if input.ExpiresAt.IsZero() {
 		return ErrMissingExpiresAt
 	}
+
 	if strings.TrimSpace(input.StructureType) == "" {
 		return ErrMissingStructureType
 	}
+
 	if err := validateCreateTimerContext(input); err != nil {
 		return err
 	}
+
 	if requiresMoon(input.StructureType) && input.MoonID <= 0 {
 		return ErrMoonRequired
 	}
+
 	if requiresPlanet(input.StructureType) && input.PlanetID <= 0 {
 		return ErrPlanetRequired
 	}
+
 	if err := validateCreateSkyhookExtraction(input); err != nil {
 		return err
 	}
@@ -47,6 +53,7 @@ func validateCreateTimerContext(input *CreateInput) error {
 	if structureType == "" {
 		structureType = TimerStructureCustom
 	}
+
 	if !IsAllowedTimerContext(timerKind, structureType, stageLabel) {
 		return ErrInvalidTimerContext
 	}
@@ -57,9 +64,11 @@ func validateCreateSkyhookExtraction(input *CreateInput) error {
 	if input == nil {
 		return ErrMissingInput
 	}
+
 	if input.TimerKind != TimerKindExtraction || input.StructureType != TimerStructureOrbitalSkyhook {
 		return nil
 	}
+
 	if input.SkyhookFullnessPct == nil || *input.SkyhookFullnessPct < 0 || *input.SkyhookFullnessPct > 100 {
 		return ErrInvalidSkyhookFullnessPercentage
 	}
@@ -70,9 +79,11 @@ func validateUpdateInput(record *core.Record, input *UpdateInput) error {
 	if input == nil {
 		return ErrMissingInput
 	}
+
 	if input.StructureType != nil && strings.TrimSpace(*input.StructureType) == "" {
 		return ErrMissingStructureType
 	}
+
 	if err := validateUpdatedTimerContext(record, input); err != nil {
 		return err
 	}
@@ -84,6 +95,7 @@ func validateUpdatedTimerContext(record *core.Record, input *UpdateInput) error 
 	if input.StageLabel != nil {
 		stageLabel = strings.TrimSpace(*input.StageLabel)
 	}
+
 	if stageLabel != "" && !IsStageLabel(stageLabel) {
 		return ErrInvalidStageLabel
 	}
@@ -92,9 +104,11 @@ func validateUpdatedTimerContext(record *core.Record, input *UpdateInput) error 
 	if !IsAllowedTimerContext(timerKind, structureType, stageLabel) {
 		return ErrInvalidTimerContext
 	}
+
 	if requiresMoon(structureType) && moonID <= 0 {
 		return ErrMoonRequired
 	}
+
 	if requiresPlanet(structureType) && planetID <= 0 {
 		return ErrPlanetRequired
 	}

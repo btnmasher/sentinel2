@@ -10,6 +10,7 @@ func DeriveBuildVersion() (string, error) {
 	if explicit := strings.TrimSpace(os.Getenv("BUILD_VERSION")); explicit != "" {
 		return explicit, nil
 	}
+
 	if _, err := runGit("rev-parse", "--is-inside-work-tree"); err != nil {
 		return "", nil
 	}
@@ -31,6 +32,7 @@ func DeriveBuildVersion() (string, error) {
 			version = version + "-" + shortSHA
 		}
 	}
+
 	if version != "" {
 		if dirty := firstOrEmpty(runGit("status", "--porcelain")); dirty != "" {
 			version = version + "-dev"

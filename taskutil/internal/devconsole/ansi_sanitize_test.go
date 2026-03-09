@@ -8,6 +8,7 @@ func TestNormalizeLineForViewport_PreservesSGRStripsCursorControl(t *testing.T) 
 	if got == "" {
 		t.Fatalf("normalizeLineForViewport() returned empty output")
 	}
+
 	if got != "\x1b[31mred\x1b[0m done" {
 		t.Fatalf("unexpected sanitized output: %q", got)
 	}

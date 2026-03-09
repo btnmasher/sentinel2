@@ -60,6 +60,7 @@ func (s *Service) SearchSystems(query string, limit int) ([]SystemSearchItem, er
 	if q == "" {
 		return []SystemSearchItem{}, nil
 	}
+
 	if limit <= 0 {
 		limit = defaultSearchLimit
 	}

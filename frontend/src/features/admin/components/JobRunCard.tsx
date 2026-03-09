@@ -19,6 +19,12 @@ const sortSteps = (steps: JobRun[]) =>
     return aTime - bTime;
   });
 
+const isStructuredStep = (step: JobRun) => {
+  const label = (step.step || "").trim();
+  if (!label) return false;
+  return !label.includes(" ");
+};
+
 const resolveDuration = (parent: JobRun, now: number) =>
   formatDuration(
     parent.duration_ms && parent.duration_ms > 0
@@ -31,13 +37,16 @@ const resolveDuration = (parent: JobRun, now: number) =>
   );
 
 const stepStatusDetails = (step: JobRun) =>
-  step.status === "skipped" && step.error
-    ? `Skipped: ${step.error}`
+  step.status === "skipped" && step.message
+    ? `Skipped: ${step.message}`
     : step.status
       ? step.status[0].toUpperCase() + step.status.slice(1)
-      : step.error
-        ? `Error: ${step.error}`
+      : step.message
+        ? `Message: ${step.message}`
         : "";
+
+const isFailureStatus = (status?: string) =>
+  status === "failed" || status === "timeout" || status === "canceled";
 
 function JobStepStatusBadge({ step }: { step: JobRun }) {
   const details = stepStatusDetails(step);
@@ -77,13 +86,18 @@ export default function JobRunCard({
   now,
   onCancel,
 }: JobRunCardProps) {
+  const visibleSteps = sortSteps(steps).filter(isStructuredStep);
   return (
     <li className="rounded-lg border border-slate-800/70 bg-base-300/50 px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold">{parent.kind}</span>
-          {parent.step && <span className="text-slate-400">{parent.step}</span>}
-          <JobStatusBadge status={parent.status} error={parent.error} />
+          <JobStatusBadge
+            status={parent.status}
+            message={
+              isFailureStatus(parent.status) ? undefined : parent.message
+            }
+          />
         </div>
         <span className="text-slate-400">{resolveDuration(parent, now)}</span>
       </div>
@@ -101,9 +115,9 @@ export default function JobRunCard({
       {parent.job_id && (
         <div className="text-slate-500">Job {parent.job_id}</div>
       )}
-      {steps.length > 0 && (
+      {visibleSteps.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {sortSteps(steps).map((step) => (
+          {visibleSteps.map((step) => (
             <JobStepStatusBadge key={step.id} step={step} />
           ))}
         </div>
@@ -118,8 +132,8 @@ export default function JobRunCard({
           </button>
         </div>
       )}
-      {parent.error && parent.status !== "skipped" && (
-        <p className="mt-1 text-red-400">Error: {parent.error}</p>
+      {isFailureStatus(parent.status) && parent.message && (
+        <p className="mt-1 text-red-400">Error: {parent.message}</p>
       )}
     </li>
   );

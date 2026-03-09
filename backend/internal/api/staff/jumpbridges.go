@@ -25,6 +25,7 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 	payload := struct {
 		Jumpbridges string `json:"jumpbridges"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"error": bindErr.Error(),
@@ -43,15 +44,22 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 			"line_count": len(lines),
 		})
 	}
-	count, updateErr := h.Service.UpdateFromLines(lines)
+	result, updateErr := h.Service.UpdateFromLinesDetailedWithContext(c.Request.Context(), lines)
 	logFields := logging.Fields{
-		"line_count": len(lines),
-		"count":      count,
+		"line_count":   len(lines),
+		"pair_count":   result.ParsedPairs,
+		"count":        result.ImportedPairs,
+		"failed_pairs": result.FailedPairs,
+		"applied":      result.Applied,
 	}
 
 	if updateErr != nil {
 		logFields["error"] = updateErr.Error()
 		return router.NewInternalServerError("Failed to import jumpbridges.", logFields)
+	}
+
+	if result.FailedPairs > 0 {
+		logFields["failures"] = result.Failures
 	}
 
 	if c.Auth != nil {
@@ -68,7 +76,10 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 			TargetLabel: "Import",
 			TargetMeta: map[string]any{
 				"line_count": len(lines),
-				"count":      count,
+				"pair_count": result.ParsedPairs,
+				"count":      result.ImportedPairs,
+				"failed":     result.FailedPairs,
+				"applied":    result.Applied,
 			},
 		})
 	}
@@ -77,15 +88,35 @@ func (h *JumpbridgeHandler) Import(c *core.RequestEvent) error {
 	if c.Auth != nil {
 		actorID = c.Auth.Id
 	}
-	_ = mapdata.TriggerMapDataStep(h.App, mapdata.StepTriggerOptions{
-		Step:    mapdata.StepBuildGraph,
-		Trigger: jobs.TriggerStaffJumpbridgeImport,
-		ActorID: actorID,
-		JobName: mapdata.JobMapDataStep,
-		Logger:  logging.WithRequest(h.App, c),
-	})
 
-	return c.JSON(http.StatusOK, jumpbridgeImportResponse{Count: count})
+	if result.Applied {
+		_ = mapdata.TriggerMapDataStep(h.App, mapdata.StepTriggerOptions{
+			Step:    mapdata.StepBuildGraph,
+			Trigger: jobs.TriggerStaffJumpbridgeImport,
+			ActorID: actorID,
+			JobName: mapdata.JobMapDataStep,
+			Logger:  logging.WithRequest(h.App, c),
+		})
+	}
+
+	failures := make([]jumpbridgeImportFailure, 0, len(result.Failures))
+	for _, failure := range result.Failures {
+		failures = append(failures, jumpbridgeImportFailure{
+			FromID:   failure.FromSystemID,
+			ToID:     failure.ToSystemID,
+			FromName: failure.FromSystemName,
+			ToName:   failure.ToSystemName,
+			Reason:   failure.Reason,
+		})
+	}
+	return c.JSON(http.StatusOK, jumpbridgeImportResponse{
+		Count:     result.ImportedPairs,
+		LineCount: result.LineCount,
+		PairCount: result.ParsedPairs,
+		Failed:    result.FailedPairs,
+		Failures:  failures,
+		Applied:   result.Applied,
+	})
 }
 
 func (h *JumpbridgeHandler) Clear(c *core.RequestEvent) error {
@@ -129,11 +160,13 @@ func (h *JumpbridgeHandler) Add(c *core.RequestEvent) error {
 		FromID int `json:"from_id"`
 		ToID   int `json:"to_id"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"error": bindErr.Error(),
 		})
 	}
+
 	if payload.FromID <= 0 || payload.ToID <= 0 {
 		return router.NewBadRequestError("Both from_id and to_id are required.", logging.Fields{
 			"from_id": payload.FromID,
@@ -146,7 +179,7 @@ func (h *JumpbridgeHandler) Add(c *core.RequestEvent) error {
 			"operation": "add",
 		})
 	}
-	changed, addErr := h.Service.AddPair(payload.FromID, payload.ToID)
+	changed, addErr := h.Service.AddPairWithContext(c.Request.Context(), payload.FromID, payload.ToID)
 	if addErr != nil {
 		return router.NewBadRequestError(addErr.Error(), logging.Fields{
 			"from_id": payload.FromID,
@@ -192,11 +225,13 @@ func (h *JumpbridgeHandler) Remove(c *core.RequestEvent) error {
 		FromID int `json:"from_id"`
 		ToID   int `json:"to_id"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"error": bindErr.Error(),
 		})
 	}
+
 	if payload.FromID <= 0 || payload.ToID <= 0 {
 		return router.NewBadRequestError("Both from_id and to_id are required.", logging.Fields{
 			"from_id": payload.FromID,
@@ -254,11 +289,13 @@ func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
 		FromID    int `json:"from_id"`
 		ToID      int `json:"to_id"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"error": bindErr.Error(),
 		})
 	}
+
 	if payload.OldFromID <= 0 || payload.OldToID <= 0 || payload.FromID <= 0 || payload.ToID <= 0 {
 		return router.NewBadRequestError("old_from_id, old_to_id, from_id, and to_id are required.", logging.Fields{
 			"old_from_id": payload.OldFromID,
@@ -273,7 +310,7 @@ func (h *JumpbridgeHandler) Update(c *core.RequestEvent) error {
 			"operation": "update",
 		})
 	}
-	changed, updateErr := h.Service.UpdatePair(payload.OldFromID, payload.OldToID, payload.FromID, payload.ToID)
+	changed, updateErr := h.Service.UpdatePairWithContext(c.Request.Context(), payload.OldFromID, payload.OldToID, payload.FromID, payload.ToID)
 	if updateErr != nil {
 		return router.NewBadRequestError(updateErr.Error(), logging.Fields{
 			"old_from_id": payload.OldFromID,

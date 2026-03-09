@@ -15,6 +15,7 @@ func AppendAnd(filter, clause string) string {
 	if filter == "" {
 		return clause
 	}
+
 	if clause == "" {
 		return filter
 	}
@@ -48,6 +49,7 @@ func BuildOrEqualsFilterWithPrefix[T any](field, prefix string, values []T) (str
 	if prefix == "" {
 		return BuildOrEqualsFilter(field, values)
 	}
+
 	if len(values) == 0 {
 		return "", dbx.Params{}
 	}
@@ -82,6 +84,7 @@ func SetOptional[T any](record *core.Record, field string, value *T, normalize f
 	if record == nil || value == nil {
 		return
 	}
+
 	if normalize == nil {
 		record.Set(field, *value)
 		return
@@ -89,9 +92,26 @@ func SetOptional[T any](record *core.Record, field string, value *T, normalize f
 	record.Set(field, normalize(*value))
 }
 
+func HasField(record *core.Record, field string) bool {
+	return record != nil && record.Collection().Fields.GetByName(field) != nil
+}
+
 func ValueOrTrim(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
 	}
 	return value
+}
+
+// InExp returns a dbx expression equivalent to "<field> IN (<values...>)".
+// It falls back to an always-false expression when values is empty.
+func InExp[T comparable](field string, values []T) dbx.Expression {
+	if strings.TrimSpace(field) == "" || len(values) == 0 {
+		return dbx.NewExp("1=0")
+	}
+	args := make([]any, 0, len(values))
+	for _, value := range values {
+		args = append(args, value)
+	}
+	return dbx.In(field, args...)
 }

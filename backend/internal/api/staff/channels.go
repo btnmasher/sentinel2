@@ -40,11 +40,13 @@ func (h *ChannelsHandler) Create(c *core.RequestEvent) error {
 	payload := struct {
 		ChannelName string `json:"channel_name"`
 	}{}
+
 	if bindErr := c.BindBody(&payload); bindErr != nil {
 		return router.NewBadRequestError("Invalid payload.", logging.Fields{
 			"error": bindErr.Error(),
 		})
 	}
+
 	if payload.ChannelName == "" {
 		return router.NewBadRequestError("Missing channel name.", logging.Fields{
 			"channel_name": payload.ChannelName,
@@ -72,6 +74,7 @@ func (h *ChannelsHandler) Create(c *core.RequestEvent) error {
 		"channel_id": record.Id,
 		"channel":    payload.ChannelName,
 	}
+
 	if c.Auth != nil {
 		logFields["user_id"] = c.Auth.Id
 	}
@@ -121,6 +124,7 @@ func (h *ChannelsHandler) Delete(c *core.RequestEvent) error {
 		"channel_id": id,
 		"channel":    record.GetString("channel_name"),
 	}
+
 	if c.Auth != nil {
 		logFields["user_id"] = c.Auth.Id
 	}

@@ -17,6 +17,7 @@ func TestOverlap(t *testing.T) {
 	if !overlap([]int{1, 2, 3}, []int{3, 4}) {
 		t.Fatal("expected overlap to return true")
 	}
+
 	if overlap([]int{1, 2}, []int{3, 4}) {
 		t.Fatal("expected overlap to return false")
 	}
@@ -61,6 +62,7 @@ func TestCollectRegionBoundsAndScale(t *testing.T) {
 	if systems[1].Position.X != 0 || systems[1].Position.Y != 0 {
 		t.Fatalf("expected first system normalized to origin, got %+v", systems[1].Position)
 	}
+
 	if systems[2].Position.X != 50 || systems[2].Position.Y != 100 {
 		t.Fatalf("expected scaled system to (50,100), got %+v", systems[2].Position)
 	}

@@ -81,6 +81,23 @@ func (e *ESIProxyClient) SearchOrganizations(ctx context.Context, characterID in
 	return []int{}, []int{}, ErrAffiliationUnsupported
 }
 
+func (e *ESIProxyClient) SearchStructures(ctx context.Context, characterID int, accessToken, query string, strict bool) ([]int64, error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = query
+	_ = strict
+	return []int64{}, ErrAffiliationUnsupported
+}
+
+func (e *ESIProxyClient) UniverseStructure(ctx context.Context, characterID int, accessToken string, structureID int64) (UniverseStructure, error) {
+	_ = ctx
+	_ = characterID
+	_ = accessToken
+	_ = structureID
+	return UniverseStructure{}, ErrAffiliationUnsupported
+}
+
 func (e *ESIProxyClient) SetAutopilotWaypoint(ctx context.Context, req AutopilotRequest, token string) error {
 	start := time.Now()
 	params := url.Values{}
@@ -168,6 +185,7 @@ func (e *ESIProxyClient) logRequest(endpoint, method, characterID string, status
 		"status":      status,
 		"duration_ms": time.Since(start).Milliseconds(),
 	}
+
 	if characterID != "" {
 		fields["character_id"] = characterID
 	}

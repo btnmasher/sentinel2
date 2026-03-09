@@ -82,6 +82,7 @@ func (r *RoutePlanner) jumpgatePath(graph map[int][]edge, path []int, destinatio
 			jumpgatePath = append(jumpgatePath, gate)
 		}
 	}
+
 	if len(jumpgatePath) == 0 || jumpgatePath[len(jumpgatePath)-1] != destination {
 		jumpgatePath = append(jumpgatePath, destination)
 	}
@@ -157,10 +158,11 @@ func (r *RoutePlanner) findLatestJumpbridge(from, to int) (int, error) {
 	if recordsErr != nil {
 		return 0, recordsErr
 	}
+
 	if len(records) == 0 {
 		return 0, nil
 	}
-	return records[0].GetInt("structure_id"), nil
+	return records[0].GetInt("from_structure_id"), nil
 }
 
 func hashJumpbridges(records []*core.Record) string {
@@ -169,7 +171,12 @@ func hashJumpbridges(records []*core.Record) string {
 	}
 	ids := make([]int, 0, len(records))
 	for _, rec := range records {
-		ids = append(ids, rec.GetInt("structure_id"))
+		ids = append(ids,
+			rec.GetInt("from_structure_id"),
+			rec.GetInt("to_structure_id"),
+			rec.GetInt("from_solarsystem"),
+			rec.GetInt("to_solarsystem"),
+		)
 	}
 	sort.Ints(ids)
 	var payload strings.Builder

@@ -32,6 +32,7 @@ func setOrganizationSovSyncBoolRequired(app core.App, required bool) error {
 	if !ok || boolField == nil {
 		return nil
 	}
+
 	if boolField.Required == required {
 		return nil
 	}

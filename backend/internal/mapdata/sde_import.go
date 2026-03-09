@@ -90,6 +90,7 @@ func (s *SDEImporter) DownloadAndImport(ctx context.Context, etag string) error 
 func (s *SDEImporter) DownloadAndImportWithReport(ctx context.Context, etag string) (SDEImportReport, error) {
 	s.resetNameCache()
 	report := SDEImportReport{}
+
 	if etag == "" {
 		fetched, fetchErr := s.fetchETag(ctx, LatestJSONLZip)
 		if fetchErr == nil {
@@ -148,6 +149,7 @@ func (s *SDEImporter) DownloadAndImportWithReport(ctx context.Context, etag stri
 	if etag != "" {
 		_ = s.saveMeta("sde_zip_etag", etag)
 	}
+
 	if build != "" {
 		_ = s.saveMeta("sde_build", build)
 	}
@@ -240,6 +242,7 @@ func (s *SDEImporter) importJSONLIfChanged(ctx context.Context, zipPath, name st
 	if importErr := withJSONLFileFromZip(zipPath, name, importFn); importErr != nil {
 		return false, "", importErr
 	}
+
 	if saveErr := s.saveMeta(metaKey, hash); saveErr != nil {
 		s.logger.
 			WithErr(saveErr).
@@ -284,6 +287,7 @@ func (s *SDEImporter) downloadSDEZip(ctx context.Context) (string, error) {
 		_ = os.Remove(tmpPath)
 		return "", copyErr
 	}
+
 	if closeErr != nil {
 		_ = os.Remove(tmpPath)
 		return "", closeErr
@@ -319,6 +323,7 @@ func (s *SDEImporter) logSDECollectionCounts() {
 		}
 		counts[collection] = len(records)
 	}
+
 	if len(counts) > 0 {
 		s.logger.
 			WithFields(logging.Fields{"collection_counts": counts}).
@@ -343,6 +348,7 @@ func withJSONLFileFromZip(zipPath, name string, fn func(io.Reader) error) error 
 	if fn == nil {
 		return nil
 	}
+
 	if !isSupportedJSONLFile(name) {
 		return ErrMapJSONLNotFound
 	}
@@ -413,6 +419,7 @@ func forEachJSONLRow(r io.Reader, fn func(i int, row map[string]any) error) (int
 		}
 		rowIndex++
 	}
+
 	if scanErr := scanner.Err(); scanErr != nil {
 		return rowIndex, scanErr
 	}
@@ -423,6 +430,7 @@ func normalizeJSONL(payload map[string]any) map[string]any {
 	if key, ok := payload["_key"]; ok {
 		payload["_key"] = key
 	}
+
 	if value, ok := payload["_value"]; ok {
 		if m, ok := value.(map[string]any); ok {
 			maps.Copy(payload, m)
@@ -441,6 +449,7 @@ func (s *SDEImporter) findSystem(systemID int) (*core.Record, error) {
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) == 0 {
 		return nil, ErrSystemNotFound
 	}
@@ -452,6 +461,7 @@ func (s *SDEImporter) findPlanet(planetID int) (*core.Record, error) {
 	if recordsErr != nil {
 		return nil, recordsErr
 	}
+
 	if len(records) == 0 {
 		return nil, ErrSystemNotFound
 	}
@@ -531,6 +541,7 @@ func valuesEqual(current, incoming any) bool {
 	if incoming == nil {
 		return current == nil
 	}
+
 	if current == nil {
 		return false
 	}
@@ -661,6 +672,7 @@ func (s *SDEImporter) lookupSystemName(systemID int) string {
 	if s == nil || systemID <= 0 {
 		return ""
 	}
+
 	if value, ok := s.cache.systemNames[systemID]; ok {
 		return value
 	}
@@ -676,6 +688,7 @@ func (s *SDEImporter) lookupPlanetName(planetID int) string {
 	if s == nil || planetID <= 0 {
 		return ""
 	}
+
 	if value, ok := s.cache.planetNames[planetID]; ok {
 		return value
 	}
@@ -695,6 +708,7 @@ func parseBuildNumberLine(line string) (string, bool) {
 	if unmarshalErr := json.Unmarshal([]byte(line), &payload); unmarshalErr != nil {
 		return "", false
 	}
+
 	if payload["_key"] != "sde" {
 		return "", false
 	}
@@ -769,6 +783,7 @@ func localizedString(value any) (string, bool) {
 	if !ok {
 		return "", false
 	}
+
 	if en, ok := labels["en"].(string); ok && en != "" {
 		return en, true
 	}
@@ -798,6 +813,7 @@ func getPosition2D(row map[string]any) (x, y float64, ok bool) {
 			return getFloat(m, "x"), getFloat(m, "y"), true
 		}
 	}
+
 	if value, ok := row["position2d"]; ok {
 		if m, ok := value.(map[string]any); ok {
 			return getFloat(m, "x"), getFloat(m, "y"), true
