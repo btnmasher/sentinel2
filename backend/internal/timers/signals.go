@@ -123,11 +123,10 @@ func (s *Service) ActiveSystemsByStructureTypes(structureTypes []string, now tim
 	}
 
 	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilterWithPrefix("structure_type", "st", structureTypes)
-	filter := queryhelpers.AppendAnd("status = {:status}", "expires_at > {:now}")
+	filter := "status = {:status}"
 	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
 	params := dbx.Params{
 		"status": timerStatusActive,
-		"now":    now.UTC().Format(time.RFC3339),
 	}
 	stdmaps.Copy(params, structureParams)
 	filter = appendRegionFilter(filter, params, regionIDs)
@@ -139,8 +138,8 @@ func (s *Service) ActiveSystemsByStructureTypes(structureTypes []string, now tim
 
 	out := make(map[int]struct{}, len(records))
 	for _, record := range records {
-		systemID := record.GetInt("system_id")
-		if systemID <= 0 {
+		systemID, _, ok := parseSignalRecord(record, now)
+		if !ok {
 			continue
 		}
 		out[systemID] = struct{}{}
@@ -159,12 +158,11 @@ func (s *Service) ActiveSystemsByStructureTypesInSystems(structureTypes []string
 
 	structureFilter, structureParams := queryhelpers.BuildOrEqualsFilterWithPrefix("structure_type", "st", structureTypes)
 	systemFilter, systemParams := queryhelpers.BuildOrEqualsFilterWithPrefix("system_id", "sys", systemIDs)
-	filter := queryhelpers.AppendAnd("status = {:status}", "expires_at > {:now}")
+	filter := "status = {:status}"
 	filter = queryhelpers.AppendAnd(filter, "("+structureFilter+")")
 	filter = queryhelpers.AppendAnd(filter, "("+systemFilter+")")
 	params := dbx.Params{
 		"status": timerStatusActive,
-		"now":    now.UTC().Format(time.RFC3339),
 	}
 	stdmaps.Copy(params, structureParams)
 	stdmaps.Copy(params, systemParams)
@@ -176,8 +174,8 @@ func (s *Service) ActiveSystemsByStructureTypesInSystems(structureTypes []string
 
 	out := make(map[int]struct{}, len(records))
 	for _, record := range records {
-		systemID := record.GetInt("system_id")
-		if systemID <= 0 {
+		systemID, _, ok := parseSignalRecord(record, now)
+		if !ok {
 			continue
 		}
 		out[systemID] = struct{}{}
