@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,33 +21,41 @@ import (
 )
 
 type EVEProvider struct {
-	App       *pocketbase.PocketBase
-	OAuth2    *oauth2.Config
-	ESI       esi.ESIClient
-	PublicESI *esi.ESIPublicClient
-	Intel     *intel.IntelService
+	App            *pocketbase.PocketBase
+	OAuth2         *oauth2.Config
+	ESI            esi.ESIClient
+	PublicESI      *esi.ESIPublicClient
+	Intel          *intel.IntelService
+	TokenValidator EVETokenValidator
 }
 
 type eveTokenClaims struct {
 	Sub  string   `json:"sub"`
 	Name string   `json:"name"`
-	Exp  int64    `json:"exp"`
 	Scp  []string `json:"scp"`
 }
 
 const (
-	minJWTParts = 2
 	minSubParts = 3
 )
 
-func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) *EVEProvider {
-	return &EVEProvider{
-		App:       app,
-		OAuth2:    oauthConfig,
-		ESI:       esiClient,
-		PublicESI: publicESI,
-		Intel:     intelService,
+func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (*EVEProvider, error) {
+	if oauthConfig == nil {
+		return nil, errors.New("missing oauth config")
 	}
+	validator, validatorErr := NewEVETokenValidator(oauthConfig.ClientID)
+	if validatorErr != nil {
+		return nil, validatorErr
+	}
+
+	return &EVEProvider{
+		App:            app,
+		OAuth2:         oauthConfig,
+		ESI:            esiClient,
+		PublicESI:      publicESI,
+		Intel:          intelService,
+		TokenValidator: validator,
+	}, nil
 }
 
 func (p *EVEProvider) Name() string {
@@ -102,7 +108,7 @@ func (p *EVEProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, err
 		return nil, AuthFlow{}, ErrFailedExchangeToken
 	}
 
-	claims, claimsErr := parseEVEToken(token.AccessToken)
+	claims, claimsErr := p.validateEVEToken(c.Request.Context(), token.AccessToken)
 	if claimsErr != nil {
 		return nil, AuthFlow{}, ErrFailedDecodeToken
 	}
@@ -447,25 +453,12 @@ func oauthTokens(token *oauth2.Token) AuthTokens {
 	}
 }
 
-func parseEVEToken(accessToken string) (*eveTokenClaims, error) {
-	parts := strings.Split(accessToken, ".")
-	if len(parts) < minJWTParts {
-		return nil, errors.New("invalid token")
-	}
-	payload, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
-	if decodeErr != nil {
-		return nil, decodeErr
-	}
-	var claims eveTokenClaims
-	if unmarshalErr := json.Unmarshal(payload, &claims); unmarshalErr != nil {
-		return nil, unmarshalErr
-	}
-	return &claims, nil
-}
-
 func parseCharacterID(sub string) (int, error) {
 	parts := strings.Split(sub, ":")
-	if len(parts) < minSubParts {
+	if len(parts) != minSubParts {
+		return 0, errors.New("invalid sub")
+	}
+	if parts[0] != "CHARACTER" || parts[1] != "EVE" {
 		return 0, errors.New("invalid sub")
 	}
 	return strconv.Atoi(parts[len(parts)-1])
@@ -641,7 +634,7 @@ func (p *EVEProvider) refreshCharacter(ctx context.Context, user, character *cor
 }
 
 func (p *EVEProvider) resolveRefreshedCharacterData(ctx context.Context, accessToken string) (refreshedCharacterData, error) {
-	claims, claimsErr := parseEVEToken(accessToken)
+	claims, claimsErr := p.validateEVEToken(ctx, accessToken)
 	if claimsErr != nil {
 		return refreshedCharacterData{}, claimsErr
 	}
@@ -660,6 +653,13 @@ func (p *EVEProvider) resolveRefreshedCharacterData(ctx context.Context, accessT
 		corpID:     corpID,
 		allianceID: allianceID,
 	}, nil
+}
+
+func (p *EVEProvider) validateEVEToken(ctx context.Context, accessToken string) (*eveTokenClaims, error) {
+	if p == nil || p.TokenValidator == nil {
+		return nil, errors.New("missing token validator")
+	}
+	return p.TokenValidator.ValidateAccessToken(ctx, accessToken)
 }
 
 func (p *EVEProvider) warmCharacterOrganizations(ctx context.Context, corpID, allianceID int) {

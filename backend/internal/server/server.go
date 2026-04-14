@@ -168,7 +168,7 @@ func buildAuthProvider(cfg *config.Config, app *pocketbase.PocketBase, publicESI
 			Scopes: cfg.EVEScopeList(),
 		}
 		esiClient := esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
-		return auth.NewEVEProvider(app, &oauthConfig, esiClient, publicESI, intelService), nil
+		return auth.NewEVEProvider(app, &oauthConfig, esiClient, publicESI, intelService)
 	default:
 		oidcClient, oidcErr := oidc.New(context.Background(), cfg)
 		if oidcErr != nil {
