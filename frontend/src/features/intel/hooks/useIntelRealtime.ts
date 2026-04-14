@@ -14,11 +14,11 @@ export default function useIntelRealtime() {
   const zkillFeedEnabled = useSettingsStore(
     (s) => s.settings.intel.zkillFeedEnabled,
   );
-  const regions = useMapStore((s) => s.regions);
-  const loadedRegionIds = Object.keys(regions)
+  const mapRegions = useMapStore((s) => s.mapRegions);
+  const selectedRegionIds = mapRegions
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value) && value > 0);
-  const loadedRegionKey = loadedRegionIds
+  const selectedRegionKey = Array.from(new Set(selectedRegionIds))
     .slice()
     .sort((a, b) => a - b)
     .join(",");
@@ -48,9 +48,9 @@ export default function useIntelRealtime() {
       return;
     }
     const regionIds =
-      loadedRegionKey === ""
+      selectedRegionKey === ""
         ? []
-        : loadedRegionKey
+        : selectedRegionKey
             .split(",")
             .map((value) => Number(value))
             .filter((value) => Number.isFinite(value) && value > 0);
@@ -58,7 +58,7 @@ export default function useIntelRealtime() {
   }, [
     isAuthenticated,
     intelStatus,
-    loadedRegionKey,
+    selectedRegionKey,
     syncZKillRealtime,
     zkillFeedEnabled,
   ]);
