@@ -795,6 +795,24 @@ func localizedString(value any) (string, bool) {
 	return "", false
 }
 
+func localizedStringMap(value any) (map[string]string, bool) {
+	labels, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+
+	out := make(map[string]string, len(labels))
+	for locale, nested := range labels {
+		if text, ok := nested.(string); ok && text != "" {
+			out[locale] = text
+		}
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
 func getPositionXYZ(row map[string]any) (x, y, z float64) {
 	if value, ok := row["position"]; ok {
 		if m, ok := value.(map[string]any); ok {

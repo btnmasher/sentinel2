@@ -88,7 +88,7 @@ func newValidatorFixture(t *testing.T) (*eveTokenValidator, *rsa.PrivateKey, str
 				"kid": kid,
 				"kty": "RSA",
 				"alg": "RS256",
-				"n":   base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.N.Bytes()),
+				"n":   base64.RawURLEncoding.EncodeToString(privateKey.N.Bytes()),
 				"e":   base64.RawURLEncoding.EncodeToString([]byte{1, 0, 1}),
 			},
 		},

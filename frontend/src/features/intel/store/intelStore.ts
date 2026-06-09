@@ -15,8 +15,8 @@ import {
   normalizeUploaderCountMessage,
 } from "../utils/intelRealtimeUtils";
 
-export const INTEL_STORE_VERSION = 3;
-const MAX_REPORT_AGE_SECONDS = 30 * 60;
+export const INTEL_STORE_VERSION = 8;
+const MAX_REPORT_AGE_SECONDS = 60 * 60;
 const UPLOADER_RESYNC_THROTTLE_MS = 15_000;
 let uploaderResyncInFlight: Promise<void> | null = null;
 let lastUploaderResyncAt = 0;
@@ -35,7 +35,7 @@ type IntelState = {
   reports: IntelReport[];
   reportCount: number;
   lastReports: IntelReport[];
-  reportsFetchedAt?: number;
+  reportsFetchedAt: number;
   uploaders: number;
   version: string;
   intelStatus: "connecting" | "connected" | "disconnected";
@@ -111,6 +111,26 @@ const normalizeReports = (reports: IntelReport[], max = 100) => {
     .slice(0, max);
 };
 
+const rebuildIntelReportState = (
+  reports: IntelReport[],
+  reportCount?: number,
+) => {
+  const nextReports = normalizeReports(reports);
+  const { latestBySystem, latestClearBySystem } =
+    computeIntelSystemSignals(nextReports);
+
+  return {
+    reports: nextReports,
+    reportCount:
+      typeof reportCount === "number" && reportCount > 0
+        ? Math.max(reportCount, nextReports.length)
+        : nextReports.length,
+    lastIntelSystems: latestBySystem,
+    lastClearSystems: latestClearBySystem,
+    reportsFetchedAt: nextReports.length > 0 ? Date.now() : 0,
+  };
+};
+
 const isZKillReport = (report: IntelReport) =>
   report.meta && typeof report.meta === "object"
     ? report.meta.source === "zkill_feed"
@@ -154,7 +174,7 @@ export const useIntelStore = create<IntelState>()(
         reports: [],
         reportCount: 0,
         lastReports: [],
-        reportsFetchedAt: undefined,
+        reportsFetchedAt: 0,
         uploaders: 0,
         version: "",
         intelStatus: "connecting",
@@ -175,16 +195,10 @@ export const useIntelStore = create<IntelState>()(
         lastClearSystems: {},
         setReports: (reports) =>
           set((state) => {
-            const nextReports = normalizeReports(reports);
-            const { latestBySystem, latestClearBySystem } =
-              computeIntelSystemSignals(nextReports);
+            const nextState = rebuildIntelReportState(reports, state.reportCount);
             return {
-              reports: nextReports,
-              reportCount: Math.max(state.reportCount, nextReports.length),
-              lastReports: nextReports,
-              lastIntelSystems: latestBySystem,
-              lastClearSystems: latestClearBySystem,
-              reportsFetchedAt: Date.now(),
+              ...nextState,
+              lastReports: [],
             };
           }),
         pushReport: (report) => {
@@ -202,10 +216,11 @@ export const useIntelStore = create<IntelState>()(
             computeIntelSystemSignals(nextReports);
           set({
             reports: nextReports,
-            reportCount: get().reportCount + 1,
+            reportCount: nextReports.length,
             lastReports: [report],
             lastIntelSystems: latestBySystem,
             lastClearSystems: latestClearBySystem,
+            reportsFetchedAt: Date.now(),
           });
         },
         setUploaders: (count) => set({ uploaders: count }),
@@ -423,9 +438,9 @@ export const useIntelStore = create<IntelState>()(
             return {
               zkillRegionRealtimeUnsubscribes: next,
               reports: nextReports,
-              lastReports: nextReports,
               lastIntelSystems: latestBySystem,
               lastClearSystems: latestClearBySystem,
+              reportCount: nextReports.length,
             };
           });
         },
@@ -439,13 +454,17 @@ export const useIntelStore = create<IntelState>()(
         const persistedFilters =
           state.logFilters ?? ({} as Partial<IntelFilters>);
         return {
-          ...state,
           reports: [],
           reportCount: 0,
           lastReports: [],
-          lastIntelSystems: {},
-          lastClearSystems: {},
-          reportsFetchedAt: undefined,
+          reportsFetchedAt: 0,
+          uploaders: 0,
+          version: "",
+          intelStatus: "connecting",
+          reportsRealtimeUnsubscribe: undefined,
+          uploadersRealtimeUnsubscribe: undefined,
+          keepaliveRealtimeUnsubscribe: undefined,
+          zkillRegionRealtimeUnsubscribes: {},
           logFilters: {
             includeSystemLogs: true,
             includeSystemAlarm: true,
@@ -456,11 +475,11 @@ export const useIntelStore = create<IntelState>()(
             system: [],
             ...persistedFilters,
           },
-        } as IntelState;
+          lastIntelSystems: {},
+          lastClearSystems: {},
+        } as unknown as IntelState;
       },
-      partialize: (state) => ({
-        logFilters: state.logFilters,
-      }),
+      partialize: (state) => ({ logFilters: state.logFilters }),
     },
   ),
 );

@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"sentinel2/internal/logging"
+	"sentinel2/internal/shared/eve"
 	"sentinel2/internal/store"
 )
 
@@ -76,36 +77,39 @@ func (s *SDEImporter) importSystems(ctx context.Context, r io.Reader) error {
 }
 
 type systemRowData struct {
-	id       int
-	rowID    string
-	constID  int
-	regionID int
-	security float64
-	name     string
-	x        float64
-	y        float64
-	z        float64
-	pos2dX   float64
-	pos2dY   float64
-	hasPos2D bool
+	id             int
+	rowID          string
+	constID        int
+	regionID       int
+	security       float64
+	name           string
+	localizedNames map[string]string
+	x              float64
+	y              float64
+	z              float64
+	pos2dX         float64
+	pos2dY         float64
+	hasPos2D       bool
 }
 
 func parseSystemRow(row map[string]any) systemRowData {
 	x, y, z := getPositionXYZ(row)
 	pos2dX, pos2dY, has2d := getPosition2D(row)
+	localizedNames, _ := localizedStringMap(row["name"])
 	return systemRowData{
-		id:       getInt(row, "solarSystemID", "id", "_key"),
-		rowID:    getString(row, "id", "_key"),
-		constID:  getInt(row, "constellationID"),
-		regionID: getInt(row, "regionID"),
-		security: getFloat(row, "security", "securityStatus"),
-		name:     getString(row, "solarSystemName", "name"),
-		x:        x,
-		y:        y,
-		z:        z,
-		pos2dX:   pos2dX,
-		pos2dY:   pos2dY,
-		hasPos2D: has2d,
+		id:             getInt(row, "solarSystemID", "id", "_key"),
+		rowID:          getString(row, "id", "_key"),
+		constID:        getInt(row, "constellationID"),
+		regionID:       getInt(row, "regionID"),
+		security:       getFloat(row, "security", "securityStatus"),
+		name:           getString(row, "solarSystemName", "name"),
+		localizedNames: localizedNames,
+		x:              x,
+		y:              y,
+		z:              z,
+		pos2dX:         pos2dX,
+		pos2dY:         pos2dY,
+		hasPos2D:       has2d,
 	}
 }
 
@@ -139,6 +143,14 @@ func (row *systemRowData) payload() map[string]any {
 		"dotlan_y":        0,
 		"metro_x":         0,
 		"metro_y":         0,
+	}
+
+	for _, locale := range eve.SupportedSystemLocales() {
+		field, ok := eve.SystemNameField(locale)
+		if !ok {
+			continue
+		}
+		payload[field] = row.localizedNames[locale]
 	}
 
 	if row.coordsMissing() {
