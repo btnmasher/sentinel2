@@ -118,12 +118,13 @@ func (h *IntelHandler) submitReportIfPresent(payload submitPayload, userID strin
 		return parseErr
 	}
 	reportTime := parsed.Date.Unix()
-	systems, systemsErr := intel.LinkSystemNames(h.App, parsed.Text)
+	normalizedText, systems, _, systemsErr := intel.NormalizeSystemNamesWithHints(h.App, parsed.Text)
 	if systemsErr != nil {
-		return router.NewInternalServerError("Failed to link systems.", logging.Fields{
+		return router.NewInternalServerError("Failed to resolve system names.", logging.Fields{
 			"author": parsed.Author,
 		})
 	}
+	parsed.Text = normalizedText
 
 	if len(systems) == 0 {
 		return router.NewApiError(

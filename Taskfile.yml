@@ -212,6 +212,14 @@ tasks:
         GOCACHE="{{.GO_BUILD_CACHE_DEFAULT}}" GOLANGCI_LINT_CACHE="{{.GOLANGCI_LINT_CACHE_DEFAULT}}" golangci-lint run --fix ./...
     desc: Run backend lint with auto-fix (local only).
 
+  test:backend:
+    dir: backend
+    env:
+      GOCACHE: "{{.GO_BUILD_CACHE_DEFAULT}}"
+    cmds:
+      - go test ./...
+    desc: Run backend tests.
+
   lint:frontend:
     deps: [setup:deps:frontend]
     dir: frontend

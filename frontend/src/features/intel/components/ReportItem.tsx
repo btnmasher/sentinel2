@@ -12,6 +12,7 @@ import { useUIStore } from "@/features/ui";
 import {
   getZKillIntelMeta,
   isClearIntelReport,
+  splitIntelReportTextBySystems,
 } from "../utils/intelReportUtils";
 import { useSettingsStore } from "@/app/store/settingsStore";
 import HoverCard from "@/components/HoverCard";
@@ -22,10 +23,7 @@ import {
   StandingType,
 } from "@/features/shared";
 
-type SplitTextChunk =
-  | string
-  | { kind: "system"; text: string; system: IntelReport["systems"][number] }
-  | { kind: "tooltip"; text: string; tooltip: string };
+type SplitTextChunk = string | { kind: "system"; text: string; systemId: number };
 
 function timeSuffix(minutes: number) {
   if (minutes <= 0) return "now";
@@ -40,7 +38,6 @@ export default function ReportItem({
   log: IntelReport;
   channelNames: Record<string, string>;
 }) {
-  const systems = useMapStore((s) => s.systems);
   const mapRegions = useMapStore((s) => s.mapRegions);
   const updateMapConfig = useMapStore((s) => s.updateMapConfig);
   const setSystemSearch = useMapStore((s) => s.setSystemSearch);
@@ -68,42 +65,15 @@ export default function ReportItem({
     [threatTimings, timePassed],
   );
 
-  const splitText = useMemo<SplitTextChunk[]>(() => {
-    const words = log.text.split(" ");
-    return words.map((word) => {
-      if (word.length < 3) return word;
-      const cleaned = word.replace("*", "").toLowerCase();
-      const matches = log.systems.filter((system) =>
-        system.name.toLowerCase().startsWith(cleaned),
-      );
-      if (matches.length === 0) return word;
-      if (matches.length === 1) {
-        return { kind: "system", text: word, system: matches[0] };
-      }
-      const loaded = matches
-        .map((system) => systems[system.system])
-        .filter(
-          (system): system is NonNullable<typeof system> => system != null,
-        );
-      if (loaded.length === 1) {
-        return {
-          kind: "system",
-          text: word,
-          system: {
-            system: loaded[0].system,
-            name: loaded[0].name,
-            constellation: loaded[0].constellation,
-            region: loaded[0].region,
-          },
-        };
-      }
-      return {
-        kind: "tooltip",
-        text: word,
-        tooltip: "Multiple systems returned",
-      };
-    });
-  }, [log.systems, log.text, systems]);
+  const reportSystemsById = useMemo(
+    () => new Map(log.systems.map((system) => [system.system, system])),
+    [log.systems],
+  );
+
+  const splitText = useMemo<SplitTextChunk[]>(
+    () => splitIntelReportTextBySystems(log.text, log.systems),
+    [log.text, log.systems],
+  );
 
   const regionIds = useMemo(
     () => new Set(mapRegions.map((r) => String(r))),
@@ -371,39 +341,17 @@ export default function ReportItem({
                     openCharacterSearchMenu(event, chunk)
                   }
                 >
-                  {idx > 0 ? " " : ""}
                   {chunk}
                 </span>
               );
             }
-            if (chunk.kind === "tooltip") {
-              return (
-                <span
-                  key={idx}
-                  onContextMenu={(event) =>
-                    openCharacterSearchMenu(event, chunk.text)
-                  }
-                >
-                  {idx > 0 ? " " : ""}
-                  <span className="text-amber-300" title={chunk.tooltip}>
-                    {chunk.text}
-                  </span>
-                </span>
-              );
-            }
-            const system = chunk.system;
+            const system = reportSystemsById.get(chunk.systemId);
             if (!system) {
-              return (
-                <span key={idx}>
-                  {idx > 0 ? " " : ""}
-                  {chunk.text}
-                </span>
-              );
+              return <span key={idx}>{chunk.text}</span>;
             }
             if (system.region >= 11000000) {
               return (
                 <span key={idx} className="text-sm">
-                  {idx > 0 ? " " : ""}
                   {chunk.text}
                 </span>
               );
@@ -413,7 +361,6 @@ export default function ReportItem({
               const regionName = getRegionName(regionId, `Region ${regionId}`);
               return (
                 <span key={idx}>
-                  {idx > 0 ? " " : ""}
                   <button
                     className="report-item-unloaded-region text-sm"
                     title={`Click to load ${regionName}`}
@@ -435,7 +382,6 @@ export default function ReportItem({
             }
             return (
               <span key={idx}>
-                {idx > 0 ? " " : ""}
                 <button
                   className="report-item-system-link text-sm"
                   onClick={() => setSystemSearch(system.system)}

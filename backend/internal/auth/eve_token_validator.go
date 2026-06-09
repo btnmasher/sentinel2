@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,9 +36,10 @@ type eveTokenValidator struct {
 }
 
 type eveTokenJWTClaims struct {
+	jwt.RegisteredClaims
+
 	Name string   `json:"name"`
 	Scp  []string `json:"scp"`
-	jwt.RegisteredClaims
 }
 
 type eveOAuthMetadata struct {
@@ -50,13 +52,16 @@ func NewEVETokenValidator(clientID string) (*eveTokenValidator, error) {
 		return nil, errors.New("missing EVE OAuth client ID")
 	}
 
-	jwksURI, metadataErr := fetchEVEJWKSURI(context.Background(), eveMetadataURLDefault, &http.Client{
+	ctx, cancel := context.WithTimeout(context.Background(), eveRequestTimeout)
+	defer cancel()
+
+	jwksURI, metadataErr := fetchEVEJWKSURI(ctx, eveMetadataURLDefault, &http.Client{
 		Timeout: eveRequestTimeout,
 	})
 	if metadataErr != nil {
 		return nil, metadataErr
 	}
-	k, keyfuncErr := keyfunc.NewDefaultCtx(context.Background(), []string{jwksURI})
+	k, keyfuncErr := keyfunc.NewDefaultCtx(ctx, []string{jwksURI})
 	if keyfuncErr != nil {
 		return nil, keyfuncErr
 	}
@@ -81,10 +86,6 @@ func (v *eveTokenValidator) ValidateAccessToken(ctx context.Context, accessToken
 	if strings.TrimSpace(accessToken) == "" {
 		return nil, errors.New("missing access token")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	claims := &eveTokenJWTClaims{}
 	_, parseErr := jwt.ParseWithClaims(
 		accessToken,
@@ -124,7 +125,7 @@ func fetchEVEJWKSURI(ctx context.Context, metadataURL string, httpClient *http.C
 		httpClient = &http.Client{Timeout: eveRequestTimeout}
 	}
 
-	req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, metadataURL, nil)
+	req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, metadataURL, http.NoBody)
 	if reqErr != nil {
 		return "", reqErr
 	}
@@ -132,7 +133,7 @@ func fetchEVEJWKSURI(ctx context.Context, metadataURL string, httpClient *http.C
 	if respErr != nil {
 		return "", respErr
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("metadata status %d", resp.StatusCode)
 	}
@@ -148,10 +149,5 @@ func fetchEVEJWKSURI(ctx context.Context, metadataURL string, httpClient *http.C
 }
 
 func audienceContains(audience jwt.ClaimStrings, target string) bool {
-	for _, value := range audience {
-		if value == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(audience, target)
 }

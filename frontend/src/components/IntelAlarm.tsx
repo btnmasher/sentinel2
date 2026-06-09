@@ -68,18 +68,27 @@ export default function IntelAlarm() {
       logFilters.system.includes(system.system),
     );
 
-    if (logFilters.system.length > 0 && logFilters.includeSystemAlarm) {
-      if (hasSystemFiltered) play();
+    if (logFilters.system.length > 0) {
+      if (hasSystemFiltered && logFilters.includeSystemAlarm) {
+        play();
+      }
       return;
     }
 
-    if (!logFilters.includeUnknownAlarm && unknownLocation) {
+    if (loadedRegion) {
+      if (logFilters.includeSystemAlarm) {
+        play();
+      }
+      return;
+    }
+
+    if (unknownLocation && !logFilters.includeUnknownAlarm) {
       return;
     }
     if (
-      !logFilters.includeUnloadedRegionsAlarm &&
       !loadedRegion &&
-      !unknownLocation
+      !unknownLocation &&
+      !logFilters.includeUnloadedRegionsAlarm
     ) {
       return;
     }

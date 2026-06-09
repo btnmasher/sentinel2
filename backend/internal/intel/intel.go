@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -298,6 +298,7 @@ func (s *IntelService) CreateReport(report *IntelReport) error {
 	if report == nil {
 		return nil
 	}
+
 	coll, collErr := s.App.FindCollectionByNameOrId(store.CollectionIntelReports)
 	if collErr != nil {
 		return collErr
@@ -342,17 +343,32 @@ func (s *IntelService) ListReports(limit int) ([]IntelReport, error) {
 
 	reports := make([]IntelReport, 0, len(records))
 	for _, rec := range records {
+		systems, systemsErr := decodeSystems(rec.GetString("systems"))
+		if systemsErr != nil {
+			return nil, systemsErr
+		}
+
+		regions, regionsErr := decodeIntSlice(rec.GetString("regions"))
+		if regionsErr != nil {
+			return nil, regionsErr
+		}
+
+		meta, metaErr := decodeMeta(rec.GetString("meta"))
+		if metaErr != nil {
+			return nil, metaErr
+		}
+
 		reports = append(reports, IntelReport{
 			ID:        int64(rec.GetInt("report_id")),
 			RecordID:  rec.Id,
 			Time:      int64(rec.GetInt("report_time")),
 			Author:    rec.GetString("author"),
 			Text:      rec.GetString("text"),
-			Systems:   decodeSystems(rec.Get("systems")),
-			Regions:   toIntSlice(rec.Get("regions")),
+			Systems:   systems,
+			Regions:   regions,
 			Uploader:  rec.GetString("uploader_user"),
 			ChannelID: rec.GetString("channel"),
-			Meta:      decodeMeta(rec.Get("meta")),
+			Meta:      meta,
 		})
 	}
 
@@ -470,83 +486,28 @@ func (s *IntelService) regenerateUploaderToken(userID string) (*core.Record, err
 	return record, nil
 }
 
-func decodeSystems(value any) []IntelSystem {
-	out := []IntelSystem{}
-	switch v := value.(type) {
-	case []IntelSystem:
-		return v
-	case []map[string]any:
-		for _, item := range v {
-			out = append(out, decodeSystemMap(item))
-		}
-	case []any:
-		for _, item := range v {
-			if m, ok := item.(map[string]any); ok {
-				out = append(out, decodeSystemMap(m))
-			}
-		}
+func decodeSystems(raw string) ([]IntelSystem, error) {
+	if strings.TrimSpace(raw) == "" {
+		return []IntelSystem{}, nil
 	}
-	return out
+
+	systems := []IntelSystem{}
+	if err := json.Unmarshal([]byte(raw), &systems); err != nil {
+		return nil, err
+	}
+	return systems, nil
 }
 
-func decodeSystemMap(m map[string]any) IntelSystem {
-	sys := IntelSystem{}
-
-	if value, ok := m["system"]; ok {
-		sys.System = toInt(value)
+func decodeIntSlice(raw string) ([]int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return []int{}, nil
 	}
 
-	if value, ok := m["name"]; ok {
-		if name, ok := value.(string); ok {
-			sys.Name = name
-		}
+	regions := []int{}
+	if err := json.Unmarshal([]byte(raw), &regions); err != nil {
+		return nil, err
 	}
-
-	if value, ok := m["constellation"]; ok {
-		sys.Constellation = toInt(value)
-	}
-
-	if value, ok := m["region"]; ok {
-		sys.Region = toInt(value)
-	}
-	return sys
-}
-
-func toInt(value any) int {
-	switch v := value.(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case json.Number:
-		num, _ := v.Int64()
-		return int(num)
-	case string:
-		if n, parseErr := strconv.Atoi(v); parseErr == nil {
-			return n
-		}
-	}
-	return 0
-}
-
-func toIntSlice(value any) []int {
-	out := []int{}
-	switch v := value.(type) {
-	case []int:
-		return v
-	case []any:
-		for _, item := range v {
-			switch num := item.(type) {
-			case float64:
-				out = append(out, int(num))
-			case int:
-				out = append(out, num)
-			}
-		}
-	}
-	return out
+	return regions, nil
 }
 
 func absInt64(n int64) int64 {
@@ -556,13 +517,14 @@ func absInt64(n int64) int64 {
 	return n
 }
 
-func decodeMeta(value any) map[string]any {
-	if value == nil {
-		return nil
+func decodeMeta(raw string) (map[string]any, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
 	}
 
-	if data, ok := value.(map[string]any); ok {
-		return data
+	meta := map[string]any{}
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return nil, err
 	}
-	return nil
+	return meta, nil
 }

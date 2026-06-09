@@ -28,6 +28,11 @@ export const normalizeIntelReport = (input: unknown): IntelReport | null => {
     (typeof source.record_id === "string" ? source.record_id : undefined) ??
     (typeof source.id === "string" ? source.id : undefined);
 
+  const meta =
+    source.meta && typeof source.meta === "object"
+      ? (source.meta as Record<string, unknown>)
+      : undefined;
+
   return {
     recordId,
     id: reportId,
@@ -37,10 +42,7 @@ export const normalizeIntelReport = (input: unknown): IntelReport | null => {
     channel_id:
       (typeof source.channel_id === "string" ? source.channel_id : undefined) ??
       (typeof source.channel === "string" ? source.channel : undefined),
-    meta:
-      source.meta && typeof source.meta === "object"
-        ? (source.meta as Record<string, unknown>)
-        : undefined,
+    meta,
     systems: decodeArray(source.systems),
     regions: decodeArray(source.regions),
   };
@@ -72,6 +74,75 @@ export type ZKillIntelMeta = {
     involved_attackers: number;
     system_name: string;
   };
+};
+
+export type IntelReportTextChunk =
+  | string
+  | { kind: "system"; text: string; systemId: number };
+
+type RenderHint = { kind: "system"; text: string; systemId: number };
+
+export const splitIntelReportTextBySystems = (
+  text: string,
+  systems: IntelReport["systems"],
+): IntelReportTextChunk[] => {
+  const hints = systems
+    .map((system) => ({
+      kind: "system" as const,
+      text: system.name.trim(),
+      systemId: system.system,
+    }))
+    .filter((hint) => hint.text.length > 0)
+    .sort((a, b) => b.text.length - a.text.length);
+  if (hints.length === 0) {
+    return [text];
+  }
+  return splitTextByHints(text, hints);
+};
+
+const splitTextByHints = (text: string, hints: RenderHint[]) => {
+  const normalizedHints = hints
+    .map((hint) => ({ ...hint, text: hint.text.trim() }))
+    .filter((hint) => hint.text.length > 0)
+    .sort((a, b) => b.text.length - a.text.length);
+  if (normalizedHints.length === 0) {
+    return [text];
+  }
+
+  const chunks: IntelReportTextChunk[] = [];
+  const lowerText = text.toLowerCase();
+  let index = 0;
+  while (index < text.length) {
+    let next:
+      | { hint: RenderHint; start: number; end: number }
+      | undefined;
+    for (const hint of normalizedHints) {
+      const start = lowerText.indexOf(hint.text.toLowerCase(), index);
+      if (start < 0) continue;
+      const end = start + hint.text.length;
+      if (
+        !next ||
+        start < next.start ||
+        (start === next.start && hint.text.length > next.hint.text.length)
+      ) {
+        next = { hint, start, end };
+      }
+    }
+    if (!next) {
+      chunks.push(text.slice(index));
+      break;
+    }
+    if (next.start > index) {
+      chunks.push(text.slice(index, next.start));
+    }
+    chunks.push({
+      kind: "system",
+      text: text.slice(next.start, next.end),
+      systemId: next.hint.systemId,
+    });
+    index = next.end;
+  }
+  return chunks;
 };
 
 export const getZKillIntelMeta = (

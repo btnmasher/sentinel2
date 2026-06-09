@@ -4,6 +4,8 @@ import { useSettingsStore } from "@/app/store/settingsStore";
 import { useMapStore } from "@/features/map";
 import { useIntelStore } from "../store/intelStore";
 
+const ZKILL_REALTIME_RESYNC_INTERVAL_MS = 30_000;
+
 export default function useIntelRealtime() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const intelStatus = useIntelStore((s) => s.intelStatus);
@@ -55,6 +57,33 @@ export default function useIntelRealtime() {
             .map((value) => Number(value))
             .filter((value) => Number.isFinite(value) && value > 0);
     void syncZKillRealtime(regionIds, zkillFeedEnabled);
+  }, [
+    isAuthenticated,
+    intelStatus,
+    selectedRegionKey,
+    syncZKillRealtime,
+    zkillFeedEnabled,
+  ]);
+
+  useEffect(() => {
+    if (!isAuthenticated || intelStatus !== "connected") {
+      return;
+    }
+    const regionIds =
+      selectedRegionKey === ""
+        ? []
+        : selectedRegionKey
+            .split(",")
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0);
+    const sync = () => {
+      void syncZKillRealtime(regionIds, zkillFeedEnabled);
+    };
+    const interval = window.setInterval(sync, ZKILL_REALTIME_RESYNC_INTERVAL_MS);
+    sync();
+    return () => {
+      window.clearInterval(interval);
+    };
   }, [
     isAuthenticated,
     intelStatus,

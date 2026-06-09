@@ -339,11 +339,6 @@ func (i *FeedIngestor) baseURL() string {
 }
 
 func (i *FeedIngestor) bootstrapSequence(ctx context.Context) (int64, error) {
-	if checkpoint, ok, err := i.loadCheckpoint(); err == nil && ok {
-		return checkpoint + 1, nil
-	} else if err != nil {
-		return 0, err
-	}
 	current, err := i.fetchCurrentSequence(ctx)
 	if err != nil {
 		return 0, err
