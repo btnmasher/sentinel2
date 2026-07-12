@@ -28,3 +28,41 @@ func TestRefreshExpiry(t *testing.T) {
 		t.Fatalf("refreshExpiry(fallback) = %d, want within [%d,%d]", fallback, fallbackLower, fallbackUpper)
 	}
 }
+
+func TestSelectMainCharacter(t *testing.T) {
+	t.Parallel()
+
+	mainID := int64(42)
+	info := &UserInfo{
+		MainCharacterID: &mainID,
+		Characters: []CharacterInfo{
+			{CharacterID: 1, CharacterName: "Alt"},
+			{CharacterID: 42, CharacterName: "Main"},
+			{CharacterID: 3, CharacterName: "Other"},
+		},
+	}
+
+	character, ok := SelectMainCharacter(info)
+	if !ok {
+		t.Fatal("SelectMainCharacter() returned false")
+	}
+	if character.CharacterID != 42 || character.CharacterName != "Main" {
+		t.Fatalf("SelectMainCharacter() = %+v, want main character", character)
+	}
+}
+
+func TestSelectMainCharacterFailsWithoutSignals(t *testing.T) {
+	t.Parallel()
+
+	info := &UserInfo{
+		Characters: []CharacterInfo{
+			{CharacterID: 1, CharacterName: "Alt"},
+			{CharacterID: 2, CharacterName: "Other"},
+		},
+	}
+
+	_, ok := SelectMainCharacter(info)
+	if ok {
+		t.Fatal("SelectMainCharacter() returned true, want false")
+	}
+}

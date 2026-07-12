@@ -3,6 +3,7 @@ export type SearchResult = {
   character_id: number;
   name: string;
   user_id: string;
+  auth_provider: string;
   is_main: boolean;
   main_name: string;
 };
@@ -25,6 +26,7 @@ export type Character = {
 export type UserDetails = {
   user_id: string;
   access_level: string;
+  auth_provider: string;
   session_revoked_at: string;
   uploader_token_valid?: boolean;
   characters: Character[];

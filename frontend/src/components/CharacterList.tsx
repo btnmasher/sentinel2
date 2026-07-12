@@ -1,6 +1,6 @@
 import CharacterCard from "./CharacterCard";
 
-type Character = {
+export type Character = {
   record_id?: string;
   character_id: number;
   name: string;
@@ -17,11 +17,15 @@ type Character = {
 type CharacterListProps = {
   characters: Character[];
   emptyMessage?: string;
+  onRemove?: (character: Character) => void;
+  disableRemove?: (character: Character) => boolean;
 };
 
 export default function CharacterList({
   characters,
   emptyMessage,
+  onRemove,
+  disableRemove,
 }: CharacterListProps) {
   if (!characters.length) {
     return (
@@ -34,7 +38,14 @@ export default function CharacterList({
   return (
     <div className="space-y-3">
       {characters.map((character) => (
-        <CharacterCard key={character.character_id} character={character} />
+        <CharacterCard
+          key={character.character_id}
+          character={character}
+          onRemove={
+            onRemove ? () => onRemove(character) : undefined
+          }
+          disableRemove={disableRemove?.(character)}
+        />
       ))}
     </div>
   );

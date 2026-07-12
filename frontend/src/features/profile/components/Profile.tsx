@@ -1,87 +1,83 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/config/api";
-import { pb } from "@/config/pb";
-import CharacterList from "@/components/CharacterList";
-import Panel from "@/components/Panel";
 import { useAppConfigStore } from "@/app/store/appConfigStore";
+import { useAuthStore } from "@/app/store/authStore";
 import { useUIStore } from "@/app/store/uiStore";
+import { useMapStore } from "@/features/map";
+import CharacterList, { type Character } from "@/components/CharacterList";
+import Panel from "@/components/Panel";
 import { getErrorMessage, getHttpData, getHttpStatus } from "@/utils/httpError";
-import { useShallow } from "zustand/shallow";
-
-type Character = {
-  record_id: string;
-  character_id: number;
-  name: string;
-  corp_id: number;
-  corp_name: string;
-  alliance_id: number;
-  alliance_name: string;
-  is_main: boolean;
-  esi_token_valid: boolean;
-  esi_last_error: string;
-  esi_last_refresh_at?: string;
-};
+import AddCharacterModal from "./TestAuthAddCharacterModal";
 
 export default function Profile() {
-  const { standaloneAuth } = useAppConfigStore(
-    useShallow((s) => ({
-      standaloneAuth: s.standaloneAuth,
-    })),
-  );
   const setToast = useUIStore((s) => s.setToast);
+  const authBackend = useAppConfigStore((s) => s.authBackend);
+  const forceLogout = useAuthStore((s) => s.forceLogout);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addCharacterOpen, setAddCharacterOpen] = useState(false);
+  const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    let mounted = true;
-    api
-      .get("/auth/profile")
-      .then((res) => {
-        if (!mounted) return;
-        setCharacters(res.data.characters || []);
-      })
-      .catch((error: unknown) => {
-        if (!mounted) return;
-        setToast({
-          text: getErrorMessage(error, "Failed to load profile"),
-          color: "error",
-          meta: {
-            scope: "profile",
-            operation: "load_profile",
-            status: getHttpStatus(error),
-            data: getHttpData(error),
-          },
-        });
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [setToast]);
+  const loadProfile = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
 
-  const linkCharacter = async () => {
-    const token = pb.authStore.token;
-    if (!token) {
-      setToast({ text: "Authentication required", color: "error" });
-      return;
-    }
     try {
-      const res = await api.get("/auth/link");
-      const url = res.data?.url;
-      if (url) {
-        window.location.href = url;
-        return;
-      }
-      setToast({ text: "Unable to start link flow", color: "error" });
+      const res = await api.get("/auth/profile");
+      if (requestIdRef.current !== requestId) return;
+      setCharacters(res.data.characters || []);
     } catch (error: unknown) {
+      if (requestIdRef.current !== requestId) return;
       setToast({
-        text: getErrorMessage(error, "Unable to start link flow"),
+        text: getErrorMessage(error, "Failed to load profile"),
         color: "error",
         meta: {
           scope: "profile",
-          operation: "start_link_flow",
+          operation: "load_profile",
+          status: getHttpStatus(error),
+          data: getHttpData(error),
+        },
+      });
+    } finally {
+      if (requestIdRef.current === requestId) {
+        setLoading(false);
+      }
+    }
+  }, [setToast]);
+
+  useEffect(() => {
+    void loadProfile();
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [loadProfile]);
+
+  const removeCharacter = async (character: Character) => {
+    if (!character.record_id) {
+      setToast({
+        text: "Missing character record id.",
+        color: "error",
+      });
+      return;
+    }
+
+    try {
+      const res = await api.delete(`/auth/characters/${character.record_id}`);
+      setCharacters((current) =>
+        current.filter((item) => item.record_id !== character.record_id),
+      );
+      useMapStore.getState().invalidateCharactersCache();
+
+      if (res.data?.deleted_user) {
+        forceLogout("Character removed.");
+      }
+    } catch (error: unknown) {
+      setToast({
+        text: getErrorMessage(error, "Failed to remove character"),
+        color: "error",
+        meta: {
+          scope: "profile",
+          operation: "remove_character",
           status: getHttpStatus(error),
           data: getHttpData(error),
         },
@@ -98,22 +94,48 @@ export default function Profile() {
         {loading ? (
           <p className="text-sm text-slate-400">Loading characters…</p>
         ) : (
-          <CharacterList characters={characters} />
+          <CharacterList
+            characters={characters}
+            onRemove={removeCharacter}
+            disableRemove={(character) =>
+              authBackend === "testauth"
+                ? character.is_main
+                : character.is_main && characters.length > 1
+            }
+          />
         )}
       </Panel>
 
       <Panel
         title="Add Character"
-        hint="Link another character via EVE SSO. Each character keeps its own scopes and tokens."
+        hint="Link additional characters from your TestAuth profile."
       >
-        <button
-          className="btn btn-sm btn-success btn-outline"
-          onClick={linkCharacter}
-          disabled={!standaloneAuth}
-        >
-          Link another character
-        </button>
+        {authBackend === "testauth" ? (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-400">
+              Open the picker to choose one or more unlinked characters from
+              your TestAuth profile.
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setAddCharacterOpen(true)}
+            >
+              Add character
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">
+            Character linking is managed by the active auth backend.
+          </p>
+        )}
       </Panel>
+
+      <AddCharacterModal
+        open={addCharacterOpen}
+        onClose={() => setAddCharacterOpen(false)}
+        onLinked={loadProfile}
+      />
     </div>
   );
 }

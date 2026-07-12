@@ -151,17 +151,9 @@ export default function MapShell({
     })),
   );
   const {
-    loaded: configLoaded,
-    standaloneAuth,
-    authBackend,
-    oidcPortalUrl,
     timersEnabled,
   } = useAppConfigStore(
     useShallow((s) => ({
-      loaded: s.loaded,
-      standaloneAuth: s.standaloneAuth,
-      authBackend: s.authBackend,
-      oidcPortalUrl: s.oidcPortalUrl,
       timersEnabled: s.timersEnabled,
     })),
   );
@@ -177,13 +169,6 @@ export default function MapShell({
       return true;
     })
     .map((item) => {
-      if (item.label === "Profile" && configLoaded && authBackend !== "eve") {
-        return {
-          key: item.to,
-          label: item.label,
-          href: oidcPortalUrl,
-        };
-      }
       return {
         key: item.to,
         label: item.label,
@@ -284,11 +269,7 @@ export default function MapShell({
               open={showNavMenu && navOpen}
               items={responsiveNavItems}
               onClose={onCloseNav}
-              onLogout={
-                isAuthenticated && configLoaded && standaloneAuth
-                  ? () => void logout()
-                  : undefined
-              }
+              onLogout={isAuthenticated ? () => void logout() : undefined}
               className="absolute top-0 left-0 pointer-events-auto bg-base-200/90"
             />
           </div>

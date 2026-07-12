@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -45,8 +46,13 @@ func (h *AuthHandler) Callback(c *core.RequestEvent) error {
 		return callbackErr
 	}
 
+	redirectBaseURL := strings.TrimRight(strings.TrimSpace(result.RedirectBaseURL), "/")
+	if redirectBaseURL == "" {
+		redirectBaseURL = auth.RequestBaseURL(c)
+	}
+
 	if result.IsLink {
-		linkedCharacter := findCharacterByUserAndEVEID(h.Auth.App, result.UserID, result.CharacterID)
+		linkedCharacter := findCharacterByUserAndProviderAndEVEID(h.Auth.App, result.UserID, h.Auth.Provider.Name(), result.CharacterID)
 		linkSummary := "Linked character"
 		if result.CharacterName != "" {
 			linkSummary = fmt.Sprintf("Linked character %s", result.CharacterName)
@@ -69,11 +75,11 @@ func (h *AuthHandler) Callback(c *core.RequestEvent) error {
 		}
 		logging.WithRequest(h.Auth.App, c).
 			Info("auth link completed")
-		return c.Redirect(http.StatusFound, "/profile?linked=1")
+		return c.Redirect(http.StatusFound, redirectBaseURL+"/profile?linked=1")
 	}
 	logging.WithRequest(h.Auth.App, c).
 		Info("auth login completed")
-	return c.Redirect(http.StatusFound, "/auth/complete?code="+result.ExchangeCode)
+	return c.Redirect(http.StatusFound, redirectBaseURL+"/auth/complete?code="+result.ExchangeCode)
 }
 
 func (h *AuthHandler) Logout(c *core.RequestEvent) error {
@@ -108,6 +114,110 @@ func (h *AuthHandler) Link(c *core.RequestEvent) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]string{"url": authURL})
+}
+
+type linkableCharacterProfile struct {
+	CharacterID   int    `json:"character_id"`
+	Name          string `json:"name"`
+	IsPrimary     bool   `json:"is_primary"`
+	HasValidToken bool   `json:"has_valid_token"`
+}
+
+type linkableCharactersResponse struct {
+	Characters []linkableCharacterProfile `json:"characters"`
+}
+
+func (h *AuthHandler) LinkableCharacters(c *core.RequestEvent) error {
+	record, recordErr := auth.CurrentUser(c)
+	if recordErr != nil {
+		return recordErr
+	}
+
+	testAuthProvider, ok := h.Auth.Provider.(*auth.TestAuthProvider)
+	if !ok || record.GetString("auth_provider") != auth.AuthProviderTestAuth {
+		return router.NewNotFoundError("Not found", nil)
+	}
+
+	characters, charErr := testAuthProvider.LinkableCharacters(c.Request.Context(), record)
+	if charErr != nil {
+		return charErr
+	}
+
+	response := linkableCharactersResponse{
+		Characters: make([]linkableCharacterProfile, 0, len(characters)),
+	}
+	for _, character := range characters {
+		response.Characters = append(response.Characters, linkableCharacterProfile{
+			CharacterID:   int(character.CharacterID),
+			Name:          character.CharacterName,
+			IsPrimary:     character.IsPrimary,
+			HasValidToken: character.HasValidToken,
+		})
+	}
+
+	return c.JSON(http.StatusOK, response)
+}
+
+type linkCharactersRequest struct {
+	CharacterIDs []int `json:"character_ids"`
+}
+
+func (h *AuthHandler) LinkCharacters(c *core.RequestEvent) error {
+	record, recordErr := auth.CurrentUser(c)
+	if recordErr != nil {
+		return recordErr
+	}
+
+	testAuthProvider, ok := h.Auth.Provider.(*auth.TestAuthProvider)
+	if !ok || record.GetString("auth_provider") != auth.AuthProviderTestAuth {
+		return router.NewNotFoundError("Not found", nil)
+	}
+
+	var payload linkCharactersRequest
+	if bindErr := c.BindBody(&payload); bindErr != nil {
+		return router.NewBadRequestError("Invalid request body.", logging.Fields{
+			"error": bindErr.Error(),
+		})
+	}
+	if len(payload.CharacterIDs) == 0 {
+		return router.NewBadRequestError("Missing character ids.", logging.Fields{
+			"required_field": "character_ids",
+		})
+	}
+
+	characters, linkErr := testAuthProvider.LinkCharacters(c.Request.Context(), record, payload.CharacterIDs)
+	if linkErr != nil {
+		return linkErr
+	}
+
+	if h.Audit != nil {
+		for _, character := range characters {
+			linkedCharacter := findCharacterByUserAndProviderAndEVEID(h.Auth.App, record.Id, auth.AuthProviderTestAuth, int(character.CharacterID))
+			linkSummary := "Linked character"
+			if character.CharacterName != "" {
+				linkSummary = fmt.Sprintf("Linked character %s", character.CharacterName)
+			}
+			h.Audit.LogEvent(&audit.Event{
+				Action:                 audit.ActionUserAuthLinkCharacter,
+				Summary:                linkSummary,
+				TargetUserID:           record.Id,
+				TargetCharacter:        linkedCharacter,
+				TargetType:             audit.TargetTypeCharacter,
+				TargetLabel:            character.CharacterName,
+				ResolveTargetCharacter: linkedCharacter == nil,
+				TargetMeta: map[string]any{
+					"eve_character_id": character.CharacterID,
+				},
+				ActorID:          record.Id,
+				ActorDisplayName: character.CharacterName,
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"ok":     true,
+		"linked": len(characters),
+	})
 }
 
 type authMeResponse struct {
@@ -159,38 +269,11 @@ func (h *AuthHandler) Profile(c *core.RequestEvent) error {
 		Characters: []characterProfile{},
 	}
 
-	charRecords, recordsErr := h.Auth.App.FindRecordsByFilter(
-		store.CollectionCharacters,
-		"user = {:user}",
-		"-is_main",
-		0,
-		0, dbx.Params{"user": record.Id},
-	)
-	if recordsErr == nil && len(charRecords) > 0 {
-		for _, charRecord := range charRecords {
-			corpID := charRecord.GetInt("eve_corporation_id")
-			allianceID := charRecord.GetInt("eve_alliance_id")
-			allianceName := store.GetOrgName(h.Auth.App, store.CollectionAlliances, allianceID)
-			corpName := store.GetOrgName(h.Auth.App, store.CollectionCorporations, corpID)
-			refresh := charRecord.GetDateTime("esi_last_refresh_at")
-			refreshAt := ""
-			if !refresh.IsZero() {
-				refreshAt = refresh.Time().Format(time.RFC3339)
-			}
-			response.Characters = append(response.Characters, characterProfile{
-				RecordID:         charRecord.Id,
-				CharacterID:      charRecord.GetInt("eve_character_id"),
-				Name:             charRecord.GetString("eve_character_name"),
-				CorpID:           corpID,
-				CorpName:         corpName,
-				AllianceID:       allianceID,
-				AllianceName:     allianceName,
-				IsMain:           charRecord.GetBool("is_main"),
-				ESITokenValid:    charRecord.GetBool("esi_token_valid"),
-				ESILastError:     charRecord.GetString("esi_last_error"),
-				ESILastRefreshAt: refreshAt,
-			})
-		}
+	if h.appendTestAuthProfileCharacters(c, &response, record) {
+		return c.JSON(http.StatusOK, response)
+	}
+
+	if h.appendStandaloneProfileCharacters(&response, record.Id) {
 		return c.JSON(http.StatusOK, response)
 	}
 
@@ -219,6 +302,118 @@ func (h *AuthHandler) Profile(c *core.RequestEvent) error {
 		})
 	}
 	return c.JSON(http.StatusOK, response)
+}
+
+func buildCharacterProfileFromRecord(app *pocketbase.PocketBase, charRecord *core.Record) characterProfile {
+	corpID := charRecord.GetInt("eve_corporation_id")
+	allianceID := charRecord.GetInt("eve_alliance_id")
+	allianceName := store.GetOrgName(app, store.CollectionAlliances, allianceID)
+	corpName := store.GetOrgName(app, store.CollectionCorporations, corpID)
+	refresh := charRecord.GetDateTime("esi_last_refresh_at")
+	refreshAt := ""
+	if !refresh.IsZero() {
+		refreshAt = refresh.Time().Format(time.RFC3339)
+	}
+
+	return characterProfile{
+		RecordID:         charRecord.Id,
+		CharacterID:      charRecord.GetInt("eve_character_id"),
+		Name:             charRecord.GetString("eve_character_name"),
+		CorpID:           corpID,
+		CorpName:         corpName,
+		AllianceID:       allianceID,
+		AllianceName:     allianceName,
+		IsMain:           charRecord.GetBool("is_main"),
+		ESITokenValid:    charRecord.GetBool("esi_token_valid"),
+		ESILastError:     charRecord.GetString("esi_last_error"),
+		ESILastRefreshAt: refreshAt,
+	}
+}
+
+func buildTestAuthCharacterProfile(
+	app *pocketbase.PocketBase,
+	character auth.CharacterInfo,
+	charRecord *core.Record,
+) characterProfile {
+	if charRecord != nil {
+		return buildCharacterProfileFromRecord(app, charRecord)
+	}
+
+	return characterProfile{
+		CharacterID:   int(character.CharacterID),
+		Name:          character.CharacterName,
+		IsMain:        character.IsPrimary,
+		ESITokenValid: character.HasValidToken,
+	}
+}
+
+func (h *AuthHandler) RemoveCharacter(c *core.RequestEvent) error {
+	recordID := c.Request.PathValue("id")
+	user, userErr := auth.CurrentUser(c)
+	if userErr != nil {
+		return userErr
+	}
+
+	record, recordErr := h.Auth.App.FindRecordById(store.CollectionCharacters, recordID)
+	if recordErr != nil || record.GetString("user") != user.Id {
+		return router.NewNotFoundError("Character not found.", logging.Fields{
+			"user_id":              user.Id,
+			"character_record_id":  recordID,
+			"character_owner_user": record.GetString("user"),
+		})
+	}
+
+	isMain := record.GetBool("is_main")
+	if isMain && record.GetString("auth_provider") == auth.AuthProviderTestAuth {
+		return router.NewBadRequestError("Cannot remove the main character in TestAuth mode.", logging.Fields{
+			"user_id":      user.Id,
+			"character_id": record.GetInt("eve_character_id"),
+		})
+	}
+
+	if isMain {
+		others, othersErr := h.Auth.App.FindRecordsByFilter(
+			store.CollectionCharacters,
+			"user = {:user} && id != {:id}",
+			"",
+			1,
+			0, dbx.Params{"user": user.Id, "id": record.Id},
+		)
+		if othersErr == nil && len(others) > 0 {
+			return router.NewBadRequestError("Cannot remove main character while other characters remain.", logging.Fields{
+				"user_id":      user.Id,
+				"character_id": record.GetInt("eve_character_id"),
+			})
+		}
+	}
+
+	userName := user.GetString("eve_character_name")
+	deleteErr := h.Auth.App.Delete(record)
+	if deleteErr != nil {
+		return router.NewInternalServerError("Failed to delete character.", logging.Fields{
+			"character_id": record.GetInt("eve_character_id"),
+		})
+	}
+
+	deletedUser := false
+	if isMain {
+		deletedUser, _ = h.deleteUserIfNoCharacters(user.Id)
+	}
+
+	if deletedUser {
+		return c.JSON(http.StatusOK, map[string]any{"ok": true, "deleted_user": true})
+	}
+
+	if h.Audit != nil {
+		h.Audit.LogEvent(&audit.Event{
+			Action:          audit.ActionCharacterRemove,
+			Summary:         "Removed character " + record.GetString("eve_character_name"),
+			TargetUserID:    user.Id,
+			TargetUserName:  userName,
+			TargetCharacter: record,
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"ok": true, "deleted_user": false})
 }
 
 type authExchangeResponse struct {
@@ -263,18 +458,119 @@ func (h *AuthHandler) Refresh(c *core.RequestEvent) error {
 	})
 }
 
-func findCharacterByUserAndEVEID(app *pocketbase.PocketBase, userID string, eveCharacterID int) *core.Record {
-	if app == nil || userID == "" || eveCharacterID <= 0 {
+func (h *AuthHandler) appendTestAuthProfileCharacters(c *core.RequestEvent, response *profileResponse, record *core.Record) bool {
+	testAuthProvider, ok := h.Auth.Provider.(*auth.TestAuthProvider)
+	if !ok || record.GetString("auth_provider") != auth.AuthProviderTestAuth {
+		return false
+	}
+
+	profileCharacters, profileErr := testAuthProvider.ProfileCharacters(c.Request.Context(), record)
+	if profileErr != nil || len(profileCharacters) == 0 {
+		return h.appendTestAuthProfileFallback(response, record)
+	}
+
+	for _, character := range profileCharacters {
+		charRecord := findCharacterByUserAndProviderAndEVEID(h.Auth.App, record.Id, auth.AuthProviderTestAuth, int(character.CharacterID))
+		response.Characters = append(
+			response.Characters,
+			buildTestAuthCharacterProfile(h.Auth.App, character, charRecord),
+		)
+	}
+
+	return true
+}
+
+func (h *AuthHandler) appendStandaloneProfileCharacters(response *profileResponse, userID string) bool {
+	charRecords, recordsErr := h.Auth.App.FindRecordsByFilter(
+		store.CollectionCharacters,
+		"user = {:user}",
+		"-is_main",
+		0,
+		0,
+		dbx.Params{"user": userID},
+	)
+	if recordsErr != nil || len(charRecords) == 0 {
+		return false
+	}
+
+	for _, charRecord := range charRecords {
+		response.Characters = append(response.Characters, buildCharacterProfileFromRecord(h.Auth.App, charRecord))
+	}
+	return true
+}
+
+func (h *AuthHandler) appendTestAuthProfileFallback(response *profileResponse, record *core.Record) bool {
+	if record.GetString("auth_provider") != auth.AuthProviderTestAuth {
+		return false
+	}
+
+	charID := record.GetInt("eve_character_id")
+	if charID == 0 {
+		return false
+	}
+
+	corpID := record.GetInt("eve_corporation_id")
+	allianceID := record.GetInt("eve_alliance_id")
+
+	allianceName := store.GetOrgName(h.Auth.App, store.CollectionAlliances, allianceID)
+	corpName := store.GetOrgName(h.Auth.App, store.CollectionCorporations, corpID)
+	refresh := record.GetDateTime("esi_last_refresh_at")
+	refreshAt := ""
+	if !refresh.IsZero() {
+		refreshAt = refresh.Time().Format(time.RFC3339)
+	}
+
+	response.Characters = append(response.Characters, characterProfile{
+		RecordID:         record.Id,
+		CharacterID:      charID,
+		Name:             record.GetString("eve_character_name"),
+		CorpID:           corpID,
+		CorpName:         corpName,
+		AllianceID:       allianceID,
+		AllianceName:     allianceName,
+		IsMain:           true,
+		ESITokenValid:    record.GetBool("esi_token_valid"),
+		ESILastError:     record.GetString("esi_last_error"),
+		ESILastRefreshAt: refreshAt,
+	})
+	return true
+}
+
+func (h *AuthHandler) deleteUserIfNoCharacters(userID string) (bool, error) {
+	user, userErr := h.Auth.App.FindRecordById(store.CollectionUsers, userID)
+	if userErr != nil {
+		return false, userErr
+	}
+	records, recordsErr := h.Auth.App.FindRecordsByFilter(
+		store.CollectionCharacters,
+		"user = {:user}",
+		"",
+		1,
+		0, dbx.Params{"user": userID},
+	)
+	if recordsErr != nil {
+		return false, recordsErr
+	}
+
+	if len(records) == 0 {
+		return true, h.Auth.App.Delete(user)
+	}
+	return false, nil
+}
+
+func findCharacterByUserAndProviderAndEVEID(app *pocketbase.PocketBase, userID, provider string, eveCharacterID int) *core.Record {
+	if app == nil || userID == "" || provider == "" || eveCharacterID <= 0 {
 		return nil
 	}
 	records, err := app.FindRecordsByFilter(
 		store.CollectionCharacters,
-		"user = {:user} && eve_character_id = {:character_id}",
+		"user = {:user} && auth_provider = {:provider} && eve_character_id = {:character_id}",
 		"",
 		1,
 		0,
 		dbx.Params{
 			"user":         userID,
+			"provider":     provider,
 			"character_id": eveCharacterID,
 		},
 	)

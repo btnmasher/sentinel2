@@ -12,7 +12,6 @@ type appConfigResponse struct {
 	AuthBackend    string   `json:"auth_backend"`
 	Standalone     bool     `json:"standalone_auth"`
 	DefaultRegions []string `json:"default_regions"`
-	OIDCPortalURL  string   `json:"oidc_portal_url"`
 	TimersEnabled  bool     `json:"timers_enabled"`
 	TimerSource    string   `json:"timer_source"`
 	TimersReadOnly bool     `json:"timers_read_only"`
@@ -30,7 +29,6 @@ func AppConfig(cfg *config.Config) func(*core.RequestEvent) error {
 			AuthBackend:    cfg.AuthBackend,
 			Standalone:     standalone,
 			DefaultRegions: cfg.DefaultRegions(),
-			OIDCPortalURL:  cfg.OIDCPortalURL,
 			TimersEnabled:  cfg.TimersEnabled,
 			TimerSource:    cfg.TimerSource,
 			TimersReadOnly: cfg.TimersReadOnly(),

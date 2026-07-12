@@ -18,7 +18,7 @@ type MainNavItem = {
   to: string;
   label: string;
   timers?: boolean;
-  standalone?: boolean;
+  auth?: boolean;
   staff?: boolean;
   admin?: boolean;
 };
@@ -27,7 +27,7 @@ const MAIN_NAV_ITEMS: MainNavItem[] = [
   { to: "/nav", label: "Navigation" },
   { to: "/timers", label: "Timers", timers: true },
   { to: "/settings", label: "Settings" },
-  { to: "/profile", label: "Profile", standalone: true },
+  { to: "/profile", label: "Profile", auth: true },
   { to: "/uploader", label: "Uploader" },
   { to: "/staff", label: "Staff", staff: true },
   { to: "/admin", label: "Admin", admin: true },
@@ -53,13 +53,9 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     })),
   );
   const {
-    loaded: configLoaded,
-    standaloneAuth,
     timersEnabled,
   } = useAppConfigStore(
     useShallow((s) => ({
-      loaded: s.loaded,
-      standaloneAuth: s.standaloneAuth,
       timersEnabled: s.timersEnabled,
     })),
   );
@@ -71,22 +67,22 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   const navItems = useMemo(() => {
     return MAIN_NAV_ITEMS.filter((item) => {
       if (item.timers && !timersEnabled) return false;
-      if (item.standalone && !(configLoaded && standaloneAuth)) return false;
-      if (
-        item.staff &&
-        !(loaded && isStaff && configLoaded && standaloneAuth)
-      ) {
+      if (item.auth && !(loaded && isAuthenticated)) return false;
+      if (item.staff && !(loaded && isStaff)) {
         return false;
       }
-      if (
-        item.admin &&
-        !(loaded && isAdmin && configLoaded && standaloneAuth)
-      ) {
+      if (item.admin && !(loaded && isAdmin)) {
         return false;
       }
       return true;
     });
-  }, [configLoaded, isAdmin, isStaff, loaded, standaloneAuth, timersEnabled]);
+  }, [
+    isAdmin,
+    isAuthenticated,
+    isStaff,
+    loaded,
+    timersEnabled,
+  ]);
 
   return (
     <div className="min-h-screen gradient-grid flex flex-col">
@@ -130,7 +126,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
               ))}
             </nav>
             <div className="justify-self-end flex items-center gap-2">
-              {isAuthenticated && configLoaded && standaloneAuth && (
+              {isAuthenticated && (
                 <button className="btn btn-sm btn-ghost gap-2" onClick={logout}>
                   <LogOut className="h-4 w-4" />
                   Log out
@@ -143,6 +139,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             open={navOpen}
             items={navItems}
             onClose={() => setNavOpen(false)}
+            onLogout={isAuthenticated ? () => void logout() : undefined}
             className="absolute top-full left-4 md:left-6 mt-2 z-[70] xl:hidden"
           />
         </header>

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -21,14 +22,21 @@ var (
 	ErrFailedPersistCharacter   = router.NewApiError(http.StatusInternalServerError, "Failed to persist character", nil)
 	ErrFailedPersistUser        = router.NewApiError(http.StatusInternalServerError, "Failed to persist user", nil)
 	ErrInvalidCharacter         = router.NewApiError(http.StatusBadGateway, "Invalid character", nil)
-	ErrInvalidClaims            = router.NewApiError(http.StatusUnauthorized, "Invalid claims", nil)
+	ErrCharacterNotLinkable     = router.NewApiError(http.StatusBadRequest, "Character not linkable", nil)
 	ErrInvalidCode              = router.NewApiError(http.StatusBadRequest, "Invalid code", nil)
-	ErrInvalidIDToken           = router.NewApiError(http.StatusUnauthorized, "Invalid id_token", nil)
 	ErrInvalidState             = router.NewApiError(http.StatusBadRequest, "Invalid state", nil)
 	ErrMissingCode              = router.NewApiError(http.StatusBadRequest, "Missing code", nil)
-	ErrMissingIDToken           = router.NewApiError(http.StatusBadRequest, "Missing id_token", nil)
+	ErrMissingAccessToken       = router.NewApiError(http.StatusUnauthorized, "Missing access token", nil)
 	ErrMissingRequiredRoles     = router.NewApiError(http.StatusForbidden, "Missing required roles", nil)
 	ErrMissingSub               = router.NewApiError(http.StatusUnauthorized, "Missing sub", nil)
 	ErrUnauthorized             = router.NewApiError(http.StatusUnauthorized, "Unauthorized", nil)
 	ErrUserNotFound             = router.NewApiError(http.StatusNotFound, "User not found", nil)
+
+	// testauth errors
+	ErrTestAuthDiscovery = errors.New("oauth discovery failed")
+	ErrTestAuthToken     = errors.New("token exchange failed")
+	ErrTestAuthRefresh   = errors.New("token refresh failed")
+	ErrTestAuthUserInfo  = errors.New("user info fetch failed")
+	ErrTestAuthEsiProxy  = errors.New("esi proxy failed")
+	ErrUserInfoFetch     = errors.New("user info fetch failed")
 )
