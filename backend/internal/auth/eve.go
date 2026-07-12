@@ -27,6 +27,7 @@ type EVEProvider struct {
 	PublicESI      *esi.ESIPublicClient
 	Intel          *intel.IntelService
 	TokenValidator EVETokenValidator
+	DevMode        bool
 }
 
 type eveTokenClaims struct {
@@ -39,7 +40,7 @@ const (
 	minSubParts = 3
 )
 
-func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (*EVEProvider, error) {
+func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, devMode bool) (*EVEProvider, error) {
 	if oauthConfig == nil {
 		return nil, errors.New("missing oauth config")
 	}
@@ -55,6 +56,7 @@ func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauth
 		PublicESI:      publicESI,
 		Intel:          intelService,
 		TokenValidator: validator,
+		DevMode:        devMode,
 	}, nil
 }
 
@@ -75,7 +77,7 @@ func (p *EVEProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string,
 	if stateErr != nil {
 		return "", ErrFailedCreateState
 	}
-	flow.RedirectBaseURL = resolveRedirectBaseURL(c)
+	flow.RedirectBaseURL = resolveRedirectBaseURL(c, p.DevMode)
 	saveAuthFlow(p.App, state, flow)
 
 	redirectURL := absoluteURL(c)
@@ -783,7 +785,7 @@ func (p *EVEProvider) findOrCreateUser(characterID int) (*core.Record, error) {
 	record.SetEmail(fmt.Sprintf("eve-%d@auth.invalid", characterID))
 	record.SetRandomPassword()
 	record.Set("created_at", time.Now())
-	record.Set("access_level", "user")
+	record.Set("access_level", accessLevelUser)
 	if saveErr := p.App.Save(record); saveErr != nil {
 		return nil, saveErr
 	}

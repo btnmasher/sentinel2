@@ -106,9 +106,24 @@ func TestResolveRedirectBaseURL(t *testing.T) {
 		}
 
 		c := &core.RequestEvent{Event: router.Event{Request: req}}
-		got := resolveRedirectBaseURL(c)
+		got := resolveRedirectBaseURL(c, true)
 		if got != tt.expectedBaseURL {
 			t.Fatalf("%s: resolveRedirectBaseURL() = %q, want %q", tt.name, got, tt.expectedBaseURL)
 		}
+	}
+}
+
+func TestResolveRedirectBaseURLProduction(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest("GET", "http://example.test/api/auth/login", http.NoBody)
+	req.Host = "example.test"
+	req.Header.Set("Origin", "http://localhost:5173")
+
+	c := &core.RequestEvent{Event: router.Event{Request: req}}
+	got := resolveRedirectBaseURL(c, false)
+	want := "https://example.test"
+	if got != want {
+		t.Fatalf("resolveRedirectBaseURL() = %q, want %q", got, want)
 	}
 }

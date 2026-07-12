@@ -113,6 +113,25 @@ type MapState = {
 };
 
 let routePolling: number | undefined;
+const locationFetchInFlight = new Set<number>();
+
+const claimLocationFetchTargets = (targets: number[]) => {
+  const claimed: number[] = [];
+  targets.forEach((charId) => {
+    if (locationFetchInFlight.has(charId)) {
+      return;
+    }
+    locationFetchInFlight.add(charId);
+    claimed.push(charId);
+  });
+  return claimed;
+};
+
+const releaseLocationFetchTargets = (targets: number[]) => {
+  targets.forEach((charId) => {
+    locationFetchInFlight.delete(charId);
+  });
+};
 
 const getCharacterRosterCacheKey = () => {
   const { authBackend } = useAppConfigStore.getState();
@@ -389,12 +408,14 @@ export const useMapStore = create<MapState>()(
           };
         });
       },
-      invalidateCharactersCache: () =>
+      invalidateCharactersCache: () => {
+        locationFetchInFlight.clear();
         set({
           charactersCacheKey: "",
           charactersLoadedAt: 0,
           ...clearCharacterRosterState(),
-        }),
+        });
+      },
       setVisibleCharacters: (ids) => set({ visibleCharacterIds: ids }),
       selectAllCharacters: () =>
         set((state) => ({
@@ -418,7 +439,8 @@ export const useMapStore = create<MapState>()(
           const last = lastFetch[charId] ?? 0;
           return now - last >= 30_000;
         });
-        if (nextTargets.length === 0) {
+        const claimedTargets = claimLocationFetchTargets(nextTargets);
+        if (claimedTargets.length === 0) {
           return;
         }
         const updates: Record<number, number> = {};
@@ -428,7 +450,7 @@ export const useMapStore = create<MapState>()(
         const fetchUpdates: Record<number, number> = {};
         try {
           const response = await api.post("/map/locations", {
-            characters: nextTargets,
+            characters: claimedTargets,
           });
           const locations = response.data.locations || [];
           locations.forEach((entry: LocationEntry) => {
@@ -450,6 +472,8 @@ export const useMapStore = create<MapState>()(
           });
         } catch {
           return;
+        } finally {
+          releaseLocationFetchTargets(claimedTargets);
         }
         set((state) => ({
           characterLocations: { ...state.characterLocations, ...updates },
@@ -485,9 +509,8 @@ export const useMapStore = create<MapState>()(
               [character]: waypoints,
             },
           }));
-          // Immediately sync route head to the character's current location
-          // instead of waiting for the polling interval.
-          void get().updateRoute(character);
+          await get().refreshCharacterLocations([character]);
+          await get().updateRoute(character);
           routePolling = window.setInterval(() => {
             void get().updateRoute(character);
           }, 30000);
@@ -518,50 +541,11 @@ export const useMapStore = create<MapState>()(
       },
       updateRoute: async (character) => {
         try {
-          const lastFetch = get().lastLocationFetchAt[character] ?? 0;
           const cachedLocation = get().characterLocations[character];
-          const now = Date.now();
-          let location = cachedLocation;
-
-          if (!location || now - lastFetch >= 30_000) {
-            const response = await api.post("/map/locations", {
-              characters: [character],
-            });
-            const entry = response.data.locations?.[0];
-            location = entry?.location;
-            if (typeof entry?.character_id === "number") {
-              const charId = Number(entry.character_id);
-              set((state) => ({
-                characterLocations: {
-                  ...state.characterLocations,
-                  ...(typeof entry.location === "number"
-                    ? { [charId]: entry.location }
-                    : {}),
-                },
-                characterLocationSystemNames: {
-                  ...state.characterLocationSystemNames,
-                  ...(typeof entry.system_name === "string" &&
-                  entry.system_name.trim()
-                    ? { [charId]: entry.system_name }
-                    : {}),
-                },
-                characterLocationRegions: {
-                  ...state.characterLocationRegions,
-                  ...(typeof entry.region_id === "number" && entry.region_id > 0
-                    ? { [charId]: entry.region_id }
-                    : {}),
-                },
-                characterInSpace: {
-                  ...state.characterInSpace,
-                  [charId]: entry.in_space !== false,
-                },
-                lastLocationFetchAt: {
-                  ...state.lastLocationFetchAt,
-                  [charId]: now,
-                },
-              }));
-            }
+          if (!cachedLocation) {
+            return;
           }
+          const location = cachedLocation;
           let route = get().route;
           const index = route.indexOf(location);
 

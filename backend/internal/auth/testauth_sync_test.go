@@ -74,7 +74,7 @@ func TestPersistUserSessionPopulatesMainCharacterFields(t *testing.T) {
 		CharacterName: "Gothicus",
 	}
 
-	if err := provider.persistUserSession(user, "account-sub", token, "admin", mainCharacter, 9001, 8002); err != nil {
+	if err := provider.persistUserSession(user, "account-sub", token, accessLevelAdmin, mainCharacter, 9001, 8002); err != nil {
 		t.Fatalf("persistUserSession() error = %v", err)
 	}
 
@@ -132,7 +132,7 @@ func mustCreateTestAuthSyncUser(t *testing.T, app *pocketbase.PocketBase) *core.
 	record.SetPassword("password123")
 	record.SetVerified(true)
 	record.Set("created_at", time.Now().UTC().Format(time.RFC3339))
-	record.Set("access_level", "admin")
+	record.Set("access_level", accessLevelAdmin)
 	record.Set("eve_character_name", "Sync Test")
 
 	if err := app.Save(record); err != nil {

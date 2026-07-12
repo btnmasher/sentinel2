@@ -466,7 +466,7 @@ func (h *AuthHandler) appendTestAuthProfileCharacters(c *core.RequestEvent, resp
 
 	profileCharacters, profileErr := testAuthProvider.ProfileCharacters(c.Request.Context(), record)
 	if profileErr != nil || len(profileCharacters) == 0 {
-		return h.appendTestAuthProfileFallback(c, response, record)
+		return h.appendTestAuthProfileFallback(response, record)
 	}
 
 	for _, character := range profileCharacters {
@@ -499,14 +499,13 @@ func (h *AuthHandler) appendStandaloneProfileCharacters(response *profileRespons
 	return true
 }
 
-func (h *AuthHandler) appendTestAuthProfileFallback(c *core.RequestEvent, response *profileResponse, record *core.Record) bool {
-	testAuthProvider, ok := h.Auth.Provider.(*auth.TestAuthProvider)
-	if !ok || record.GetString("auth_provider") != auth.AuthProviderTestAuth {
+func (h *AuthHandler) appendTestAuthProfileFallback(response *profileResponse, record *core.Record) bool {
+	if record.GetString("auth_provider") != auth.AuthProviderTestAuth {
 		return false
 	}
 
-	mainCharacter, mainErr := testAuthProvider.MainCharacter(c.Request.Context(), record)
-	if mainErr != nil {
+	charID := record.GetInt("eve_character_id")
+	if charID == 0 {
 		return false
 	}
 
@@ -522,14 +521,16 @@ func (h *AuthHandler) appendTestAuthProfileFallback(c *core.RequestEvent, respon
 	}
 
 	response.Characters = append(response.Characters, characterProfile{
-		CharacterID:      int(mainCharacter.CharacterID),
-		Name:             mainCharacter.CharacterName,
+		RecordID:         record.Id,
+		CharacterID:      charID,
+		Name:             record.GetString("eve_character_name"),
 		CorpID:           corpID,
 		CorpName:         corpName,
 		AllianceID:       allianceID,
 		AllianceName:     allianceName,
 		IsMain:           true,
-		ESITokenValid:    mainCharacter.HasValidToken,
+		ESITokenValid:    record.GetBool("esi_token_valid"),
+		ESILastError:     record.GetString("esi_last_error"),
 		ESILastRefreshAt: refreshAt,
 	})
 	return true

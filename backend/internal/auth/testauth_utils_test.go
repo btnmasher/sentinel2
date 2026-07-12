@@ -42,12 +42,12 @@ func TestSelectMainCharacter(t *testing.T) {
 		},
 	}
 
-	character, ok := selectMainCharacter(info)
+	character, ok := SelectMainCharacter(info)
 	if !ok {
-		t.Fatal("selectMainCharacter() returned false")
+		t.Fatal("SelectMainCharacter() returned false")
 	}
 	if character.CharacterID != 42 || character.CharacterName != "Main" {
-		t.Fatalf("selectMainCharacter() = %+v, want main character", character)
+		t.Fatalf("SelectMainCharacter() = %+v, want main character", character)
 	}
 }
 
@@ -61,8 +61,8 @@ func TestSelectMainCharacterFailsWithoutSignals(t *testing.T) {
 		},
 	}
 
-	_, ok := selectMainCharacter(info)
+	_, ok := SelectMainCharacter(info)
 	if ok {
-		t.Fatal("selectMainCharacter() returned true, want false")
+		t.Fatal("SelectMainCharacter() returned true, want false")
 	}
 }
