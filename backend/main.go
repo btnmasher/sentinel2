@@ -104,8 +104,8 @@ func logAuthConfig(cfg *config.Config) {
 	default:
 		log.Printf(
 			"startup: auth_backend=testauth client_id_set=%t client_secret_set=%t",
-			cfg.OIDCClientID != "",
-			cfg.OIDCClientSecret != "",
+			cfg.TestAuthClientID != "",
+			cfg.TestAuthClientSecret != "",
 		)
 	}
 }

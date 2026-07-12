@@ -130,44 +130,29 @@ func (h *MapHandler) Characters(c *core.RequestEvent) error {
 }
 
 func (h *MapHandler) characterIDs(c *core.RequestEvent, user *core.Record) ([]int, error) {
-	if h.Config != nil && h.Config.AuthBackend == "eve" {
-		return h.characterIDsFromRecords(user)
-	}
-	return h.characterIDsFromESI(c, user)
+	_ = c
+	return h.characterIDsFromRecords(user)
 }
 
 func (h *MapHandler) characterIDsFromRecords(user *core.Record) ([]int, error) {
+	provider := user.GetString("auth_provider")
 	records, recordsErr := h.App.FindRecordsByFilter(
 		store.CollectionCharacters,
-		"user = {:user}",
+		"user = {:user} && auth_provider = {:provider}",
 		"-is_main",
 		0,
-		0, dbx.Params{"user": user.Id},
+		0, dbx.Params{"user": user.Id, "provider": provider},
 	)
 	if recordsErr != nil {
 		return nil, router.NewInternalServerError("Failed to fetch characters.", logging.Fields{
-			"user_id": user.Id,
-			"error":   recordsErr.Error(),
+			"user_id":       user.Id,
+			"auth_provider": provider,
+			"error":         recordsErr.Error(),
 		})
 	}
 	ids := make([]int, 0, len(records))
 	for _, rec := range records {
 		ids = append(ids, rec.GetInt("eve_character_id"))
-	}
-	return ids, nil
-}
-
-func (h *MapHandler) characterIDsFromESI(c *core.RequestEvent, user *core.Record) ([]int, error) {
-	accessToken, tokenErr := h.userAccessToken(c.Request.Context(), user)
-	if tokenErr != nil {
-		return nil, tokenErr
-	}
-	ids, charsErr := h.ESI.Characters(c.Request.Context(), user, accessToken)
-	if charsErr != nil {
-		return nil, router.NewInternalServerError("Failed to fetch characters.", logging.Fields{
-			"user_id": user.Id,
-			"error":   charsErr.Error(),
-		})
 	}
 	return ids, nil
 }
@@ -210,15 +195,45 @@ func (h *MapHandler) CharacterLocations(c *core.RequestEvent) error {
 		}
 		systemID := int64(location.SolarSystemID)
 		inSpace := location.StationID == 0 && location.StructureID == 0
+		systemName, regionID, metaErr := h.lookupSolarSystemMeta(systemID)
+		if metaErr != nil {
+			log.WithFields(logging.Fields{
+				"character_id": character,
+				"system_id":    systemID,
+			}).WithErr(metaErr).
+				Warn("map locations system lookup failed")
+			systemName = fmt.Sprintf("System %d", systemID)
+		}
 		results = append(results, LocationEntry{
 			CharacterID: characterID,
 			Location:    systemID,
-			SystemName:  "",
+			SystemName:  systemName,
+			RegionID:    regionID,
 			InSpace:     inSpace,
 		})
 	}
 
 	return c.JSON(http.StatusOK, LocationsResponse{Locations: results})
+}
+
+func (h *MapHandler) lookupSolarSystemMeta(systemID int64) (systemName string, regionID int, err error) {
+	records, recordsErr := h.App.FindRecordsByFilter(
+		store.CollectionSolarSystems,
+		"eve_id = {:id}",
+		"",
+		1,
+		0,
+		dbx.Params{"id": systemID},
+	)
+	if recordsErr != nil {
+		return "", 0, recordsErr
+	}
+	if len(records) == 0 {
+		return "", 0, fmt.Errorf("solar system %d not found", systemID)
+	}
+
+	record := records[0]
+	return record.GetString("name"), record.GetInt("region_id"), nil
 }
 
 func (h *MapHandler) Route(c *core.RequestEvent) error {

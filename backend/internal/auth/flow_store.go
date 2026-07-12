@@ -26,9 +26,10 @@ const (
 )
 
 type AuthFlow struct {
-	Type       AuthFlowType
-	LinkUserID string
-	CreatedAt  time.Time
+	Type            AuthFlowType
+	LinkUserID      string
+	RedirectBaseURL string
+	CreatedAt       time.Time
 }
 
 type authExchange struct {

@@ -45,13 +45,11 @@ export default function App() {
   );
   const {
     loaded: configLoaded,
-    standaloneAuth,
     defaultRegions,
     timersEnabled,
   } = useAppConfigStore(
     useShallow((s) => ({
       loaded: s.loaded,
-      standaloneAuth: s.standaloneAuth,
       defaultRegions: s.defaultRegions,
       timersEnabled: s.timersEnabled,
     })),
@@ -193,18 +191,14 @@ export default function App() {
             </ErrorBoundary>
           }
         />
-        {standaloneAuth ? (
-          <Route
-            path="/profile"
-            element={
-              <ErrorBoundary name="Profile">
-                <ProfilePage />
-              </ErrorBoundary>
-            }
-          />
-        ) : (
-          <Route path="/profile" element={<Navigate to="/" />} />
-        )}
+        <Route
+          path="/profile"
+          element={
+            <ErrorBoundary name="Profile">
+              <ProfilePage />
+            </ErrorBoundary>
+          }
+        />
         <Route
           path="/staff"
           element={
@@ -213,18 +207,14 @@ export default function App() {
             </ErrorBoundary>
           }
         />
-        {standaloneAuth ? (
-          <Route
-            path="/admin"
-            element={
-              <ErrorBoundary name="Admin">
-                <AdminPage />
-              </ErrorBoundary>
-            }
-          />
-        ) : (
-          <Route path="/admin" element={<Navigate to="/" />} />
-        )}
+        <Route
+          path="/admin"
+          element={
+            <ErrorBoundary name="Admin">
+              <AdminPage />
+            </ErrorBoundary>
+          }
+        />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </>

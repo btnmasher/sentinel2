@@ -17,6 +17,10 @@ import type {
   TimerSignal,
 } from "../types";
 
+const characterRosterCacheTTL = 5 * 60 * 1000;
+const characterRosterCacheInvalidatedEvent =
+  "sentinel2:character-roster-cache-invalidated";
+
 type Jumpranges = {
   enabled: boolean;
   selectedSystem?: number;
@@ -27,6 +31,8 @@ type Jumpranges = {
 type LocationEntry = {
   character_id: number | string;
   location?: number;
+  system_name?: string;
+  region_id?: number;
   in_space?: boolean;
 };
 
@@ -52,8 +58,12 @@ type MapState = {
   routeWaypointsByCharacter: Record<number, number[]>;
   lastJumpgateUpdate: number;
   characters: Character[];
+  charactersCacheKey: string;
+  charactersLoadedAt: number;
   visibleCharacterIds: number[];
   characterLocations: Record<number, number>;
+  characterLocationSystemNames: Record<number, string>;
+  characterLocationRegions: Record<number, number>;
   characterInSpace: Record<number, boolean>;
   lastLocationFetchAt: Record<number, number>;
   favoriteCharacters: number[];
@@ -81,7 +91,8 @@ type MapState = {
   fetchMapTopology: () => Promise<void>;
   fetchMapOverlays: () => Promise<void>;
   fetchMapData: () => Promise<void>;
-  loadCharacters: () => Promise<void>;
+  loadCharacters: (force?: boolean) => Promise<void>;
+  invalidateCharactersCache: () => void;
   setVisibleCharacters: (ids: number[]) => void;
   selectAllCharacters: () => void;
   selectNoCharacters: () => void;
@@ -102,6 +113,32 @@ type MapState = {
 };
 
 let routePolling: number | undefined;
+
+const getCharacterRosterCacheKey = () => {
+  const { authBackend } = useAppConfigStore.getState();
+  const { userId } = useAuthStore.getState();
+  return `${authBackend}:${userId ?? ""}`;
+};
+
+const isCharacterRosterCacheFresh = (cacheKey: string, loadedAt: number) => {
+  if (!cacheKey || loadedAt <= 0) {
+    return false;
+  }
+  if (Date.now() - loadedAt > characterRosterCacheTTL) {
+    return false;
+  }
+  return true;
+};
+
+const clearCharacterRosterState = () => ({
+  characters: [] as Character[],
+  visibleCharacterIds: [] as number[],
+  characterLocations: {} as Record<number, number>,
+  characterLocationSystemNames: {} as Record<number, string>,
+  characterLocationRegions: {} as Record<number, number>,
+  characterInSpace: {} as Record<number, boolean>,
+  lastLocationFetchAt: {} as Record<number, number>,
+});
 
 type RouteErrorContext = {
   operation:
@@ -178,8 +215,12 @@ export const useMapStore = create<MapState>()(
       routeWaypointsByCharacter: {},
       lastJumpgateUpdate: Date.now(),
       characters: [],
+      charactersCacheKey: "",
+      charactersLoadedAt: 0,
       visibleCharacterIds: [],
       characterLocations: {},
+      characterLocationSystemNames: {},
+      characterLocationRegions: {},
       characterInSpace: {},
       lastLocationFetchAt: {},
       favoriteCharacters: [],
@@ -264,11 +305,29 @@ export const useMapStore = create<MapState>()(
         await get().fetchMapTopology();
         await get().fetchMapOverlays();
       },
-      loadCharacters: async () => {
+      loadCharacters: async (force = false) => {
         const { standaloneAuth } = useAppConfigStore.getState();
         const userId = useAuthStore.getState().userId;
+        const cacheKey = getCharacterRosterCacheKey();
+        const currentState = get();
+
+        if (!force && currentState.charactersCacheKey === cacheKey) {
+          if (isCharacterRosterCacheFresh(cacheKey, currentState.charactersLoadedAt)) {
+            return;
+          }
+        }
+
         let ids: number[] = [];
         let names: Character[] | null = null;
+
+        if (!standaloneAuth && !userId) {
+          set({
+            ...clearCharacterRosterState(),
+            charactersCacheKey: cacheKey,
+            charactersLoadedAt: Date.now(),
+          });
+          return;
+        }
 
         if (standaloneAuth && userId) {
           const records = await pb.collection("characters").getFullList({
@@ -287,15 +346,16 @@ export const useMapStore = create<MapState>()(
           const response = await api.get("/map/characters");
           ids = response.data.characters || [];
         }
+
         if (ids.length === 0) {
           set({
-            characters: [],
-            visibleCharacterIds: [],
-            characterLocations: {},
-            characterInSpace: {},
+            ...clearCharacterRosterState(),
+            charactersCacheKey: cacheKey,
+            charactersLoadedAt: Date.now(),
           });
           return;
         }
+
         let sorted: Character[];
         if (names) {
           sorted = names.sort((a, b) => a.id - b.id);
@@ -313,20 +373,28 @@ export const useMapStore = create<MapState>()(
           const nextVisible =
             state.visibleCharacterIds.length === 0
               ? sorted.map((char) => char.id)
-              : sorted
-                  .map((char) => char.id)
-                  .filter((id) => existing.has(id))
-                  .concat(
+            : sorted
+                .map((char) => char.id)
+                .filter((id) => existing.has(id))
+                .concat(
                     sorted
                       .map((char) => char.id)
                       .filter((id) => !existing.has(id)),
                   );
           return {
             characters: sorted,
+            charactersCacheKey: cacheKey,
+            charactersLoadedAt: Date.now(),
             visibleCharacterIds: Array.from(new Set(nextVisible)),
           };
         });
       },
+      invalidateCharactersCache: () =>
+        set({
+          charactersCacheKey: "",
+          charactersLoadedAt: 0,
+          ...clearCharacterRosterState(),
+        }),
       setVisibleCharacters: (ids) => set({ visibleCharacterIds: ids }),
       selectAllCharacters: () =>
         set((state) => ({
@@ -336,7 +404,12 @@ export const useMapStore = create<MapState>()(
       refreshCharacterLocations: async (ids) => {
         const targets = ids && ids.length > 0 ? ids : get().visibleCharacterIds;
         if (targets.length === 0) {
-          set({ characterLocations: {}, characterInSpace: {} });
+          set({
+            characterLocations: {},
+            characterLocationSystemNames: {},
+            characterLocationRegions: {},
+            characterInSpace: {},
+          });
           return;
         }
         const lastFetch = get().lastLocationFetchAt;
@@ -349,6 +422,8 @@ export const useMapStore = create<MapState>()(
           return;
         }
         const updates: Record<number, number> = {};
+        const systemNameUpdates: Record<number, string> = {};
+        const regionUpdates: Record<number, number> = {};
         const inSpaceUpdates: Record<number, boolean> = {};
         const fetchUpdates: Record<number, number> = {};
         try {
@@ -365,6 +440,12 @@ export const useMapStore = create<MapState>()(
             if (typeof location === "number") {
               updates[charId] = location;
             }
+            if (typeof entry.system_name === "string" && entry.system_name.trim()) {
+              systemNameUpdates[charId] = entry.system_name;
+            }
+            if (typeof entry.region_id === "number" && entry.region_id > 0) {
+              regionUpdates[charId] = entry.region_id;
+            }
             fetchUpdates[charId] = now;
           });
         } catch {
@@ -372,6 +453,14 @@ export const useMapStore = create<MapState>()(
         }
         set((state) => ({
           characterLocations: { ...state.characterLocations, ...updates },
+          characterLocationSystemNames: {
+            ...state.characterLocationSystemNames,
+            ...systemNameUpdates,
+          },
+          characterLocationRegions: {
+            ...state.characterLocationRegions,
+            ...regionUpdates,
+          },
           characterInSpace: { ...state.characterInSpace, ...inSpaceUpdates },
           lastLocationFetchAt: {
             ...state.lastLocationFetchAt,
@@ -447,6 +536,19 @@ export const useMapStore = create<MapState>()(
                   ...state.characterLocations,
                   ...(typeof entry.location === "number"
                     ? { [charId]: entry.location }
+                    : {}),
+                },
+                characterLocationSystemNames: {
+                  ...state.characterLocationSystemNames,
+                  ...(typeof entry.system_name === "string" &&
+                  entry.system_name.trim()
+                    ? { [charId]: entry.system_name }
+                    : {}),
+                },
+                characterLocationRegions: {
+                  ...state.characterLocationRegions,
+                  ...(typeof entry.region_id === "number" && entry.region_id > 0
+                    ? { [charId]: entry.region_id }
                     : {}),
                 },
                 characterInSpace: {
@@ -546,8 +648,13 @@ export const useMapStore = create<MapState>()(
         displayTimers: state.displayTimers,
         jumpranges: state.jumpranges,
         favoriteCharacters: state.favoriteCharacters,
+        characters: state.characters,
+        charactersCacheKey: state.charactersCacheKey,
+        charactersLoadedAt: state.charactersLoadedAt,
         visibleCharacterIds: state.visibleCharacterIds,
         characterLocations: state.characterLocations,
+        characterLocationSystemNames: state.characterLocationSystemNames,
+        characterLocationRegions: state.characterLocationRegions,
         characterInSpace: state.characterInSpace,
         lastLocationFetchAt: state.lastLocationFetchAt,
         route: state.route,
@@ -557,6 +664,18 @@ export const useMapStore = create<MapState>()(
     },
   ),
 );
+
+if (typeof window !== "undefined") {
+  const globalWindow = window as Window & {
+    __sentinel2CharacterRosterCacheListenerInstalled__?: boolean;
+  };
+  if (!globalWindow.__sentinel2CharacterRosterCacheListenerInstalled__) {
+    globalWindow.__sentinel2CharacterRosterCacheListenerInstalled__ = true;
+    window.addEventListener(characterRosterCacheInvalidatedEvent, () => {
+      useMapStore.getState().invalidateCharactersCache();
+    });
+  }
+}
 
 export const systemScale = (mapScale: number) =>
   mapScale > 1.95 ? 1.95 / mapScale : 1.25;

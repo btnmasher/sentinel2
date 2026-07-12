@@ -25,11 +25,12 @@ func (m *Manager) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string, err
 }
 
 type AuthCallbackResult struct {
-	ExchangeCode  string
-	IsLink        bool
-	UserID        string
-	CharacterID   int
-	CharacterName string
+	ExchangeCode    string
+	IsLink          bool
+	UserID          string
+	CharacterID     int
+	CharacterName   string
+	RedirectBaseURL string
 }
 
 func (m *Manager) Callback(c *core.RequestEvent) (*AuthCallbackResult, error) {
@@ -37,10 +38,11 @@ func (m *Manager) Callback(c *core.RequestEvent) (*AuthCallbackResult, error) {
 	if callbackErr == nil {
 		if flow.Type == FlowLink {
 			return &AuthCallbackResult{
-				IsLink:        true,
-				UserID:        result.UserID,
-				CharacterID:   result.CharacterID,
-				CharacterName: result.CharacterName,
+				IsLink:          true,
+				UserID:          result.UserID,
+				CharacterID:     result.CharacterID,
+				CharacterName:   result.CharacterName,
+				RedirectBaseURL: flow.RedirectBaseURL,
 			}, nil
 		}
 
@@ -49,10 +51,11 @@ func (m *Manager) Callback(c *core.RequestEvent) (*AuthCallbackResult, error) {
 			return nil, ErrFailedIssueExchangeCode
 		}
 		return &AuthCallbackResult{
-			ExchangeCode:  code,
-			UserID:        result.UserID,
-			CharacterID:   result.CharacterID,
-			CharacterName: result.CharacterName,
+			ExchangeCode:    code,
+			UserID:          result.UserID,
+			CharacterID:     result.CharacterID,
+			CharacterName:   result.CharacterName,
+			RedirectBaseURL: flow.RedirectBaseURL,
 		}, nil
 	}
 

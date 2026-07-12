@@ -8,6 +8,7 @@ import {
   defineAdminModal,
   useAdminStore,
 } from "../store/adminStore";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { useAdminSearchStore } from "../store/adminSearchStore";
 import { useAdminActionsStore } from "../store/adminActionsStore";
 import { buildSearchLabel, hasSearchMain } from "../utils/formatters";
@@ -141,7 +142,8 @@ export const AdminModalMove = defineAdminModal({
   useOpen: () => {
     const open = useAdminStore((s) => s.modals[ADMIN_MODAL.Move]);
     const user = useAdminStore((s) => s.selectedUser);
-    return open && Boolean(user);
+    const standaloneAuth = useAppConfigStore((s) => s.standaloneAuth);
+    return open && Boolean(user) && standaloneAuth;
   },
   build: () => ({
     title: "Move Character",

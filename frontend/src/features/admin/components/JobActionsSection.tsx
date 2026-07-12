@@ -33,6 +33,7 @@ export default function JobActionsSection() {
   );
   const loadingLabel = useAdminMapDataStore((s) => s.loadingLabel);
   const runAction = useAdminMapDataStore((s) => s.runAction);
+  const standaloneAuth = useAppConfigStore((s) => s.standaloneAuth);
   const timersEnabled = useAppConfigStore((s) => s.timersEnabled);
   const timerSource = useAppConfigStore((s) => s.timerSource);
   const standaloneTimers = timersEnabled && timerSource === "standalone";
@@ -46,6 +47,9 @@ export default function JobActionsSection() {
   const actions = useMemo<AdminAction[]>(() => {
     switch (group) {
       case "characters":
+        if (!standaloneAuth) {
+          return [];
+        }
         return [
           {
             label: "Refresh all characters",
@@ -120,6 +124,7 @@ export default function JobActionsSection() {
     }
   }, [
     group,
+    standaloneAuth,
     openAllowedOrganizationsModal,
     openAnnouncementModal,
     standaloneTimers,

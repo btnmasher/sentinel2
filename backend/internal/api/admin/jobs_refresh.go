@@ -19,6 +19,10 @@ import (
 )
 
 func (h *Handler) RefreshCharacter(c *core.RequestEvent) error {
+	if h.Refresher == nil {
+		return router.NewInternalServerError("Character refresh is unavailable.", nil)
+	}
+
 	id := c.Request.PathValue("id")
 	record, recordErr := h.App.FindRecordById("characters", id)
 	if recordErr != nil {
@@ -87,6 +91,10 @@ func (h *Handler) RefreshCharacter(c *core.RequestEvent) error {
 }
 
 func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
+	if h.Refresher == nil {
+		return router.NewInternalServerError("Character refresh is unavailable.", nil)
+	}
+
 	userID, payloadErr := parseRefreshAllUserID(c)
 	if payloadErr != nil {
 		return payloadErr
@@ -122,6 +130,47 @@ func (h *Handler) RefreshAllCharacters(c *core.RequestEvent) error {
 		"job_id": jobID,
 		"scope":  scope,
 	})
+}
+
+func (h *Handler) ResyncAccount(c *core.RequestEvent) error {
+	if h.Provider == nil {
+		return router.NewInternalServerError("Account resync is unavailable.", nil)
+	}
+	if h.currentAuthProvider(c) != auth.AuthProviderTestAuth {
+		return router.NewNotFoundError("Not found.", nil)
+	}
+
+	userID := c.Request.PathValue("id")
+	user, userErr := h.App.FindRecordById(store.CollectionUsers, userID)
+	if userErr != nil {
+		return router.NewNotFoundError("User not found.", logging.Fields{
+			"user_id": userID,
+		})
+	}
+	if strings.ToLower(strings.TrimSpace(user.GetString("auth_provider"))) != auth.AuthProviderTestAuth {
+		return router.NewNotFoundError("User not found.", logging.Fields{
+			"user_id": userID,
+		})
+	}
+
+	if _, refreshErr := h.Provider.Refresh(c.Request.Context(), user); refreshErr != nil {
+		return router.NewInternalServerError("Failed to resync account.", logging.Fields{
+			"user_id": userID,
+			"error":   refreshErr.Error(),
+		})
+	}
+
+	h.logAction(
+		c,
+		&audit.Event{
+			Action:         audit.ActionUserResync,
+			Summary:        "Resynced TestAuth account",
+			TargetUserID:   userID,
+			TargetUserName: user.GetString("eve_character_name"),
+		},
+	)
+
+	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
 func parseRefreshAllUserID(c *core.RequestEvent) (string, error) {

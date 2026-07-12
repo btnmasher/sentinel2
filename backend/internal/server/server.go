@@ -16,7 +16,6 @@ import (
 	"sentinel2/internal/intel"
 	"sentinel2/internal/jumpbridges"
 	"sentinel2/internal/logging"
-	"sentinel2/internal/oidc"
 	"sentinel2/internal/realtime"
 	timerssvc "sentinel2/internal/timers"
 	"sentinel2/internal/uploaderrelease"
@@ -106,7 +105,7 @@ func Run(cfg *config.Config) error {
 	staffOrgStandings := staffapi.NewOrganizationStandingsHandler(app, auditSvc)
 	adminMapDataUpdate := adminapi.NewMapUpdateHandler(app, auditSvc)
 	characterRefresher := auth.NewCharacterRefresher(app, eveProvider, esiClient, publicESI, intelService, auditSvc)
-	admin := adminapi.NewHandler(app, characterRefresher, eveProvider, cleanupSvc, intelService, timerService, jumpbridgeService, auditSvc)
+	admin := adminapi.NewHandler(app, characterRefresher, provider, cleanupSvc, intelService, timerService, jumpbridgeService, auditSvc)
 	timers := timerapi.NewHandler(timerService, auditSvc, provider)
 	timerWebhook := timerwebhookapi.NewHandler(timerService)
 	uploaderReleases := uploaderrelease.New(app, cfg)
@@ -168,13 +167,31 @@ func buildAuthProvider(cfg *config.Config, app *pocketbase.PocketBase, publicESI
 			Scopes: cfg.EVEScopeList(),
 		}
 		esiClient := esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
-		return auth.NewEVEProvider(app, &oauthConfig, esiClient, publicESI, intelService)
-	default:
-		oidcClient, oidcErr := oidc.New(context.Background(), cfg)
-		if oidcErr != nil {
-			return nil, oidcErr
+		return auth.NewEVEProvider(context.Background(), app, &oauthConfig, esiClient, publicESI, intelService)
+	case "testauth":
+		if cfg.TestAuthURL == "" {
+			return nil, fmt.Errorf("TESTAUTH_URL required when AUTH_BACKEND=testauth")
 		}
-		return auth.NewTestAuthProvider(app, oidcClient, intelService), nil
+		if cfg.TestAuthClientID == "" {
+			return nil, fmt.Errorf("TESTAUTH_CLIENT_ID required when AUTH_BACKEND=testauth")
+		}
+		if cfg.TestAuthClientSecret == "" {
+			return nil, fmt.Errorf("TESTAUTH_CLIENT_SECRET required when AUTH_BACKEND=testauth")
+		}
+		oauthClient, oauthClientErr := auth.NewTestAuthClient(
+			context.Background(),
+			cfg.TestAuthURL,
+			cfg.TestAuthClientID,
+			cfg.TestAuthClientSecret,
+			"",
+			cfg.TestAuthScopes,
+		)
+		if oauthClientErr != nil {
+			return nil, fmt.Errorf("failed to create testauth client: %w", oauthClientErr)
+		}
+		return auth.NewTestAuthProvider(app, oauthClient, publicESI, intelService, cfg), nil
+	default:
+		return nil, fmt.Errorf("unknown auth backend: %s", cfg.AuthBackend)
 	}
 }
 
@@ -186,9 +203,5 @@ func buildESIClient(app *pocketbase.PocketBase, cfg *config.Config) esi.ESIClien
 	if cfg.AuthBackend == "eve" {
 		return esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
 	}
-	baseURL := cfg.ESIDirectBaseURL
-	if cfg.ESIProxyBaseURL != "" {
-		baseURL = cfg.ESIProxyBaseURL
-	}
-	return esi.NewESIProxyClient(baseURL, logging.New(app))
+	return esi.NewTestAuthESIClient(cfg.TestAuthURL, cfg.ESIUserAgent, logging.New(app))
 }

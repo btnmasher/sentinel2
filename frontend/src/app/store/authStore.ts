@@ -27,6 +27,8 @@ const DEFAULT_REFRESH_MS = 12 * 60 * 1000;
 const REFRESH_SKEW_MS = 2 * 60 * 1000;
 const MIN_REFRESH_MS = 60 * 1000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
+const characterRosterCacheInvalidatedEvent =
+  "sentinel2:character-roster-cache-invalidated";
 
 const clearRefreshTimer = () => {
   if (refreshTimer !== null) {
@@ -89,6 +91,13 @@ const redirectToLanding = (message: string) => {
   }
 };
 
+const invalidateCharacterRosterCache = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new Event(characterRosterCacheInvalidatedEvent));
+};
+
 const resolveAuthState = () => {
   const record = pb.authStore.model as Record<string, unknown> | null;
   const accessLevel =
@@ -139,6 +148,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         }
         refreshFailures = 0;
         set(resolveAuthState());
+        invalidateCharacterRosterCache();
         scheduleRefresh();
       } catch (error: unknown) {
         const status = getHttpStatus(error);
@@ -164,6 +174,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     pb.authStore.clear();
     set(resolveAuthState());
     refreshFailures = 0;
+    invalidateCharacterRosterCache();
     clearRefreshTimer();
     if (window.location.pathname !== "/") {
       window.location.href = "/";
@@ -182,12 +193,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     pb.authStore.clear();
     set(resolveAuthState());
     refreshFailures = 0;
+    invalidateCharacterRosterCache();
     clearRefreshTimer();
   },
   forceLogout: (message = "Session expired. Please log in again.") => {
     pb.authStore.clear();
     set(resolveAuthState());
     refreshFailures = 0;
+    invalidateCharacterRosterCache();
     clearRefreshTimer();
     redirectToLanding(message);
   },

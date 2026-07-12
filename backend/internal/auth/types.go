@@ -7,7 +7,6 @@ type AuthTokens struct {
 	AccessExpiry  time.Time
 	RefreshToken  string
 	RefreshExpiry time.Time
-	IDToken       string
 }
 
 type AuthResult struct {

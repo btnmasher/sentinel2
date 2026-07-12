@@ -46,13 +46,13 @@ type eveOAuthMetadata struct {
 	JWKSURI string `json:"jwks_uri"`
 }
 
-func NewEVETokenValidator(clientID string) (*eveTokenValidator, error) {
+func NewEVETokenValidator(parentCtx context.Context, clientID string) (*eveTokenValidator, error) {
 	trimmedClientID := strings.TrimSpace(clientID)
 	if trimmedClientID == "" {
 		return nil, errors.New("missing EVE OAuth client ID")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), eveRequestTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, eveRequestTimeout)
 	defer cancel()
 
 	jwksURI, metadataErr := fetchEVEJWKSURI(ctx, eveMetadataURLDefault, &http.Client{

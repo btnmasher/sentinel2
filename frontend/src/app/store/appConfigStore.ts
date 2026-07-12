@@ -8,7 +8,6 @@ type AppConfigState = {
   timerSource: string;
   timersReadOnly: boolean;
   defaultRegions: string[];
-  oidcPortalUrl: string;
   version: string;
   loaded: boolean;
   setVersion: (version: string) => void;
@@ -22,7 +21,6 @@ export const useAppConfigStore = create<AppConfigState>((set) => ({
   timerSource: "standalone",
   timersReadOnly: false,
   defaultRegions: [],
-  oidcPortalUrl: "https://auth.pleaseignore.com",
   version: "",
   loaded: false,
   setVersion: (version) => set({ version }),
@@ -47,10 +45,6 @@ export const useAppConfigStore = create<AppConfigState>((set) => ({
         defaultRegions: Array.isArray(res.data.default_regions)
           ? res.data.default_regions
           : [],
-        oidcPortalUrl:
-          typeof res.data.oidc_portal_url === "string"
-            ? res.data.oidc_portal_url
-            : "https://auth.pleaseignore.com",
         version: typeof res.data.version === "string" ? res.data.version : "",
         loaded: true,
       });

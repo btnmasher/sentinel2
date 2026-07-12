@@ -33,25 +33,31 @@ type Config struct {
 
 	AuthBackend string `long:"auth-backend" env:"AUTH_BACKEND" default:"eve"`
 
-	OIDCIssuer        string   `long:"oidc-issuer" env:"OIDC_ISSUER" default:"https://sso.pleaseignore.com/auth/realms/auth-ng"`
-	OIDCAuthURL       string   `long:"oidc-auth-url" env:"OIDC_AUTH_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/auth"`
-	OIDCTokenURL      string   `long:"oidc-token-url" env:"OIDC_TOKEN_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/token"`
-	OIDCUserInfoURL   string   `long:"oidc-userinfo-url" env:"OIDC_USERINFO_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/userinfo"`
-	OIDCClientID      string   `long:"oidc-client-id" env:"OIDC_CLIENT_ID"`
-	OIDCClientSecret  string   `long:"oidc-client-secret" env:"OIDC_CLIENT_SECRET"`
-	OIDCScopes        []string `long:"oidc-scopes" env:"OIDC_SCOPES" env-delim:"," default:"openid"`
-	OIDCRequiredRoles []string `long:"oidc-required-roles" env:"OIDC_REQUIRED_ROLES" env-delim:"," default:"urn:sso:alliance:test-alliance" default:"urn:sso:allies"`
-	OIDCStaffRoles    []string `long:"oidc-staff-roles" env:"OIDC_STAFF_ROLES" env-delim:"," default:"urn:sso:staff_user"`
-	OIDCPortalURL     string   `long:"oidc-portal-url" env:"OIDC_PORTAL_URL" default:"https://auth.pleaseignore.com"`
+	OIDCIssuer                  string   `long:"oidc-issuer" env:"OIDC_ISSUER" default:"https://sso.pleaseignore.com/auth/realms/auth-ng"`
+	OIDCAuthURL                 string   `long:"oidc-auth-url" env:"OIDC_AUTH_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/auth"`
+	OIDCTokenURL                string   `long:"oidc-token-url" env:"OIDC_TOKEN_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/token"`
+	OIDCUserInfoURL             string   `long:"oidc-userinfo-url" env:"OIDC_USERINFO_URL" default:"https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/userinfo"`
+	OIDCClientID                string   `long:"oidc-client-id" env:"OIDC_CLIENT_ID"`
+	OIDCClientSecret            string   `long:"oidc-client-secret" env:"OIDC_CLIENT_SECRET"`
+	OIDCScopes                  []string `long:"oidc-scopes" env:"OIDC_SCOPES" env-delim:"," default:"openid"`
+	OIDCRequiredRoles           []string `long:"oidc-required-roles" env:"OIDC_REQUIRED_ROLES" env-delim:"," default:"urn:sso:alliance:test-alliance" default:"urn:sso:allies"`
+	OIDCStaffRoles              []string `long:"oidc-staff-roles" env:"OIDC_STAFF_ROLES" env-delim:"," default:"urn:sso:staff_user"`
+	TestAuthURL                 string   `long:"testauth-url" env:"TESTAUTH_URL"`
+	TestAuthClientID            string   `long:"testauth-client-id" env:"TESTAUTH_CLIENT_ID"`
+	TestAuthClientSecret        string   `long:"testauth-client-secret" env:"TESTAUTH_CLIENT_SECRET"`
+	TestAuthScopes              []string `long:"testauth-scopes" env:"TESTAUTH_SCOPES" env-delim:"," default:"profile" default:"groups" default:"permissions"`
+	TestAuthAdminGroups         []string `long:"testauth-admin-groups" env:"TESTAUTH_ADMIN_GROUPS" env-delim:","`
+	TestAuthStaffGroups         []string `long:"testauth-staff-groups" env:"TESTAUTH_STAFF_GROUPS" env-delim:","`
+	TestAuthAdminPermissionURNs []string `long:"testauth-admin-permission-urns" env:"TESTAUTH_ADMIN_PERMISSION_URNS" env-delim:","`
+	StaffPermissionURNs         []string `long:"staff-permission-urns" env:"STAFF_PERMISSION_URNS" env-delim:","`
 
 	EVEClientID     string   `long:"eve-client-id" env:"EVE_CLIENT_ID"`
 	EVEClientSecret string   `long:"eve-client-secret" env:"EVE_CLIENT_SECRET"`
 	EVEAuthURL      string   `long:"eve-auth-url" env:"EVE_AUTH_URL" default:"https://login.eveonline.com/v2/oauth/authorize"`
 	EVETokenURL     string   `long:"eve-token-url" env:"EVE_TOKEN_URL" default:"https://login.eveonline.com/v2/oauth/token"`
-	EVEScopes       []string `long:"eve-scopes" env:"EVE_SCOPES" env-delim:"," default:"esi-search.search_structures.v1" default:"esi-universe.read_structures.v1" default:"esi-location.read_online.v1" default:"esi-location.read_location.v1" default:"esi-ui.write_waypoint.v1" default:"esi-characters.read_notifications.v1"`
+	EVEScopes       []string `long:"eve-scopes" env:"EVE_SCOPES" env-delim:"," default:"esi-search.search_structures.v1" default:"esi-universe.read_structures.v1" default:"esi-location.read_location.v1" default:"esi-ui.write_waypoint.v1"`
 
 	ESIDirectBaseURL string `long:"esi-direct-base-url" env:"ESI_DIRECT_BASE_URL" default:"https://esi.evetech.net/latest/"`
-	ESIProxyBaseURL  string `long:"esi-proxy-base-url" env:"ESI_PROXY_BASE_URL" default:"https://auth.pleaseignore.com/esi/"`
 	ESIUserAgent     string
 
 	DefaultMapRegions    string `long:"default-map-regions" env:"DEFAULT_MAP_REGIONS" default:"10000029"`
@@ -128,6 +134,26 @@ func (c *Config) RequiredRoles() []string {
 
 func (c *Config) StaffRoles() []string {
 	return normalizeScopes(c.OIDCStaffRoles)
+}
+
+// GetTestAuthAdminGroups returns the TestAuth group identifiers that grant admin access.
+func (c *Config) GetTestAuthAdminGroups() []string {
+	return normalizeScopes(c.TestAuthAdminGroups)
+}
+
+// GetTestAuthStaffGroups returns the TestAuth group identifiers that grant staff access.
+func (c *Config) GetTestAuthStaffGroups() []string {
+	return normalizeScopes(c.TestAuthStaffGroups)
+}
+
+// GetTestAuthAdminPermissionURNs returns the TestAuth permission URNs that grant admin access.
+func (c *Config) GetTestAuthAdminPermissionURNs() []string {
+	return normalizeScopes(c.TestAuthAdminPermissionURNs)
+}
+
+// GetStaffPermissionURNs returns the permission URNs that grant staff-level access.
+func (c *Config) GetStaffPermissionURNs() []string {
+	return normalizeScopes(c.StaffPermissionURNs)
 }
 
 func (c *Config) EVEScopeList() []string {

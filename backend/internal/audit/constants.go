@@ -16,6 +16,7 @@ const (
 const (
 	ActionDebugSearchSeed       = "debug.search_seed"
 	ActionUserAuthLinkCharacter = "user.auth.link_character"
+	ActionUserResync = "user.resync"
 	ActionCharacterRefresh      = "character.refresh"
 	ActionCharacterRefreshAll   = "character.refresh_all"
 	ActionCharacterSetMain      = "character.set_main"
