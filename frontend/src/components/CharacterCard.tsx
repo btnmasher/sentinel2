@@ -56,8 +56,9 @@ export default function CharacterCard({
     esi_last_refresh_at: esiLastRefreshAt,
   } = character;
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const showAdminActions =
-    isAdmin && (onSetMain || onRefresh || onRevoke || onRemove);
+  const authProvider = useAuthStore((s) => s.provider);
+  const showAdminActions = isAdmin && (onSetMain || onRefresh || onRevoke);
+  const showRemoveAction = typeof onRemove === "function";
   const portraitUrl = useCharacterPortrait(characterId, 128);
   const allianceLogo = useAllianceLogo(allianceId, 32);
   const corpLogo = useCorporationLogo(corpId, 32);
@@ -131,7 +132,7 @@ export default function CharacterCard({
               loading="lazy"
             />
           )}
-          <p>Alliance {allianceLabel || "No Alliance"}</p>
+          <p>{allianceLabel || "No Alliance"}</p>
         </div>
         <div className="flex items-center gap-2">
           {corpLogo && (
@@ -142,29 +143,33 @@ export default function CharacterCard({
               loading="lazy"
             />
           )}
-          <p>Corporation {corpLabel || "No Corporation"}</p>
+          <p>{corpLabel || "No Corporation"}</p>
         </div>
       </div>
       <div className="character-card-actions text-xs">
-        {showAdminActions && (
+        {(showAdminActions || showRemoveAction) && (
           <div className="flex flex-wrap gap-2">
-            {onSetMain && !isMain && (
-              <button className="btn btn-xs btn-outline" onClick={onSetMain}>
-                Set main
-              </button>
-            )}
-            {onRefresh && (
-              <button className="btn btn-xs btn-outline" onClick={onRefresh}>
-                Refresh
-              </button>
-            )}
-            {onRevoke && (
-              <button
-                className="btn btn-xs btn-warning btn-outline"
-                onClick={onRevoke}
-              >
-                Revoke keys
-              </button>
+            {showAdminActions && (
+              <>
+                {onSetMain && !isMain && (
+                  <button className="btn btn-xs btn-outline" onClick={onSetMain}>
+                    Set main
+                  </button>
+                )}
+                {onRefresh && (
+                  <button className="btn btn-xs btn-outline" onClick={onRefresh}>
+                    Refresh
+                  </button>
+                )}
+                {onRevoke && authProvider !== "testauth" && (
+                  <button
+                    className="btn btn-xs btn-warning btn-outline"
+                    onClick={onRevoke}
+                  >
+                    Revoke keys
+                  </button>
+                )}
+              </>
             )}
             {onRemove && (
               <button

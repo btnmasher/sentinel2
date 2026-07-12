@@ -26,7 +26,7 @@ import (
 	"sentinel2/internal/timers"
 )
 
-func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider *auth.EVEProvider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, timerSvc *timers.Service, jumpbridgeSvc *jumpbridges.JumpbridgeService, auditSvc *audit.Service) *Handler {
+func NewHandler(app *pocketbase.PocketBase, refresher *auth.CharacterRefresher, provider auth.Provider, cleanupSvc *cleanup.Service, intelSvc *intel.IntelService, timerSvc *timers.Service, jumpbridgeSvc *jumpbridges.JumpbridgeService, auditSvc *audit.Service) *Handler {
 	return &Handler{
 		App:         app,
 		Refresher:   refresher,
@@ -286,6 +286,12 @@ func (h *Handler) UserDetails(c *core.RequestEvent) error {
 			"user_id": userID,
 		})
 	}
+	if provider := h.currentAuthProvider(c); provider != "" && strings.ToLower(strings.TrimSpace(record.GetString("auth_provider"))) != provider {
+		return router.NewNotFoundError("User not found.", logging.Fields{
+			"user_id":       userID,
+			"auth_provider": provider,
+		})
+	}
 
 	characters, _ := h.App.FindRecordsByFilter(
 		store.CollectionCharacters,
@@ -298,6 +304,7 @@ func (h *Handler) UserDetails(c *core.RequestEvent) error {
 	response := userResponse{
 		UserID:      record.Id,
 		AccessLevel: record.GetString("access_level"),
+		AuthProvider: record.GetString("auth_provider"),
 		Characters:  []characterResponse{},
 	}
 
@@ -330,7 +337,18 @@ func (h *Handler) UserDetails(c *core.RequestEvent) error {
 	return c.JSON(http.StatusOK, response)
 }
 
+func (h *Handler) currentAuthProvider(c *core.RequestEvent) string {
+	if c == nil || c.Auth == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(c.Auth.GetString("auth_provider")))
+}
+
 func (h *Handler) SetMainCharacter(c *core.RequestEvent) error {
+	if h.currentAuthProvider(c) == auth.AuthProviderTestAuth {
+		return router.NewNotFoundError("Not found.", nil)
+	}
+
 	userID := c.Request.PathValue("id")
 	payload := struct {
 		CharacterRecordID string `json:"character_record_id"`
@@ -608,6 +626,10 @@ func (h *Handler) RemoveCharacter(c *core.RequestEvent) error {
 }
 
 func (h *Handler) MoveCharacter(c *core.RequestEvent) error {
+	if h.currentAuthProvider(c) == "testauth" {
+		return router.NewNotFoundError("Not found.", nil)
+	}
+
 	id := c.Request.PathValue("id")
 	payload := struct {
 		TargetUserID string `json:"target_user_id"`
@@ -681,6 +703,10 @@ func (h *Handler) MoveCharacter(c *core.RequestEvent) error {
 }
 
 func (h *Handler) MergeUsers(c *core.RequestEvent) error {
+	if h.currentAuthProvider(c) == "testauth" {
+		return router.NewNotFoundError("Not found.", nil)
+	}
+
 	sourceUserID := c.Request.PathValue("id")
 	payload := struct {
 		TargetUserID string `json:"target_user_id"`

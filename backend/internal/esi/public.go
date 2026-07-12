@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,12 +23,13 @@ const (
 )
 
 type ESIPublicClient struct {
-	client   *esi.APIClient
-	cacheTTL time.Duration
-	mu       sync.RWMutex
-	cache    map[string]esiNameCache
-	throttle *esiThrottle
-	limiter  *esiRateLimiter
+	client      *esi.APIClient
+	cacheTTL    time.Duration
+	mu          sync.RWMutex
+	cache       map[string]esiNameCache
+	affiliation *affiliationCache
+	throttle    *esiThrottle
+	limiter     *esiRateLimiter
 }
 
 type CorporationProfile struct {
@@ -46,11 +48,12 @@ type SovereigntyMapSystem struct {
 
 func NewESIPublicClient(userAgent string) *ESIPublicClient {
 	return &ESIPublicClient{
-		client:   goesi.NewPublicESIClient(userAgent),
-		cacheTTL: defaultPublicCacheTTL,
-		cache:    make(map[string]esiNameCache),
-		throttle: newESIThrottle(nil),
-		limiter:  globalESILimiter,
+		client:      goesi.NewPublicESIClient(userAgent),
+		cacheTTL:    defaultPublicCacheTTL,
+		cache:       make(map[string]esiNameCache),
+		affiliation: newAffiliationCache(),
+		throttle:    newESIThrottle(nil),
+		limiter:     globalESILimiter,
 	}
 }
 
@@ -98,6 +101,41 @@ func (c *ESIPublicClient) CorporationDetails(ctx context.Context, corporationID 
 		return "", "", 0, err
 	}
 	return profile.Name, profile.Ticker, profile.AllianceID, nil
+}
+
+// CharacterAffiliation resolves a character's corporation and alliance from public ESI.
+func (c *ESIPublicClient) CharacterAffiliation(ctx context.Context, characterID int) (corporationID, allianceID int, err error) {
+	if err := c.ensureConfigured(); err != nil {
+		return 0, 0, err
+	}
+	if c.affiliation == nil {
+		c.affiliation = newAffiliationCache()
+	}
+	if cached, ok := c.affiliation.get(characterID); ok {
+		return cached.CorporationID, cached.AllianceID, nil
+	}
+
+	operation := "esi character affiliation fetch failed"
+	charID := strconv.Itoa(characterID)
+	corpID := 0
+	allianceID = 0
+
+	retryErr := retry.Do(ctx, publicRetryBackoff(), func(ctx context.Context) error {
+		nextCorpID, nextAllianceID, retryable, attemptErr := c.characterAffiliationAttempt(ctx, characterID, operation, charID)
+		if attemptErr != nil {
+			if retryable {
+				return retry.RetryableError(attemptErr)
+			}
+			return attemptErr
+		}
+		corpID = nextCorpID
+		allianceID = nextAllianceID
+		return nil
+	})
+	if retryErr != nil {
+		return 0, 0, retryErr
+	}
+	return corpID, allianceID, nil
 }
 
 func (c *ESIPublicClient) CorporationProfile(ctx context.Context, corporationID int) (CorporationProfile, error) {
@@ -331,6 +369,62 @@ func (c *ESIPublicClient) ThrottleDelay() time.Duration {
 		return 0
 	}
 	return c.throttle.delay()
+}
+
+func (c *ESIPublicClient) characterAffiliationAttempt(
+	ctx context.Context,
+	characterID int,
+	operation, charID string,
+) (corpID, allianceID int, retryable bool, err error) {
+	c.limiter.wait(ctx)
+	c.throttle.wait(ctx)
+
+	request := c.client.CharacterAPI.GetCharactersCharacterId(ctx, int64(characterID))
+	if etag, ok := c.affiliation.etag(characterID); ok {
+		request = request.IfNoneMatch(etag)
+	}
+	resp, httpResp, respErr := request.Execute()
+	defer closeResponseBody(httpResp)
+
+	if httpResp != nil {
+		c.throttle.update(httpResp)
+	}
+
+	if httpResp != nil && httpResp.StatusCode == http.StatusNotModified {
+		cached, ok := c.affiliation.getAny(characterID)
+		if !ok {
+			err = fmt.Errorf("%s: %w: cache miss on 304 response", operation, ErrNotModified)
+			return 0, 0, true, err
+		}
+		c.affiliation.refreshExpiry(characterID, httpResp)
+		return cached.CorporationID, cached.AllianceID, false, nil
+	}
+
+	if respErr != nil {
+		err = fmt.Errorf("%s (character_id=%s): %w", operation, charID, respErr)
+		return 0, 0, shouldRetryPublicESI(httpResp, respErr), err
+	}
+
+	if httpResp == nil {
+		err = fmt.Errorf("%s: missing response", operation)
+		return 0, 0, true, err
+	}
+
+	if httpResp.StatusCode >= http.StatusBadRequest {
+		err = fmt.Errorf("%s: %s", operation, httpResp.Status)
+		retryable = httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= http.StatusInternalServerError
+		return 0, 0, retryable, err
+	}
+
+	if resp == nil {
+		err = fmt.Errorf("%s: empty response", operation)
+		return 0, 0, true, err
+	}
+
+	corpID = int(resp.GetCorporationId())
+	allianceID = int(resp.GetAllianceId())
+	c.affiliation.set(characterID, corpID, allianceID, httpResp)
+	return corpID, allianceID, false, nil
 }
 
 func (c *ESIPublicClient) fetchName(

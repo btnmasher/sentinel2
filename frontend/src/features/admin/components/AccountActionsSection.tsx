@@ -2,12 +2,14 @@ import CharacterCard from "@/components/CharacterCard";
 import Panel from "@/components/Panel";
 import ShadowedScrollArea from "@/components/ShadowedScrollArea";
 import { ArrowLeft } from "lucide-react";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
 import { ADMIN_MODAL } from "../store/adminStore";
 import { useAdminStore } from "../store/adminStore";
 import { useAdminActionsStore } from "../store/adminActionsStore";
-import { formatSessionStatus } from "../utils/formatters";
+import { formatAuthProvider, formatSessionStatus } from "../utils/formatters";
 import type { Character } from "../types";
 import { useAdminModal } from "./AdminModals";
+import { useShallow } from "zustand/shallow";
 
 type AccessLevel = "user" | "staff" | "admin";
 
@@ -37,12 +39,19 @@ export default function AccountActionsSection({
   const { open: openMoveModal } = useAdminModal(ADMIN_MODAL.Move);
   const { open: openMergeModal } = useAdminModal(ADMIN_MODAL.Merge);
   const { open: openAuditModal } = useAdminModal(ADMIN_MODAL.Audit);
+  const { standaloneAuth, authBackend } = useAppConfigStore(
+    useShallow((s) => ({
+      standaloneAuth: s.standaloneAuth,
+      authBackend: s.authBackend,
+    })),
+  );
   const refreshAll = useAdminActionsStore((s) => s.refreshAll);
   const revokeSessions = useAdminActionsStore((s) => s.revokeSessions);
   const revokeUploadTokens = useAdminActionsStore((s) => s.revokeUploadTokens);
   const regenerateUploadToken = useAdminActionsStore(
     (s) => s.regenerateUploadToken,
   );
+  const resyncAccount = useAdminActionsStore((s) => s.resyncAccount);
   const setMain = useAdminActionsStore((s) => s.setMain);
   const refreshCharacter = useAdminActionsStore((s) => s.refreshCharacter);
   const revokeCharacter = useAdminActionsStore((s) => s.revokeCharacter);
@@ -51,6 +60,7 @@ export default function AccountActionsSection({
   const accessLevel = getAccessLevel(user?.access_level);
   const changeAccessDisabled = accessLevel === "admin";
   const uploaderTokenValid = user?.uploader_token_valid ?? false;
+  const isTestAuth = authBackend === "testauth";
   const panelActions =
     user && onBack ? (
       <button className="btn btn-xs btn-ghost gap-1" onClick={onBack}>
@@ -62,8 +72,6 @@ export default function AccountActionsSection({
   const handleSetMain = (character: Character) => setMain(character);
   const handleRefreshCharacter = (character: Character) =>
     void refreshCharacter(character);
-  const handleRevokeCharacter = (character: Character) =>
-    revokeCharacter(character);
   const handleRemoveCharacter = (character: Character) =>
     removeCharacter(character);
 
@@ -91,6 +99,9 @@ export default function AccountActionsSection({
                 {accessLevel}
               </span>
             </p>
+            <p className="text-xs text-slate-400">
+              Provider: {formatAuthProvider(user.auth_provider)}
+            </p>
           </div>
 
           <ShadowedScrollArea className="flex-1" scrollClassName="pr-1">
@@ -99,9 +110,13 @@ export default function AccountActionsSection({
                 <CharacterCard
                   key={character.id}
                   character={character}
-                  onSetMain={() => handleSetMain(character)}
-                  onRefresh={() => void handleRefreshCharacter(character)}
-                  onRevoke={() => handleRevokeCharacter(character)}
+                  onSetMain={standaloneAuth ? () => handleSetMain(character) : undefined}
+                  onRefresh={
+                    standaloneAuth
+                      ? () => void handleRefreshCharacter(character)
+                      : undefined
+                  }
+                  onRevoke={standaloneAuth ? () => revokeCharacter(character) : undefined}
                   onRemove={() => handleRemoveCharacter(character)}
                   disableRemove={
                     character.is_main && user.characters.length > 1
@@ -113,13 +128,15 @@ export default function AccountActionsSection({
 
           <div className="mt-auto rounded-xl border border-slate-800/70 bg-base-300/60 px-3 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                className="btn btn-xs btn-success btn-outline"
-                onClick={() => void refreshAll()}
-                title="Auto refresh runs every 15 minutes."
-              >
-                Refresh all characters
-              </button>
+              {standaloneAuth && (
+                <button
+                  className="btn btn-xs btn-success btn-outline"
+                  onClick={() => void refreshAll()}
+                  title="Auto refresh runs every 15 minutes."
+                >
+                  Refresh all characters
+                </button>
+              )}
               <button
                 className="btn btn-xs btn-warning btn-outline"
                 onClick={revokeSessions}
@@ -144,6 +161,14 @@ export default function AccountActionsSection({
               >
                 Regenerate uploader token
               </button>
+              {isTestAuth && (
+                <button
+                  className="btn btn-xs btn-success btn-outline"
+                  onClick={() => void resyncAccount()}
+                >
+                  Resync account
+                </button>
+              )}
               <span
                 className="inline-flex"
                 title={
@@ -158,18 +183,22 @@ export default function AccountActionsSection({
                   Change access
                 </button>
               </span>
-              <button
-                className="btn btn-xs btn-warning btn-outline"
-                onClick={openMoveModal}
-              >
-                Move character
-              </button>
-              <button
-                className="btn btn-xs btn-warning btn-outline"
-                onClick={openMergeModal}
-              >
-                Merge account
-              </button>
+              {standaloneAuth && (
+                <>
+                  <button
+                    className="btn btn-xs btn-warning btn-outline"
+                    onClick={openMoveModal}
+                  >
+                    Move character
+                  </button>
+                  <button
+                    className="btn btn-xs btn-warning btn-outline"
+                    onClick={openMergeModal}
+                  >
+                    Merge account
+                  </button>
+                </>
+              )}
               <button
                 className="btn btn-xs btn-outline"
                 onClick={openAuditModal}

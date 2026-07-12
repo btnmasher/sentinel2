@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api } from "@/config/api";
+import { useAppConfigStore } from "@/app/store/appConfigStore";
+import { useAuthStore } from "@/app/store/authStore";
 import { useUIStore } from "@/app/store/uiStore";
 import { getErrorMessage } from "@/utils/httpError";
 import { ADMIN_MODAL, useAdminStore } from "./adminStore";
@@ -14,6 +16,7 @@ type AdminActionsState = {
   revokeSessions: () => void;
   revokeUploadTokens: () => void;
   regenerateUploadToken: () => void;
+  resyncAccount: () => Promise<void>;
   updateAccessLevel: (level: AccessLevel) => Promise<void>;
   setMain: (character: Character) => void;
   refreshCharacter: (character: Character) => Promise<void>;
@@ -34,9 +37,17 @@ type AdminActionsState = {
 export const useAdminActionsStore = create<AdminActionsState>(() => ({
   refreshAll: async () => {
     const { setToast } = useUIStore.getState();
+    const { standaloneAuth } = useAppConfigStore.getState();
     const { selectedUser } = useAdminStore.getState();
     if (!selectedUser) {
       setToast({ text: "Select a user first", color: "error" });
+      return;
+    }
+    if (!standaloneAuth) {
+      setToast({
+        text: "Character refresh is not available in TestAuth mode.",
+        color: "warning",
+      });
       return;
     }
     try {
@@ -130,6 +141,30 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
       tone: "danger",
     });
   },
+  resyncAccount: async () => {
+    const { setToast } = useUIStore.getState();
+    const { selectedUser, loadUser } = useAdminStore.getState();
+    const { authBackend } = useAppConfigStore.getState();
+    if (!selectedUser) return;
+    if (authBackend !== "testauth") {
+      setToast({
+        text: "Account resync is only available in TestAuth mode.",
+        color: "warning",
+      });
+      return;
+    }
+    try {
+      await api.post(`/admin/users/${selectedUser.user_id}/resync`);
+      await loadUser(selectedUser.user_id);
+      await useAuthStore.getState().refresh();
+      setToast({ text: "Account resynced", color: "info" });
+    } catch (error: unknown) {
+      setToast({
+        text: getErrorMessage(error, "Failed to resync account"),
+        color: "error",
+      });
+    }
+  },
   updateAccessLevel: async (level) => {
     const { setToast } = useUIStore.getState();
     const { selectedUser, loadUser, setModal } = useAdminStore.getState();
@@ -176,6 +211,14 @@ export const useAdminActionsStore = create<AdminActionsState>(() => ({
   },
   refreshCharacter: async (character) => {
     const { setToast } = useUIStore.getState();
+    const { standaloneAuth } = useAppConfigStore.getState();
+    if (!standaloneAuth) {
+      setToast({
+        text: "Character refresh is not available in TestAuth mode.",
+        color: "warning",
+      });
+      return;
+    }
     try {
       const res = await api.post(`/admin/characters/${character.id}/refresh`);
       const jobId = res.data?.job_id ?? "unknown";

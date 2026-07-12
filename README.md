@@ -1,6 +1,6 @@
 # Sentinel 2
 
-Sentinel 2 is an EVE intel and navigation suite that pairs a realtime intel feed with interactive region maps, route planning, and a companion uploader for EVE chat logs. It supports both standalone EVE OAuth and TEST Auth (OIDC) deployments, with admin/staff tooling for moderation and account management.
+Sentinel 2 is an EVE intel and navigation suite that pairs a realtime intel feed with interactive region maps, route planning, and a companion uploader for EVE chat logs. It supports both standalone EVE OAuth and TestAuth deployments, with admin/staff tooling for moderation and account management.
 
 ## Architecture
 - Single-binary backend with embedded frontend assets for simple deployment.
@@ -44,20 +44,22 @@ Platform-specific setup for native Windows development is documented in:
 
 ## Auth Modes
 - **EVE OAuth (standalone):** Character linking, profile management, admin tools.
-- **TEST Auth (OIDC):** Uses OIDC claims and roles; account/character management is handled externally (no in-app character linking).
+- **TestAuth:** Uses RFC 8414 OAuth discovery plus profile, groups, and permissions from the auth platform; account/character management is handled externally, Sentinel2 keeps accounts scoped to the active auth backend, and linked characters are synchronized from the TestAuth profile at auth time.
+- **Affiliation:** Corporation/alliance affiliation comes from public ESI for both auth modes.
 
 ## Environment (Backend)
 Minimum set (extend as needed):
 ```
 AUTH_BACKEND=eve|testauth
-OIDC_CLIENT_ID=
-OIDC_CLIENT_SECRET=
-OIDC_SCOPES=openid
-OIDC_REQUIRED_ROLES=urn:sso:alliance:test-alliance,urn:sso:allies
-OIDC_STAFF_ROLES=urn:sso:staff_user
-OIDC_USERINFO_URL=https://sso.pleaseignore.com/auth/realms/auth-ng/protocol/openid-connect/userinfo
+TESTAUTH_URL=
+TESTAUTH_CLIENT_ID=
+TESTAUTH_CLIENT_SECRET=
+TESTAUTH_SCOPES=profile,groups,permissions
+TESTAUTH_ADMIN_GROUPS=
+TESTAUTH_STAFF_GROUPS=
+TESTAUTH_ADMIN_PERMISSION_URNS=
+STAFF_PERMISSION_URNS=
 ESI_DIRECT_BASE_URL=https://esi.evetech.net/latest/
-ESI_PROXY_BASE_URL=https://auth.pleaseignore.com/esi/
 ```
 
 ## Logging

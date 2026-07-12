@@ -142,6 +142,7 @@ type LocationEntry struct {
 	CharacterID int64  `json:"character_id"`
 	Location    int64  `json:"location"`
 	SystemName  string `json:"system_name"`
+	RegionID    int    `json:"region_id"`
 	InSpace     bool   `json:"in_space"`
 }
 

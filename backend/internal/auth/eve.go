@@ -39,11 +39,11 @@ const (
 	minSubParts = 3
 )
 
-func NewEVEProvider(app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (*EVEProvider, error) {
+func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService) (*EVEProvider, error) {
 	if oauthConfig == nil {
 		return nil, errors.New("missing oauth config")
 	}
-	validator, validatorErr := NewEVETokenValidator(oauthConfig.ClientID)
+	validator, validatorErr := NewEVETokenValidator(parentCtx, oauthConfig.ClientID)
 	if validatorErr != nil {
 		return nil, validatorErr
 	}
@@ -75,6 +75,7 @@ func (p *EVEProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string,
 	if stateErr != nil {
 		return "", ErrFailedCreateState
 	}
+	flow.RedirectBaseURL = resolveRedirectBaseURL(c)
 	saveAuthFlow(p.App, state, flow)
 
 	redirectURL := absoluteURL(c)
@@ -404,7 +405,7 @@ func (p *EVEProvider) refreshMainAffiliation(ctx context.Context, mainChar *core
 	mainCharID := mainChar.GetInt("eve_character_id")
 	mainCorp := mainChar.GetInt("eve_corporation_id")
 	mainAlliance := mainChar.GetInt("eve_alliance_id")
-	fetchedCorp, fetchedAlliance, affiliationErr := p.ESI.CharacterAffiliation(ctx, mainCharID)
+	fetchedCorp, fetchedAlliance, affiliationErr := p.resolveCharacterAffiliation(ctx, mainCharID)
 	if affiliationErr != nil {
 		if authorizeErr := p.authorizeAccess(mainCorp, mainAlliance); authorizeErr != nil {
 			return authorizeErr
@@ -432,8 +433,18 @@ func (p *EVEProvider) refreshMainAffiliation(ctx context.Context, mainChar *core
 	return nil
 }
 
+func (p *EVEProvider) resolveCharacterAffiliation(ctx context.Context, charID int) (corpID, allianceID int, err error) {
+	if p != nil && p.PublicESI != nil {
+		return p.PublicESI.CharacterAffiliation(ctx, charID)
+	}
+	if p == nil || p.ESI == nil {
+		return 0, 0, ErrFailedFetchCharacter
+	}
+	return p.ESI.CharacterAffiliation(ctx, charID)
+}
+
 func (p *EVEProvider) resolveCharacterAffiliationForCallback(ctx context.Context, charID int, existingChar *core.Record) (corpID, allianceID int, err error) {
-	corpID, allianceID, affiliationErr := p.ESI.CharacterAffiliation(ctx, charID)
+	corpID, allianceID, affiliationErr := p.resolveCharacterAffiliation(ctx, charID)
 	if affiliationErr == nil {
 		return corpID, allianceID, nil
 	}
@@ -478,11 +489,11 @@ func (p *EVEProvider) userForLogin(existingChar *core.Record, characterID int) (
 func (p *EVEProvider) findCharacterByID(characterID int) (*core.Record, error) {
 	records, recordsErr := p.App.FindRecordsByFilter(
 		store.CollectionCharacters,
-		"eve_character_id = {:id}",
+		"auth_provider = {:provider} && eve_character_id = {:id}",
 		"",
 		1,
 		0,
-		map[string]any{"id": characterID},
+		map[string]any{"provider": p.Name(), "id": characterID},
 	)
 	if recordsErr != nil || len(records) == 0 {
 		return nil, recordsErr
@@ -493,11 +504,11 @@ func (p *EVEProvider) findCharacterByID(characterID int) (*core.Record, error) {
 func (p *EVEProvider) findMainCharacter(userID string) (*core.Record, error) {
 	records, recordsErr := p.App.FindRecordsByFilter(
 		store.CollectionCharacters,
-		"user = {:user} && is_main = true",
+		"user = {:user} && auth_provider = {:provider} && is_main = true",
 		"",
 		1,
 		0,
-		map[string]any{"user": userID},
+		map[string]any{"user": userID, "provider": p.Name()},
 	)
 	if recordsErr != nil || len(records) == 0 {
 		return nil, recordsErr
@@ -524,6 +535,7 @@ func (p *EVEProvider) upsertCharacter(userID string, existing *core.Record, char
 	}
 
 	record.Set("user", userID)
+	record.Set("auth_provider", p.Name())
 	record.Set("eve_character_id", characterID)
 	record.Set("eve_character_name", name)
 	record.Set("eve_corporation_id", corpID)
@@ -642,7 +654,7 @@ func (p *EVEProvider) resolveRefreshedCharacterData(ctx context.Context, accessT
 	if charIDErr != nil {
 		return refreshedCharacterData{}, charIDErr
 	}
-	corpID, allianceID, affiliationErr := p.ESI.CharacterAffiliation(ctx, charID)
+	corpID, allianceID, affiliationErr := p.resolveCharacterAffiliation(ctx, charID)
 	if affiliationErr != nil {
 		return refreshedCharacterData{}, affiliationErr
 	}
