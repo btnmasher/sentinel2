@@ -257,9 +257,7 @@ When the user requests a durable behavior change, record it here or in the relev
 
 ## Child DOX Index
 
-- `backend/`: Go backend, API handlers, auth providers, migrations, and backend tests. No child `AGENTS.md` files currently exist under this subtree.
-- `frontend/`: Vite/TypeScript frontend. No child `AGENTS.md` files currently exist under this subtree.
-- `docs/`: Repository documentation. No child `AGENTS.md` files currently exist under this subtree.
-- `uploader/`: Uploader app and related assets. No child `AGENTS.md` files currently exist under this subtree.
-- `taskutil/`: Shared task helpers and scripts. No child `AGENTS.md` files currently exist under this subtree.
-- `bin/`: Repository helper binaries. No child `AGENTS.md` files currently exist under this subtree.
+- `backend/`: Go backend services, API handlers, auth providers, migrations, and backend tests. Child contract: [`backend/AGENTS.md`](/home/terminal/Code/sentinel2/backend/AGENTS.md)
+- `frontend/`: React frontend, feature modules, shared UI, route pages, and frontend tests. Child contract: [`frontend/AGENTS.md`](/home/terminal/Code/sentinel2/frontend/AGENTS.md)
+- `uploader/`: Standalone uploader app, runtime, UI, networking, and release tooling. Child contract: [`uploader/AGENTS.md`](/home/terminal/Code/sentinel2/uploader/AGENTS.md)
+- `taskutil/`: Repository task helper binary, dev console, cleanup tooling, and log utilities. Child contract: [`taskutil/AGENTS.md`](/home/terminal/Code/sentinel2/taskutil/AGENTS.md)

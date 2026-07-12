@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -38,18 +39,22 @@ func RequestBaseURL(c *core.RequestEvent) string {
 	return scheme + "://" + req.Host
 }
 
-func resolveRedirectBaseURL(c *core.RequestEvent) string {
+func resolveRedirectBaseURL(c *core.RequestEvent, devMode bool) string {
 	if c == nil || c.Request == nil {
 		return ""
 	}
 
-	if origin := requestHeaderOrigin(c.Request.Header.Get("Origin")); origin != "" {
-		return origin
+	if devMode {
+		if origin := requestHeaderOrigin(c.Request.Header.Get("Origin")); origin != "" {
+			return origin
+		}
+		if origin := requestHeaderOrigin(c.Request.Header.Get("Referer")); origin != "" {
+			return origin
+		}
+		return RequestBaseURL(c)
 	}
-	if origin := requestHeaderOrigin(c.Request.Header.Get("Referer")); origin != "" {
-		return origin
-	}
-	return RequestBaseURL(c)
+
+	return forceHTTPS(RequestBaseURL(c))
 }
 
 func requestHeaderOrigin(rawURL string) string {
@@ -80,11 +85,35 @@ func isLoopbackHost(host string) bool {
 	if host == "" {
 		return false
 	}
-	if strings.HasPrefix(host, "localhost") {
-		return true
+
+	name := host
+	if strings.Contains(host, ":") {
+		if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+			name = parsedHost
+		}
 	}
-	if strings.HasPrefix(host, "127.0.0.1") {
+	name = strings.Trim(name, "[]")
+
+	switch name {
+	case "localhost", "127.0.0.1", "::1":
 		return true
+	default:
+		return false
 	}
-	return strings.HasPrefix(host, "[::1]")
+}
+
+func forceHTTPS(rawURL string) string {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return trimmed
+	}
+	if parsed.Scheme != "" {
+		parsed.Scheme = "https"
+	}
+	return parsed.String()
 }

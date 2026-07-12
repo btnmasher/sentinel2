@@ -177,14 +177,41 @@ func (h *MapHandler) CharacterLocations(c *core.RequestEvent) error {
 		})
 	}
 
-	results := make([]LocationEntry, 0, len(payload.Characters))
-	for _, characterID := range payload.Characters {
+	locations, systemIDs := h.fetchCharacterLocations(c, user, payload.Characters, log)
+
+	systemMetaByID, metaErr := h.lookupSolarSystemMetaBatch(systemIDs)
+	if metaErr != nil {
+		log.WithErr(metaErr).Warn("map locations batch system lookup failed")
+		systemMetaByID = map[int64]solarSystemMeta{}
+	}
+
+	return c.JSON(http.StatusOK, LocationsResponse{Locations: h.buildLocationEntries(locations, systemMetaByID)})
+}
+
+type characterLocationResult struct {
+	characterID int64
+	systemID    int64
+	inSpace     bool
+}
+
+type solarSystemMeta struct {
+	systemName string
+	regionID   int
+}
+
+func (h *MapHandler) fetchCharacterLocations(c *core.RequestEvent, user *core.Record, characterIDs []int64, log *logging.Logger) (locations []characterLocationResult, systemIDs []int64) {
+	locations = make([]characterLocationResult, 0, len(characterIDs))
+	systemIDs = make([]int64, 0, len(characterIDs))
+	seenSystemIDs := map[int64]struct{}{}
+
+	for _, characterID := range characterIDs {
 		character := fmt.Sprint(characterID)
 		accessToken, tokenErr := h.resolveCharacterToken(c, user, character)
 		if tokenErr != nil {
 			log.WithErr(tokenErr).Warn("map locations token resolve failed")
 			continue
 		}
+
 		location, locationErr := h.ESI.CharacterLocation(c.Request.Context(), character, accessToken)
 		if locationErr != nil {
 			log.WithFields(logging.Fields{
@@ -193,47 +220,73 @@ func (h *MapHandler) CharacterLocations(c *core.RequestEvent) error {
 				Error("map locations ESI failed")
 			continue
 		}
+
 		systemID := int64(location.SolarSystemID)
-		inSpace := location.StationID == 0 && location.StructureID == 0
-		systemName, regionID, metaErr := h.lookupSolarSystemMeta(systemID)
-		if metaErr != nil {
-			log.WithFields(logging.Fields{
-				"character_id": character,
-				"system_id":    systemID,
-			}).WithErr(metaErr).
-				Warn("map locations system lookup failed")
-			systemName = fmt.Sprintf("System %d", systemID)
+		if systemID > 0 {
+			if _, seen := seenSystemIDs[systemID]; !seen {
+				seenSystemIDs[systemID] = struct{}{}
+				systemIDs = append(systemIDs, systemID)
+			}
 		}
-		results = append(results, LocationEntry{
-			CharacterID: characterID,
-			Location:    systemID,
-			SystemName:  systemName,
-			RegionID:    regionID,
-			InSpace:     inSpace,
+
+		locations = append(locations, characterLocationResult{
+			characterID: characterID,
+			systemID:    systemID,
+			inSpace:     location.StationID == 0 && location.StructureID == 0,
 		})
 	}
 
-	return c.JSON(http.StatusOK, LocationsResponse{Locations: results})
+	return locations, systemIDs
 }
 
-func (h *MapHandler) lookupSolarSystemMeta(systemID int64) (systemName string, regionID int, err error) {
-	records, recordsErr := h.App.FindRecordsByFilter(
-		store.CollectionSolarSystems,
-		"eve_id = {:id}",
-		"",
-		1,
-		0,
-		dbx.Params{"id": systemID},
-	)
-	if recordsErr != nil {
-		return "", 0, recordsErr
+func (h *MapHandler) buildLocationEntries(locations []characterLocationResult, systemMetaByID map[int64]solarSystemMeta) []LocationEntry {
+	results := make([]LocationEntry, 0, len(locations))
+	for _, location := range locations {
+		meta, ok := systemMetaByID[location.systemID]
+		if !ok {
+			meta = solarSystemMeta{
+				systemName: fmt.Sprintf("System %d", location.systemID),
+			}
+		}
+
+		results = append(results, LocationEntry{
+			CharacterID: location.characterID,
+			Location:    location.systemID,
+			SystemName:  meta.systemName,
+			RegionID:    meta.regionID,
+			InSpace:     location.inSpace,
+		})
 	}
-	if len(records) == 0 {
-		return "", 0, fmt.Errorf("solar system %d not found", systemID)
+	return results
+}
+
+func (h *MapHandler) lookupSolarSystemMetaBatch(systemIDs []int64) (map[int64]solarSystemMeta, error) {
+	if len(systemIDs) == 0 {
+		return map[int64]solarSystemMeta{}, nil
 	}
 
-	record := records[0]
-	return record.GetString("name"), record.GetInt("region_id"), nil
+	filter, params := queryhelpers.BuildOrEqualsFilter("eve_id", systemIDs)
+	records, recordsErr := h.App.FindRecordsByFilter(
+		store.CollectionSolarSystems,
+		filter,
+		"",
+		0,
+		0,
+		params,
+	)
+	if recordsErr != nil {
+		return nil, recordsErr
+	}
+
+	out := make(map[int64]solarSystemMeta, len(records))
+	for _, record := range records {
+		systemID := int64(record.GetInt("eve_id"))
+		out[systemID] = solarSystemMeta{
+			systemName: record.GetString("name"),
+			regionID:   record.GetInt("region_id"),
+		}
+	}
+	return out, nil
 }
 
 func (h *MapHandler) Route(c *core.RequestEvent) error {
