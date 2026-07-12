@@ -7,7 +7,7 @@ import { useUIStore } from "@/app/store/uiStore";
 import Panel from "@/components/Panel";
 import { getErrorMessage, getHttpData, getHttpStatus } from "@/utils/httpError";
 import { useAdminStore } from "../store/adminStore";
-import { buildSearchLabel } from "../utils/formatters";
+import { buildSearchLabel, formatAuthProvider } from "../utils/formatters";
 import type { SearchResult } from "../types";
 
 export default function UserSearchSection() {
@@ -149,7 +149,6 @@ export default function UserSearchSection() {
       })),
     [results],
   );
-
   const handleSelectUser = async (userId: string) => {
     try {
       await loadUser(userId);
@@ -202,10 +201,15 @@ export default function UserSearchSection() {
                     className="w-full text-left rounded-lg border border-slate-800 bg-base-300/40 px-3 py-2 transition hover:bg-base-300/70"
                     onClick={() => void handleSelectUser(result.user_id)}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-100">
-                        {label}
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-100">
+                          {label}
+                        </span>
+                        <span className="badge badge-xs badge-outline">
+                          {formatAuthProvider(result.auth_provider)}
+                        </span>
+                      </div>
                       <span
                         className={`badge badge-xs ${result.is_main ? "badge-primary" : "badge-ghost"}`}
                       >

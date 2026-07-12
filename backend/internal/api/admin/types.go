@@ -14,7 +14,7 @@ import (
 type Handler struct {
 	App         *pocketbase.PocketBase
 	Refresher   *auth.CharacterRefresher
-	Provider    *auth.EVEProvider
+	Provider    auth.Provider
 	Cleanup     *cleanup.Service
 	Intel       *intel.IntelService
 	Timers      *timerssvc.Service
@@ -27,6 +27,7 @@ type searchItem struct {
 	CharacterID       int    `json:"character_id"`
 	Name              string `json:"name"`
 	UserID            string `json:"user_id"`
+	AuthProvider      string `json:"auth_provider"`
 	IsMain            bool   `json:"is_main"`
 	MainName          string `json:"main_name"`
 }
@@ -86,6 +87,7 @@ type jobRunGroup struct {
 type userResponse struct {
 	UserID             string              `json:"user_id"`
 	AccessLevel        string              `json:"access_level"`
+	AuthProvider       string              `json:"auth_provider"`
 	SessionRevokedAt   string              `json:"session_revoked_at"`
 	UploaderTokenValid bool                `json:"uploader_token_valid"`
 	Characters         []characterResponse `json:"characters"`

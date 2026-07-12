@@ -84,7 +84,14 @@ func (r *CharacterRefresher) RefreshAll(ctx context.Context) (success, failed in
 		return 0, 0
 	}
 
-	records, recordsErr := r.App.FindRecordsByFilter(store.CollectionCharacters, "", "", 0, 0, nil)
+	records, recordsErr := r.App.FindRecordsByFilter(
+		store.CollectionCharacters,
+		"auth_provider = {:provider}",
+		"",
+		0,
+		0,
+		map[string]any{"provider": AuthProviderEVE},
+	)
 	if recordsErr != nil {
 		r.logger.
 			WithErr(recordsErr).
@@ -342,7 +349,19 @@ func (r *CharacterRefresher) refreshAffiliationOnly(ctx context.Context, charact
 }
 
 func (r *CharacterRefresher) refreshCharacterAffiliation(ctx context.Context, character *core.Record, charID int) {
-	corpID, allianceID, affiliationErr := r.ESI.CharacterAffiliation(ctx, charID)
+	var (
+		corpID         int
+		allianceID     int
+		affiliationErr error
+	)
+	switch {
+	case r != nil && r.PublicESI != nil:
+		corpID, allianceID, affiliationErr = r.PublicESI.CharacterAffiliation(ctx, charID)
+	case r != nil && r.ESI != nil:
+		corpID, allianceID, affiliationErr = r.ESI.CharacterAffiliation(ctx, charID)
+	default:
+		affiliationErr = fmt.Errorf("missing esi client")
+	}
 	if affiliationErr != nil {
 		r.logger.
 			WithFields(logging.Fields{

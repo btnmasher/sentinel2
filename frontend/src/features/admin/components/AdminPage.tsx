@@ -3,16 +3,8 @@ import JobRunsSection from "./JobRunsSection";
 import AdminLayout from "./AdminLayout";
 import SectionErrorBoundary from "./SectionErrorBoundary";
 import AdminUserPanel from "./AdminUserPanel";
-import { useAppConfigStore } from "@/app/store/appConfigStore";
-import { useShallow } from "zustand/shallow";
 
 export default function AdminPage() {
-  const { standaloneAuth } = useAppConfigStore(
-    useShallow((s) => ({
-      standaloneAuth: s.standaloneAuth,
-    })),
-  );
-
   return (
     <AdminLayout
       left={
@@ -32,14 +24,7 @@ export default function AdminPage() {
       right={
         <div className="h-full min-h-0">
           <SectionErrorBoundary fallbackTitle="User Admin">
-            {standaloneAuth ? (
-              <AdminUserPanel />
-            ) : (
-              <div className="h-full rounded-xl border border-slate-800 bg-slate-950/40 p-6 text-sm text-slate-300">
-                Account and character administration is only available in
-                standalone auth mode.
-              </div>
-            )}
+            <AdminUserPanel />
           </SectionErrorBoundary>
         </div>
       }

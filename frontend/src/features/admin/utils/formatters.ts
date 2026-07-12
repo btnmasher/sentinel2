@@ -27,6 +27,18 @@ export const formatDuration = (value?: number) => {
 export const buildSearchLabel = (result: SearchResult) =>
   result.main_name ? `${result.name} (${result.main_name})` : result.name;
 
+export const formatAuthProvider = (value?: string) => {
+  const provider = (value || "").trim().toLowerCase();
+  switch (provider) {
+    case "eve":
+      return "Standalone";
+    case "testauth":
+      return "TestAuth";
+    default:
+      return value || "Unknown";
+  }
+};
+
 export const hasSearchMain = (result?: SearchResult | null) =>
   Boolean(result?.main_name || result?.is_main);
 

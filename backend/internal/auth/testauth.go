@@ -2,10 +2,9 @@ package auth
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -13,38 +12,49 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 	"golang.org/x/oauth2"
 
+	"sentinel2/internal/config"
+	"sentinel2/internal/esi"
 	"sentinel2/internal/intel"
 	"sentinel2/internal/logging"
-	"sentinel2/internal/oidc"
 	"sentinel2/internal/store"
 )
 
+const testAuthStateBytes = 32
+
+// TestAuthProvider implements the auth.Provider interface for the TestAuth backend.
+// It communicates with the external auth platform as an OAuth client using standard
+// libraries and derives identity from the /oauth/api/me response.
 type TestAuthProvider struct {
-	App    *pocketbase.PocketBase
-	OIDC   *oidc.Client
-	Intel  *intel.IntelService
-	logger *logging.Logger
+	App       *pocketbase.PocketBase
+	OAuth     *TestAuthClient
+	PublicESI *esi.ESIPublicClient
+	Intel     *intel.IntelService
+	Config    *config.Config
+	DevMode   bool
+	logger    *logging.Logger
 }
 
-type idTokenClaims struct {
-	Sub string `json:"sub"`
-}
-
-func NewTestAuthProvider(app *pocketbase.PocketBase, oidcClient *oidc.Client, intelService *intel.IntelService) *TestAuthProvider {
+// NewTestAuthProvider creates a new TestAuthProvider that communicates with the external auth platform.
+func NewTestAuthProvider(app *pocketbase.PocketBase, oauth *TestAuthClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, cfg *config.Config, devMode bool) *TestAuthProvider {
 	return &TestAuthProvider{
-		App:   app,
-		OIDC:  oidcClient,
-		Intel: intelService,
+		App:       app,
+		OAuth:     oauth,
+		PublicESI: publicESI,
+		Intel:     intelService,
+		Config:    cfg,
+		DevMode:   devMode,
 		logger: logging.New(app).WithFields(logging.Fields{
 			"component": "auth.testauth",
 		}),
 	}
 }
 
+// Name returns the provider name constant for testauth.
 func (p *TestAuthProvider) Name() string {
 	return AuthProviderTestAuth
 }
 
+// Authenticate redirects the user to the authorization endpoint.
 func (p *TestAuthProvider) Authenticate(c *core.RequestEvent, flow AuthFlow) error {
 	authURL, err := p.BuildAuthURL(c, flow)
 	if err != nil {
@@ -53,32 +63,26 @@ func (p *TestAuthProvider) Authenticate(c *core.RequestEvent, flow AuthFlow) err
 	return c.Redirect(http.StatusFound, authURL)
 }
 
+// BuildAuthURL constructs the authorization URL for the external auth platform.
 func (p *TestAuthProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string, error) {
-	state, stateErr := oidc.RandomState()
+	state, stateErr := generateState()
 	if stateErr != nil {
 		logging.WithRequest(p.App, c).
 			WithErr(stateErr).
-			Warn("oidc state generation failed")
+			Warn("state generation failed")
 		return "", ErrFailedCreateState
 	}
 
-	nonce, nonceErr := oidc.RandomNonce()
-	if nonceErr != nil {
-		logging.WithRequest(p.App, c).
-			WithErr(nonceErr).
-			Warn("oidc nonce generation failed")
-		return "", ErrFailedCreateNonce
-	}
-
+	redirectURL := absoluteURL(c)
+	p.OAuth.SetRedirectURL(redirectURL)
+	flow.RedirectBaseURL = resolveRedirectBaseURL(c, p.DevMode)
 	saveAuthFlow(p.App, state, flow)
 
-	redirectURL := absoluteURL(c)
-	p.OIDC.OAuth2Config.RedirectURL = redirectURL
-
-	authURL := p.OIDC.OAuth2Config.AuthCodeURL(state, oauth2.SetAuthURLParam("nonce", nonce))
-	return authURL, nil
+	return p.OAuth.AuthorizationURL(state), nil
 }
 
+// Callback handles the OAuth callback. It exchanges the authorization code for
+// tokens, fetches user details from /oauth/api/me, and persists the user record.
 func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, error) {
 	state := c.Request.URL.Query().Get("state")
 	if state == "" {
@@ -96,269 +100,276 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 	}
 
 	redirectURL := absoluteURL(c)
-	p.OIDC.OAuth2Config.RedirectURL = redirectURL
+	p.OAuth.SetRedirectURL(redirectURL)
 
-	token, tokenErr := p.OIDC.OAuth2Config.Exchange(c.Request.Context(), code)
+	// Exchange authorization code for tokens using golang.org/x/oauth2 (RFC 6749).
+	token, tokenErr := p.OAuth.ExchangeCode(c.Request.Context(), code, redirectURL)
 	if tokenErr != nil {
 		logging.WithRequest(p.App, c).
 			WithErr(tokenErr).
-			Warn("oidc token exchange failed")
+			Warn("token exchange failed")
 		return nil, AuthFlow{}, ErrFailedExchangeToken
 	}
 
-	rawIDToken, _ := token.Extra("id_token").(string)
-	if rawIDToken == "" {
+	// Fetch user details from the auth platform /oauth/api/me.
+	// Profile, groups, and permissions are derived live from Core/Groups.
+	userInfo, userInfoErr := p.OAuth.GetUserInfo(c.Request.Context(), token.AccessToken)
+	if userInfoErr != nil {
 		logging.WithRequest(p.App, c).
-			Warn("oidc missing id_token")
-		return nil, AuthFlow{}, ErrMissingIDToken
+			WithErr(userInfoErr).
+			Warn("user info fetch failed")
+		return nil, AuthFlow{}, ErrUserInfoFetch
 	}
 
-	idToken, idTokenErr := p.OIDC.Verifier.Verify(c.Request.Context(), rawIDToken)
-	if idTokenErr != nil {
-		logging.WithRequest(p.App, c).
-			WithErr(idTokenErr).
-			Warn("oidc id_token verify failed")
-		return nil, AuthFlow{}, ErrInvalidIDToken
-	}
-
-	claims := idTokenClaims{}
-
-	if claimsErr := idToken.Claims(&claims); claimsErr != nil {
-		logging.WithRequest(p.App, c).
-			WithErr(claimsErr).
-			Warn("oidc id_token claims failed")
-		return nil, AuthFlow{}, ErrInvalidClaims
-	}
-
-	sub := claims.Sub
+	sub := strings.TrimSpace(userInfo.Sub)
 	if sub == "" {
 		return nil, AuthFlow{}, ErrMissingSub
 	}
 
-	accessToken := token.AccessToken
-	rolesOK, rolesErr := oidc.VerifyRoles(accessToken, p.OIDC.Config.RequiredRoles())
-	if rolesErr != nil || !rolesOK {
-		if rolesErr != nil {
-			logging.WithRequest(p.App, c).
-				WithErr(rolesErr).
-				Warn("oidc role check failed")
-		}
-		return nil, AuthFlow{}, ErrMissingRequiredRoles
+	corpID, allianceID, accessErr := p.resolveCharacterAffiliation(c.Request.Context(), userInfo)
+	if accessErr != nil {
+		logging.WithRequest(p.App, c).
+			WithErr(accessErr).
+			Warn("access affiliation lookup failed")
+		return nil, AuthFlow{}, accessErr
+	}
+	if authorizeErr := p.authorizeAccess(corpID, allianceID); authorizeErr != nil {
+		logging.WithRequest(p.App, c).
+			WithErr(authorizeErr).
+			Warn("access denied")
+		return nil, AuthFlow{}, authorizeErr
 	}
 
+	// Find or create user by auth_provider_sub.
 	user, userErr := p.findOrCreateUser(sub)
 	if userErr != nil {
 		logging.WithRequest(p.App, c).
 			WithErr(userErr).
-			Warn("oidc user lookup failed")
+			Warn("user lookup failed")
 		return nil, AuthFlow{}, ErrFailedPersistUser
 	}
 
-	accessLevel := p.resolveAccessLevel(c, user.GetString("access_level"), accessToken)
+	// Resolve access level from profile groups and permission URNs.
+	accessLevel := p.resolveAccessLevel(userInfo)
+
+	mainCharacter, _ := SelectMainCharacter(userInfo)
+	if saveErr := p.persistUserSession(user, sub, token, accessLevel, mainCharacter, corpID, allianceID); saveErr != nil {
+		logging.WithRequest(p.App, c).
+			WithErr(saveErr).
+			Warn("user save failed")
+		return nil, AuthFlow{}, ErrFailedPersistUser
+	}
+
+	if syncErr := p.syncMainCharacter(c.Request.Context(), user, userInfo, corpID, allianceID); syncErr != nil {
+		logging.WithRequest(p.App, c).
+			WithErr(syncErr).
+			Warn("main character sync failed")
+		return nil, AuthFlow{}, ErrFailedPersistUser
+	}
+
+	if syncErr := p.syncLinkedCharacters(c.Request.Context(), user, userInfo); syncErr != nil {
+		logging.WithRequest(p.App, c).
+			WithErr(syncErr).
+			Warn("linked character sync failed")
+		return nil, AuthFlow{}, ErrFailedPersistUser
+	}
 
 	accessExpiry := tokenExpiry(token)
 	refreshExpiry := refreshExpiry(token)
-	user.Set("auth_provider", p.Name())
-	user.Set("auth_provider_sub", sub)
-	user.Set("sub", sub)
-	user.Set("access_level", accessLevel)
-	user.Set("oauth_access_token", accessToken)
-	accessExpiresAt, _ := types.ParseDateTime(time.Unix(accessExpiry, 0))
-	user.Set("oauth_access_expires_at", accessExpiresAt)
-	if token.RefreshToken != "" {
-		user.Set("oauth_refresh_token", token.RefreshToken)
-		refreshExpiresAt, _ := types.ParseDateTime(time.Unix(refreshExpiry, 0))
-		user.Set("oauth_refresh_expires_at", refreshExpiresAt)
-	}
-
-	if saveErr := p.App.Save(user); saveErr != nil {
-		logging.WithRequest(p.App, c).
-			WithErr(saveErr).
-			Warn("oidc user save failed")
-		return nil, AuthFlow{}, ErrFailedPersistUser
-	}
 
 	return &AuthResult{
 		Provider: p.Name(),
 		UserID:   user.Id,
 		Tokens: AuthTokens{
-			AccessToken:   accessToken,
+			AccessToken:   token.AccessToken,
 			AccessExpiry:  time.Unix(accessExpiry, 0),
 			RefreshToken:  token.RefreshToken,
 			RefreshExpiry: time.Unix(refreshExpiry, 0),
-			IDToken:       rawIDToken,
 		},
 	}, flow, nil
 }
 
+// Refresh refreshes an access token using the auth platform's token endpoint and
+// re-fetches user details to update groups and permissions.
 func (p *TestAuthProvider) Refresh(ctx context.Context, user *core.Record) (AuthTokens, error) {
 	refreshToken := user.GetString("oauth_refresh_token")
 	if refreshToken == "" {
 		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
-			Warn("oidc refresh missing refresh token")
+			Warn("refresh missing refresh token")
 		return AuthTokens{}, errors.New("missing refresh token")
 	}
 
-	token, tokenErr := p.OIDC.OAuth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
+	// Refresh using golang.org/x/oauth2 (RFC 6749).
+	token, tokenErr := p.OAuth.RefreshToken(ctx, &oauth2.Token{RefreshToken: refreshToken})
 	if tokenErr != nil {
 		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
 			WithErr(tokenErr).
-			Warn("oidc refresh token exchange failed")
+			Warn("refresh token exchange failed")
 		return AuthTokens{}, tokenErr
 	}
 
-	rawIDToken, _ := token.Extra("id_token").(string)
-	if rawIDToken == "" {
+	// Re-fetch user details to update groups/permissions from the auth platform.
+	userInfo, userInfoErr := p.OAuth.GetUserInfo(ctx, token.AccessToken)
+	if userInfoErr != nil {
 		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
-			Warn("oidc refresh missing id_token")
-		return AuthTokens{}, errors.New("missing id_token")
+			WithErr(userInfoErr).
+			Warn("refresh user info fetch failed")
+		return AuthTokens{}, userInfoErr
 	}
 
-	if _, verifyErr := p.OIDC.Verifier.Verify(ctx, rawIDToken); verifyErr != nil {
+	corpID, allianceID, accessErr := p.resolveCharacterAffiliation(ctx, userInfo)
+	if accessErr != nil {
 		p.logger.
 			WithFields(logging.Fields{"user_id": user.Id}).
-			WithErr(verifyErr).
-			Warn("oidc refresh id_token verify failed")
-		return AuthTokens{}, verifyErr
+			WithErr(accessErr).
+			Warn("refresh affiliation lookup failed")
+		return AuthTokens{}, accessErr
+	}
+	if authorizeErr := p.authorizeAccess(corpID, allianceID); authorizeErr != nil {
+		p.logger.
+			WithFields(logging.Fields{"user_id": user.Id}).
+			WithErr(authorizeErr).
+			Warn("refresh access denied")
+		return AuthTokens{}, authorizeErr
+	}
+
+	accessLevel := p.resolveAccessLevel(userInfo)
+	mainCharacter, _ := SelectMainCharacter(userInfo)
+	if saveErr := p.persistUserSession(user, user.GetString("auth_provider_sub"), token, accessLevel, mainCharacter, corpID, allianceID); saveErr != nil {
+		p.logger.
+			WithFields(logging.Fields{"user_id": user.Id}).
+			WithErr(saveErr).
+			Warn("refresh user save failed")
+		return AuthTokens{}, saveErr
+	}
+
+	if syncErr := p.syncMainCharacter(ctx, user, userInfo, corpID, allianceID); syncErr != nil {
+		p.logger.
+			WithFields(logging.Fields{"user_id": user.Id}).
+			WithErr(syncErr).
+			Warn("refresh main character sync failed")
+		return AuthTokens{}, syncErr
+	}
+
+	if syncErr := p.syncLinkedCharacters(ctx, user, userInfo); syncErr != nil {
+		p.logger.
+			WithFields(logging.Fields{"user_id": user.Id}).
+			WithErr(syncErr).
+			Warn("refresh linked character sync failed")
+		return AuthTokens{}, syncErr
 	}
 
 	accessExpiry := tokenExpiry(token)
 	refreshExpiry := refreshExpiry(token)
-	accessLevel := p.resolveAccessLevel(nil, user.GetString("access_level"), token.AccessToken)
-	user.Set("access_level", accessLevel)
-	user.Set("oauth_access_token", token.AccessToken)
-	accessExpiresAt, _ := types.ParseDateTime(time.Unix(accessExpiry, 0))
-	user.Set("oauth_access_expires_at", accessExpiresAt)
-	if token.RefreshToken != "" {
-		user.Set("oauth_refresh_token", token.RefreshToken)
-		refreshExpiresAt, _ := types.ParseDateTime(time.Unix(refreshExpiry, 0))
-		user.Set("oauth_refresh_expires_at", refreshExpiresAt)
-	}
-
-	if saveErr := p.App.Save(user); saveErr != nil {
-		p.logger.
-			WithFields(logging.Fields{"user_id": user.Id}).
-			WithErr(saveErr).
-			Warn("oidc refresh user save failed")
-		return AuthTokens{}, saveErr
-	}
 
 	return AuthTokens{
 		AccessToken:   token.AccessToken,
 		AccessExpiry:  time.Unix(accessExpiry, 0),
 		RefreshToken:  token.RefreshToken,
 		RefreshExpiry: time.Unix(refreshExpiry, 0),
-		IDToken:       rawIDToken,
 	}, nil
 }
 
+// Logout returns a 204 No Content response (stateless logout).
 func (p *TestAuthProvider) Logout(c *core.RequestEvent) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (p *TestAuthProvider) resolveAccessLevel(c *core.RequestEvent, currentLevel, accessToken string) string {
-	if currentLevel == "admin" {
-		return currentLevel
+// LinkableCharacters returns the TestAuth characters that are not yet linked in Sentinel.
+// The returned slice excludes the main character and characters without valid tokens.
+func (p *TestAuthProvider) LinkableCharacters(ctx context.Context, user *core.Record) ([]CharacterInfo, error) {
+	chars, _, err := p.linkableCharacters(ctx, user)
+	if err != nil {
+		return nil, err
 	}
-	staffRoles := p.OIDC.Config.StaffRoles()
-	if len(staffRoles) == 0 {
-		return currentLevel
-	}
-	staffOK, staffErr := oidc.VerifyRoles(accessToken, staffRoles)
-	if staffErr != nil {
-		if c != nil {
-			logging.WithRequest(p.App, c).
-				WithErr(staffErr).
-				Warn("oidc staff role check failed")
-		} else {
-			p.logger.
-				WithFields(logging.Fields{"reason": "refresh"}).
-				WithErr(staffErr).
-				Warn("oidc staff role check failed on refresh")
-		}
-		return currentLevel
-	}
-
-	if staffOK {
-		return "staff"
-	}
-	return "user"
+	return chars, nil
 }
 
-func (p *TestAuthProvider) findOrCreateUser(sub string) (*core.Record, error) {
-	coll, collErr := p.App.FindCollectionByNameOrId(store.CollectionUsers)
+// ProfileCharacters returns the TestAuth characters that are currently linked in Sentinel.
+func (p *TestAuthProvider) ProfileCharacters(ctx context.Context, user *core.Record) ([]CharacterInfo, error) {
+	userInfo, infoErr := p.currentUserInfo(ctx, user)
+	if infoErr != nil {
+		return nil, infoErr
+	}
+
+	linkedIDs, linkedErr := p.linkedCharacterIDs(user)
+	if linkedErr != nil {
+		return nil, linkedErr
+	}
+
+	profileCharacters := make([]CharacterInfo, 0, len(userInfo.Characters))
+	for _, character := range userInfo.Characters {
+		if _, ok := linkedIDs[int(character.CharacterID)]; !ok {
+			continue
+		}
+		profileCharacters = append(profileCharacters, character)
+	}
+
+	return profileCharacters, nil
+}
+
+// MainCharacter returns the current TestAuth main character for the user.
+func (p *TestAuthProvider) MainCharacter(ctx context.Context, user *core.Record) (CharacterInfo, error) {
+	userInfo, infoErr := p.currentUserInfo(ctx, user)
+	if infoErr != nil {
+		return CharacterInfo{}, infoErr
+	}
+
+	mainCharacter, ok := SelectMainCharacter(userInfo)
+	if !ok {
+		return CharacterInfo{}, ErrFailedFetchMainCharacter
+	}
+
+	return mainCharacter, nil
+}
+
+// LinkCharacters links the requested TestAuth characters to the current Sentinel user.
+// The provider validates that each requested character is present in the current TestAuth profile
+// and not already linked before persisting the new character rows.
+func (p *TestAuthProvider) LinkCharacters(ctx context.Context, user *core.Record, characterIDs []int) ([]CharacterInfo, error) {
+	if user == nil {
+		return nil, ErrUnauthorized
+	}
+
+	_, linkableByID, err := p.linkableCharacters(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	coll, collErr := p.App.FindCollectionByNameOrId(store.CollectionCharacters)
 	if collErr != nil {
-		p.logger.
-			WithErr(collErr).
-			Warn("oidc user collection lookup failed")
 		return nil, collErr
 	}
 
-	records, recordsErr := p.App.FindRecordsByFilter(
-		coll.Name,
-		"auth_provider = {:provider} && auth_provider_sub = {:sub}",
-		"",
-		1,
-		0,
-		map[string]any{"provider": p.Name(), "sub": sub},
-	)
-	if recordsErr != nil {
-		p.logger.
-			WithErr(recordsErr).
-			Warn("oidc user query failed")
-		return nil, recordsErr
-	}
-
-	if len(records) > 0 {
-		return records[0], nil
-	}
-
-	legacy, legacyErr := p.App.FindRecordsByFilter(
-		coll.Name,
-		"sub = {:sub}",
-		"",
-		1,
-		0,
-		map[string]any{"sub": sub},
-	)
-	if legacyErr == nil && len(legacy) > 0 {
-		return legacy[0], nil
-	}
-
-	record := core.NewRecord(coll)
-	record.Set("sub", sub)
-	record.Set("auth_provider", p.Name())
-	record.Set("auth_provider_sub", sub)
-	record.SetEmail(fmt.Sprintf("sso-%s@auth.invalid", base64.RawURLEncoding.EncodeToString([]byte(sub))))
-	record.SetRandomPassword()
-	record.Set("created_at", time.Now())
-	record.Set("access_level", "user")
-	if saveErr := p.App.Save(record); saveErr != nil {
-		p.logger.
-			WithErr(saveErr).
-			Warn("oidc user create failed")
-		return nil, saveErr
-	}
-
-	if p.Intel != nil {
-		if _, tokenErr := p.Intel.GetOrCreateUploaderToken(record.Id); tokenErr != nil {
-			p.logger.
-				WithFields(logging.Fields{"user_id": record.Id}).
-				WithErr(tokenErr).
-				Warn("oidc uploader token seed failed")
-			return nil, tokenErr
+	nowDT, _ := types.ParseDateTime(time.Now())
+	requested := make([]CharacterInfo, 0, len(characterIDs))
+	seen := make(map[int]struct{}, len(characterIDs))
+	for _, characterID := range characterIDs {
+		if characterID <= 0 {
+			return nil, ErrCharacterNotLinkable
 		}
-	}
-	return record, nil
-}
+		if _, ok := seen[characterID]; ok {
+			continue
+		}
+		seen[characterID] = struct{}{}
 
-func refreshExpiry(token *oauth2.Token) int64 {
-	value := token.Extra("refresh_expires_in")
-	if v, ok := value.(float64); ok {
-		return time.Now().Add(time.Duration(v) * time.Second).Unix()
+		characterInfo, ok := linkableByID[characterID]
+		if !ok {
+			return nil, ErrCharacterNotLinkable
+		}
+		requested = append(requested, characterInfo)
 	}
-	return time.Now().Add(30 * 24 * time.Hour).Unix()
+
+	linked := make([]CharacterInfo, 0, len(characterIDs))
+	for _, characterInfo := range requested {
+		if saveErr := p.upsertLinkedCharacter(ctx, user, coll, characterInfo, nowDT, false, 0, 0); saveErr != nil {
+			return nil, saveErr
+		}
+		linked = append(linked, characterInfo)
+	}
+
+	return linked, nil
 }
