@@ -29,6 +29,7 @@ var (
 	ErrMissingAccessToken       = router.NewApiError(http.StatusUnauthorized, "Missing access token", nil)
 	ErrMissingRequiredRoles     = router.NewApiError(http.StatusForbidden, "Missing required roles", nil)
 	ErrMissingSub               = router.NewApiError(http.StatusUnauthorized, "Missing sub", nil)
+	ErrPublicBaseURLRequired    = errors.New("PUBLIC_BASE_URL is required outside local development")
 	ErrUnauthorized             = router.NewApiError(http.StatusUnauthorized, "Unauthorized", nil)
 	ErrUserNotFound             = router.NewApiError(http.StatusNotFound, "User not found", nil)
 

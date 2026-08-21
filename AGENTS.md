@@ -25,6 +25,7 @@ This document is an execution policy for coding agents and contributors.
 - Build + migrations: `task build:migrate`
 - Backend checks: `task lint:backend`
 - Frontend checks: `task lint:frontend` (includes `bun run typecheck`)
+- Dependency audit: `task audit:dependencies`
 
 ## Safety & Change Hygiene
 

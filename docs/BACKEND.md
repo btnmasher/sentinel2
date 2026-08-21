@@ -41,7 +41,13 @@ backend/
 - **Prefer services over globals:** Long-running or reusable logic should be in a service struct rather than package-level functions.
 - **PocketBase first:** Data access should use PocketBase collections with types/IDs defined in `internal/store`.
 
-## 3. Handler → Service Flow
+## 3. OAuth Security Contract
+- Production OAuth callbacks use the configured `PUBLIC_BASE_URL`, which must be an HTTPS origin. Request `Host`, `Origin`, and `Referer` values do not override it.
+- Local development may omit `PUBLIC_BASE_URL`; callback origins are then accepted only from loopback hosts and may use HTTP for the local Vite setup.
+- OAuth access, refresh, expiry, and scope fields remain server-side PocketBase data and are hidden from collection API serialization. Auth exchange and refresh responses use an explicit browser-safe DTO.
+- Run `task audit:dependencies` before release. The Go scan reports reachable vulnerabilities separately from advisories in unused packages within required modules.
+
+## 4. Handler → Service Flow
 The typical request flow is: route handler → input validation → domain/service call → structured response. Keep handlers thin and move heavy logic into services or domain packages.
 
 ### Examples
@@ -99,7 +105,7 @@ func (h *MapHandler) regions(c *core.RequestEvent, mode string) error {
 }
 ```
 
-## 4. Job Runner
+## 5. Job Runner
 Sentinel uses a structured job runner to track background work in PocketBase and emit consistent logs.
 
 ### Core Concepts
@@ -239,7 +245,7 @@ Where to use:
 - **Admin‑triggered jobs:** `internal/api/admin/handler.go`
 - **Background refreshers:** `internal/auth/character_refresh.go`
 
-## 5. Logging
+## 6. Logging
 Logging is centralized via `internal/logging` and uses structured fields for filtering in PocketBase logs.
 Set `DEBUG_ENABLED=true` (or run the server with `--dev`) to enable verbose debug logging, including SQL statements.
 Optional logging controls:
@@ -273,7 +279,7 @@ logging.WithRequest(h.App, c).
   Info("map system selected")
 ```
 
-## 6. PocketBase Primer
+## 7. PocketBase Primer
 PocketBase is the application core for storage, auth, and request/response handling.
 
 ### Router + Handlers
@@ -299,7 +305,7 @@ PocketBase is the application core for storage, auth, and request/response handl
 - [PocketBase router + events](https://pocketbase.io/docs/go-event-hooks)
 - [PocketBase filters](https://pocketbase.io/docs/go-records/#query-filters)
 
-## 7. Linting (Go)
+## 8. Linting (Go)
 We use `golangci-lint` for backend linting.
 
 Install:

@@ -72,6 +72,7 @@ type Config struct {
 	TimersWebhookToken   string `long:"timers-webhook-bearer-token" env:"TIMERS_WEBHOOK_BEARER_TOKEN"`
 
 	FrontendDevProxy    string   `long:"dev-proxy" env:"DEV_PROXY"`
+	PublicBaseURL       string   `long:"public-base-url" env:"PUBLIC_BASE_URL"`
 	DebugEnabled        bool     `long:"dev" env:"DEBUG_ENABLED"`
 	LogLevel            string   `long:"log-level" env:"LOG_LEVEL" default:"info" choice:"debug" choice:"info" choice:"warn" choice:"error"`
 	LogPretty           bool     `long:"log-pretty" env:"LOG_PRETTY"`
