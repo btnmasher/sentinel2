@@ -28,6 +28,8 @@ These docs capture the structure, conventions, and development practices for eac
 Development/build/docker command trees and CI workflow notes are documented in:
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
+Run `task audit:dependencies` to scan the pinned Go and Bun dependency trees. The Go audit distinguishes vulnerabilities reachable by application code from advisories present only in unused packages within a required module.
+
 Platform-specific setup for native Windows development is documented in:
 - [docs/WINDOWS_DEVELOPMENT.md](docs/WINDOWS_DEVELOPMENT.md)
 
@@ -51,6 +53,7 @@ Platform-specific setup for native Windows development is documented in:
 Minimum set (extend as needed):
 ```
 AUTH_BACKEND=eve|testauth
+PUBLIC_BASE_URL=https://app.example.com
 TESTAUTH_URL=
 TESTAUTH_CLIENT_ID=
 TESTAUTH_CLIENT_SECRET=
@@ -61,6 +64,8 @@ TESTAUTH_ADMIN_PERMISSION_URNS=
 STAFF_PERMISSION_URNS=
 ESI_DIRECT_BASE_URL=https://esi.evetech.net/latest/
 ```
+
+`PUBLIC_BASE_URL` is required outside development and must be an HTTPS origin. When running with `--dev`, it may be omitted: OAuth URLs are then derived only from loopback requests, and the frontend `Origin` or `Referer` must also be loopback. This supports the local HTTP Vite setup without trusting arbitrary host headers.
 
 ## Logging
 The backend uses PocketBase's built-in `slog` logger, so logs show up in the PocketBase Logs UI. Request logs include a `request_id` plus `type`, `status`, and `duration_ms` fields. Domain logs (auth, intel, map, SDE, cleanup) use structured fields like `type` to make filtering easier.

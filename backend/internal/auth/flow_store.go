@@ -49,6 +49,10 @@ func exchangeKey(code string) string {
 	return "auth_exchange:" + code
 }
 
+func callbackURLKey(state string) string {
+	return "auth_callback:" + state
+}
+
 func saveAuthFlow(app *pocketbase.PocketBase, state string, flow AuthFlow) {
 	if app == nil || state == "" {
 		return
@@ -73,6 +77,7 @@ func loadAuthFlow(app *pocketbase.PocketBase, state string) (AuthFlow, bool) {
 
 	if time.Since(flow.CreatedAt) > authFlowTTL {
 		app.Store().Remove(flowKey(state))
+		app.Store().Remove(callbackURLKey(state))
 		return AuthFlow{}, false
 	}
 	return flow, true
@@ -83,6 +88,26 @@ func deleteAuthFlow(app *pocketbase.PocketBase, state string) {
 		return
 	}
 	app.Store().Remove(flowKey(state))
+	app.Store().Remove(callbackURLKey(state))
+}
+
+func saveAuthCallbackURL(app *pocketbase.PocketBase, state, callbackURL string) {
+	if app == nil || state == "" || callbackURL == "" {
+		return
+	}
+	app.Store().Set(callbackURLKey(state), callbackURL)
+}
+
+func loadAuthCallbackURL(app *pocketbase.PocketBase, state string) (string, bool) {
+	if app == nil || state == "" {
+		return "", false
+	}
+	raw, ok := app.Store().GetOk(callbackURLKey(state))
+	if !ok {
+		return "", false
+	}
+	callbackURL, ok := raw.(string)
+	return callbackURL, ok && callbackURL != ""
 }
 
 func saveAuthExchange(app *pocketbase.PocketBase, userID string) string {
