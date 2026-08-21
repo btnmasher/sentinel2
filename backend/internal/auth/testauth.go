@@ -25,24 +25,26 @@ const testAuthStateBytes = 32
 // It communicates with the external auth platform as an OAuth client using standard
 // libraries and derives identity from the /oauth/api/me response.
 type TestAuthProvider struct {
-	App       *pocketbase.PocketBase
-	OAuth     *TestAuthClient
-	PublicESI *esi.ESIPublicClient
-	Intel     *intel.IntelService
-	Config    *config.Config
-	DevMode   bool
-	logger    *logging.Logger
+	App           *pocketbase.PocketBase
+	OAuth         *TestAuthClient
+	PublicESI     *esi.ESIPublicClient
+	Intel         *intel.IntelService
+	Config        *config.Config
+	PublicBaseURL string
+	DevMode       bool
+	logger        *logging.Logger
 }
 
 // NewTestAuthProvider creates a new TestAuthProvider that communicates with the external auth platform.
-func NewTestAuthProvider(app *pocketbase.PocketBase, oauth *TestAuthClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, cfg *config.Config, devMode bool) *TestAuthProvider {
+func NewTestAuthProvider(app *pocketbase.PocketBase, oauth *TestAuthClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, cfg *config.Config, publicBaseURL string, devMode bool) *TestAuthProvider {
 	return &TestAuthProvider{
-		App:       app,
-		OAuth:     oauth,
-		PublicESI: publicESI,
-		Intel:     intelService,
-		Config:    cfg,
-		DevMode:   devMode,
+		App:           app,
+		OAuth:         oauth,
+		PublicESI:     publicESI,
+		Intel:         intelService,
+		Config:        cfg,
+		PublicBaseURL: publicBaseURL,
+		DevMode:       devMode,
 		logger: logging.New(app).WithFields(logging.Fields{
 			"component": "auth.testauth",
 		}),
@@ -73,10 +75,18 @@ func (p *TestAuthProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (st
 		return "", ErrFailedCreateState
 	}
 
-	redirectURL := absoluteURL(c)
+	redirectURL, redirectURLErr := resolveCallbackURL(c, p.PublicBaseURL, p.DevMode)
+	if redirectURLErr != nil {
+		return "", redirectURLErr
+	}
 	p.OAuth.SetRedirectURL(redirectURL)
-	flow.RedirectBaseURL = resolveRedirectBaseURL(c, p.DevMode)
+	redirectBaseURL, redirectErr := resolveRedirectBaseURL(c, p.PublicBaseURL, p.DevMode)
+	if redirectErr != nil {
+		return "", redirectErr
+	}
+	flow.RedirectBaseURL = redirectBaseURL
 	saveAuthFlow(p.App, state, flow)
+	saveAuthCallbackURL(p.App, state, redirectURL)
 
 	return p.OAuth.AuthorizationURL(state), nil
 }
@@ -92,14 +102,17 @@ func (p *TestAuthProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow
 	if !ok {
 		return nil, AuthFlow{}, ErrInvalidState
 	}
-	deleteAuthFlow(p.App, state)
 
 	code := c.Request.URL.Query().Get("code")
 	if code == "" {
 		return nil, AuthFlow{}, ErrMissingCode
 	}
 
-	redirectURL := absoluteURL(c)
+	redirectURL, callbackOK := loadAuthCallbackURL(p.App, state)
+	if !callbackOK {
+		return nil, AuthFlow{}, ErrInvalidState
+	}
+	deleteAuthFlow(p.App, state)
 	p.OAuth.SetRedirectURL(redirectURL)
 
 	// Exchange authorization code for tokens using golang.org/x/oauth2 (RFC 6749).

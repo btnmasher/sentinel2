@@ -12,7 +12,7 @@ This subtree owns the Sentinel 2 Go backend: HTTP handlers, auth providers, ESI 
 - Follow the root AGENTS rules and the backend architecture guide in [`docs/BACKEND.md`](/home/terminal/Code/sentinel2/docs/BACKEND.md).
 - Keep handlers thin and move domain behavior into the closest backend package.
 - Preserve package boundaries such as `internal/auth`, `internal/esi`, `internal/intel`, `internal/jobs`, `internal/middleware`, `internal/server`, `internal/store`, and related domain packages.
-- Use `task` from the repository root for backend workflows, especially `task lint:backend`, `task test:backend`, `task build`, and `task build:migrate`.
+- Use `task` from the repository root for backend workflows, especially `task lint:backend`, `task test:backend`, `task audit:dependencies`, `task build`, and `task build:migrate`.
 - Prefer package constants and package errors for repeated values and shared failures.
 - Keep migrations additive and aligned with PocketBase collection semantics.
 
@@ -27,6 +27,7 @@ This subtree owns the Sentinel 2 Go backend: HTTP handlers, auth providers, ESI 
 - `task test:backend`
 - `task build`
 - `task build:migrate`
+- `task audit:dependencies`
 
 ## Child DOX Index
 - `backend/internal/`: Backend domain code and tests. No child `AGENTS.md` files currently exist under this subtree.

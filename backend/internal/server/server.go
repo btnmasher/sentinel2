@@ -60,6 +60,9 @@ func Run(cfg *config.Config) error {
 	if cfg == nil {
 		return fmt.Errorf("missing config")
 	}
+	if err := auth.ValidatePublicBaseURL(cfg.PublicBaseURL, cfg.DebugEnabled); err != nil {
+		return fmt.Errorf("invalid public base URL: %w", err)
+	}
 	app := pocketbase.NewWithConfig(pocketbase.Config{
 		DefaultDev: cfg.DebugEnabled,
 	})
@@ -167,7 +170,7 @@ func buildAuthProvider(cfg *config.Config, app *pocketbase.PocketBase, publicESI
 			Scopes: cfg.EVEScopeList(),
 		}
 		esiClient := esi.NewESIDirectClient(cfg.ESIUserAgent, logging.New(app))
-		return auth.NewEVEProvider(context.Background(), app, &oauthConfig, esiClient, publicESI, intelService, cfg.DebugEnabled)
+		return auth.NewEVEProvider(context.Background(), app, &oauthConfig, esiClient, publicESI, intelService, cfg.PublicBaseURL, cfg.DebugEnabled)
 	case "testauth":
 		if cfg.TestAuthURL == "" {
 			return nil, fmt.Errorf("TESTAUTH_URL required when AUTH_BACKEND=testauth")
@@ -189,7 +192,7 @@ func buildAuthProvider(cfg *config.Config, app *pocketbase.PocketBase, publicESI
 		if oauthClientErr != nil {
 			return nil, fmt.Errorf("failed to create testauth client: %w", oauthClientErr)
 		}
-		return auth.NewTestAuthProvider(app, oauthClient, publicESI, intelService, cfg, cfg.DebugEnabled), nil
+		return auth.NewTestAuthProvider(app, oauthClient, publicESI, intelService, cfg, cfg.PublicBaseURL, cfg.DebugEnabled), nil
 	default:
 		return nil, fmt.Errorf("unknown auth backend: %s", cfg.AuthBackend)
 	}

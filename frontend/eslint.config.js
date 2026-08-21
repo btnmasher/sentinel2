@@ -1,5 +1,4 @@
 import js from "@eslint/js";
-import importPlugin from "eslint-plugin-import";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 
@@ -19,12 +18,6 @@ export default [
     },
     plugins: {
       "@typescript-eslint": tsPlugin,
-      import: importPlugin,
-    },
-    settings: {
-      "import/resolver": {
-        typescript: {},
-      },
     },
     rules: {
       "no-undef": "off",

@@ -48,7 +48,7 @@ func (h *AuthHandler) Callback(c *core.RequestEvent) error {
 
 	redirectBaseURL := strings.TrimRight(strings.TrimSpace(result.RedirectBaseURL), "/")
 	if redirectBaseURL == "" {
-		redirectBaseURL = auth.RequestBaseURL(c)
+		return router.NewInternalServerError("Missing OAuth redirect base URL", nil)
 	}
 
 	if result.IsLink {
@@ -417,9 +417,27 @@ func (h *AuthHandler) RemoveCharacter(c *core.RequestEvent) error {
 }
 
 type authExchangeResponse struct {
-	Token     string         `json:"token"`
-	Record    map[string]any `json:"record"`
-	ExpiresAt string         `json:"expires_at"`
+	Token     string             `json:"token"`
+	Record    authRecordResponse `json:"record"`
+	ExpiresAt string             `json:"expires_at"`
+}
+
+type authRecordResponse struct {
+	ID             string `json:"id"`
+	CollectionID   string `json:"collectionId"`
+	CollectionName string `json:"collectionName"`
+	AuthProvider   string `json:"auth_provider"`
+	AccessLevel    string `json:"access_level"`
+}
+
+func newAuthRecordResponse(record *core.Record) authRecordResponse {
+	return authRecordResponse{
+		ID:             record.Id,
+		CollectionID:   record.Collection().Id,
+		CollectionName: record.Collection().Name,
+		AuthProvider:   record.GetString("auth_provider"),
+		AccessLevel:    record.GetString("access_level"),
+	}
 }
 
 func (h *AuthHandler) Exchange(c *core.RequestEvent) error {
@@ -436,7 +454,7 @@ func (h *AuthHandler) Exchange(c *core.RequestEvent) error {
 	expiresAt := time.Now().Add(auth.PBTokenTTL()).UTC().Format(time.RFC3339)
 	return c.JSON(http.StatusOK, authExchangeResponse{
 		Token:     token,
-		Record:    user.PublicExport(),
+		Record:    newAuthRecordResponse(user),
 		ExpiresAt: expiresAt,
 	})
 }
@@ -453,7 +471,7 @@ func (h *AuthHandler) Refresh(c *core.RequestEvent) error {
 	expiresAt := time.Now().Add(auth.PBTokenTTL()).UTC().Format(time.RFC3339)
 	return c.JSON(http.StatusOK, authExchangeResponse{
 		Token:     token,
-		Record:    user.PublicExport(),
+		Record:    newAuthRecordResponse(user),
 		ExpiresAt: expiresAt,
 	})
 }

@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,37 +29,32 @@ func TestTokenExpiry(t *testing.T) {
 	}
 }
 
-func TestAbsoluteURL(t *testing.T) {
+func TestResolveCallbackURL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name            string
-		host            string
-		forwardedProto  string
-		withTLS         bool
-		expectedURLHead string
+		name          string
+		host          string
+		publicBaseURL string
+		devMode       bool
+		want          string
+		wantErr       bool
 	}{
-		{name: "default http", host: "example.test", expectedURLHead: "http://example.test"},
-		{name: "forwarded https first value", host: "example.test", forwardedProto: "https,http", expectedURLHead: "https://example.test"},
-		{name: "invalid forwarded proto", host: "example.test", forwardedProto: "ftp", expectedURLHead: "http://example.test"},
-		{name: "tls overrides forwarded http", host: "example.test", forwardedProto: "http", withTLS: true, expectedURLHead: "https://example.test"},
+		{name: "configured production origin", host: "attacker.example", publicBaseURL: "https://app.example.com", want: "https://app.example.com/api/auth/callback"},
+		{name: "local development origin", host: "127.0.0.1:8090", devMode: true, want: "http://127.0.0.1:8090/api/auth/callback"},
+		{name: "non-loopback development host", host: "example.test", devMode: true, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		req := httptest.NewRequest("GET", "http://"+tt.host+"/api/auth/callback", http.NoBody)
 		req.Host = tt.host
-		if tt.forwardedProto != "" {
-			req.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
-		}
-		if tt.withTLS {
-			req.TLS = &tls.ConnectionState{}
-		}
-
 		c := &core.RequestEvent{Event: router.Event{Request: req}}
-		got := absoluteURL(c)
-		want := tt.expectedURLHead + "/api/auth/callback"
-		if got != want {
-			t.Fatalf("%s: absoluteURL() = %q, want %q", tt.name, got, want)
+		got, err := resolveCallbackURL(c, tt.publicBaseURL, tt.devMode)
+		if (err != nil) != tt.wantErr {
+			t.Fatalf("%s: resolveCallbackURL() error = %v, wantErr %t", tt.name, err, tt.wantErr)
+		}
+		if !tt.wantErr && got != tt.want {
+			t.Fatalf("%s: resolveCallbackURL() = %q, want %q", tt.name, got, tt.want)
 		}
 	}
 }
@@ -93,6 +87,12 @@ func TestResolveRedirectBaseURL(t *testing.T) {
 			origin:          "http://localhost:5173",
 			expectedBaseURL: "http://localhost:5173",
 		},
+		{
+			name:            "external origin falls back to request host",
+			host:            "127.0.0.1:8090",
+			origin:          "https://example.com",
+			expectedBaseURL: "http://127.0.0.1:8090",
+		},
 	}
 
 	for _, tt := range tests {
@@ -106,7 +106,10 @@ func TestResolveRedirectBaseURL(t *testing.T) {
 		}
 
 		c := &core.RequestEvent{Event: router.Event{Request: req}}
-		got := resolveRedirectBaseURL(c, true)
+		got, err := resolveRedirectBaseURL(c, "", true)
+		if err != nil {
+			t.Fatalf("%s: resolveRedirectBaseURL() error = %v", tt.name, err)
+		}
 		if got != tt.expectedBaseURL {
 			t.Fatalf("%s: resolveRedirectBaseURL() = %q, want %q", tt.name, got, tt.expectedBaseURL)
 		}
@@ -121,9 +124,50 @@ func TestResolveRedirectBaseURLProduction(t *testing.T) {
 	req.Header.Set("Origin", "http://localhost:5173")
 
 	c := &core.RequestEvent{Event: router.Event{Request: req}}
-	got := resolveRedirectBaseURL(c, false)
-	want := "https://example.test"
+	got, err := resolveRedirectBaseURL(c, "https://app.example.com", false)
+	if err != nil {
+		t.Fatalf("resolveRedirectBaseURL() error = %v", err)
+	}
+	want := "https://app.example.com"
 	if got != want {
 		t.Fatalf("resolveRedirectBaseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestValidatePublicBaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		rawURL  string
+		devMode bool
+		wantErr bool
+	}{
+		{name: "production https", rawURL: "https://app.example.com", wantErr: false},
+		{name: "production missing", wantErr: true},
+		{name: "production http", rawURL: "http://app.example.com", wantErr: true},
+		{name: "development http", rawURL: "http://localhost:5173", devMode: true, wantErr: false},
+		{name: "path rejected", rawURL: "https://app.example.com/app", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidatePublicBaseURL(tt.rawURL, tt.devMode)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidatePublicBaseURL() error = %v, wantErr %t", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveRedirectBaseURLRejectsNonLoopbackDevelopmentHost(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest("GET", "http://example.test/api/auth/login", http.NoBody)
+	req.Host = "example.test"
+	c := &core.RequestEvent{Event: router.Event{Request: req}}
+
+	if _, err := resolveRedirectBaseURL(c, "", true); err == nil {
+		t.Fatal("resolveRedirectBaseURL() error = nil, want non-loopback host rejection")
 	}
 }

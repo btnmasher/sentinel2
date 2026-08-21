@@ -27,6 +27,7 @@ type EVEProvider struct {
 	PublicESI      *esi.ESIPublicClient
 	Intel          *intel.IntelService
 	TokenValidator EVETokenValidator
+	PublicBaseURL  string
 	DevMode        bool
 }
 
@@ -40,7 +41,7 @@ const (
 	minSubParts = 3
 )
 
-func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, devMode bool) (*EVEProvider, error) {
+func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauthConfig *oauth2.Config, esiClient esi.ESIClient, publicESI *esi.ESIPublicClient, intelService *intel.IntelService, publicBaseURL string, devMode bool) (*EVEProvider, error) {
 	if oauthConfig == nil {
 		return nil, errors.New("missing oauth config")
 	}
@@ -56,6 +57,7 @@ func NewEVEProvider(parentCtx context.Context, app *pocketbase.PocketBase, oauth
 		PublicESI:      publicESI,
 		Intel:          intelService,
 		TokenValidator: validator,
+		PublicBaseURL:  publicBaseURL,
 		DevMode:        devMode,
 	}, nil
 }
@@ -77,10 +79,18 @@ func (p *EVEProvider) BuildAuthURL(c *core.RequestEvent, flow AuthFlow) (string,
 	if stateErr != nil {
 		return "", ErrFailedCreateState
 	}
-	flow.RedirectBaseURL = resolveRedirectBaseURL(c, p.DevMode)
-	saveAuthFlow(p.App, state, flow)
+	redirectBaseURL, redirectErr := resolveRedirectBaseURL(c, p.PublicBaseURL, p.DevMode)
+	if redirectErr != nil {
+		return "", redirectErr
+	}
+	flow.RedirectBaseURL = redirectBaseURL
 
-	redirectURL := absoluteURL(c)
+	redirectURL, redirectURLErr := resolveCallbackURL(c, p.PublicBaseURL, p.DevMode)
+	if redirectURLErr != nil {
+		return "", redirectURLErr
+	}
+	saveAuthFlow(p.App, state, flow)
+	saveAuthCallbackURL(p.App, state, redirectURL)
 	p.OAuth2.RedirectURL = redirectURL
 
 	authURL := p.OAuth2.AuthCodeURL(state)
@@ -96,14 +106,17 @@ func (p *EVEProvider) Callback(c *core.RequestEvent) (*AuthResult, AuthFlow, err
 	if !ok {
 		return nil, AuthFlow{}, ErrInvalidState
 	}
-	deleteAuthFlow(p.App, state)
 
 	code := c.Request.URL.Query().Get("code")
 	if code == "" {
 		return nil, AuthFlow{}, ErrMissingCode
 	}
 
-	redirectURL := absoluteURL(c)
+	redirectURL, callbackOK := loadAuthCallbackURL(p.App, state)
+	if !callbackOK {
+		return nil, AuthFlow{}, ErrInvalidState
+	}
+	deleteAuthFlow(p.App, state)
 	p.OAuth2.RedirectURL = redirectURL
 
 	token, tokenErr := p.OAuth2.Exchange(c.Request.Context(), code)
